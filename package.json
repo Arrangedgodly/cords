@@ -1,0 +1,22 @@
+{
+  "name": "cords",
+  "private": true,
+  "version": "0.0.1",
+  "type": "module",
+  "scripts": {
+    "dev": "vite",
+    "build": "npm run check:sim && tsc && vite build",
+    "preview": "vite preview",
+    "test": "npm run check:sim && vitest run",
+    "check:sim": "node scripts/check-sim-purity.mjs"
+  },
+  "dependencies": {
+    "three": "^0.185.1"
+  },
+  "devDependencies": {
+    "@types/three": "^0.185.4",
+    "typescript": "^7.0.2",
+    "vite": "^8.2.2",
+    "vitest": "^4.1.11"
+  }
+}

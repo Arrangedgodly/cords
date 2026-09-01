@@ -1,0 +1,131 @@
+{
+  "title": "Cords — choose the visual world",
+  "question": "The roll assigned Eurorack Panel. Keep it, take the pick or an alternate, take the category standard, or re-roll with a steer.",
+  "options": [
+    {
+      "id": "assigned",
+      "label": "Eurorack Panel",
+      "kicker": "THE ROLL",
+      "lineage": "eurorack modular synth culture — 1960s Buchla to today's scarred aluminum",
+      "thesis": "Patch cables are the instrument: cubes are modules on the panel, every cord is live signal, and the physics is what flows through it.",
+      "palette": ["#232527", "#c9ccd1", "#f2f3f0", "#ffb648"],
+      "materials": ["anodized aluminum panels", "silkscreen legends", "walnut end-cheeks"],
+      "viewport": "A dark studio bench under one warm key light: six module-cubes standing, one patch cord mid-flight from your cursor, the HUD a silkscreen faceplate strip along the bottom edge, the first linked pair pulsing red-to-blue.",
+      "risk": "Gear-dense panels go joyless and unreadable — and dark-plus-glow is the cheap trick; the toy must stay a toy, with glow earned only by live state.",
+      "raised": [
+        { "from": "Drum Machine Panel", "raise": "LED honesty — glow exists only where live state lives (linked pulse, seated jack); nothing decorative ever glows." },
+        { "from": "Suminagashi Basin", "raise": "Whole-surface pointer honesty — the bench floor answers the cursor with a breath of light, not just the cords." },
+        { "from": "Design Annual Plate", "raise": "Registration furniture — measurement ticks ride the cord while it is still learning its length." },
+        { "from": "Googie Diner", "raise": "Performed delight — the pulse and the shatter perform; they never merely indicate." }
+      ],
+      "comp": ".impeccable/mocks/decision/assigned.webp"
+    },
+    {
+      "id": "model-pick",
+      "label": "Telephone Patch Bay",
+      "kicker": "IMPECCABLE’S PICK",
+      "lineage": "manual telephone exchanges, 1900s–1960s — the ancestral plug-anywhere machine",
+      "thesis": "A field of brass jacks and cloth-braided cords where human hands route conversations; your sandbox as a switchboard bench.",
+      "palette": ["#1d1f1c", "#cfc9b8", "#8c2f24", "#2f4d8a"],
+      "materials": ["brass jack fields", "cloth-braided cord", "bakelite and walnut"],
+      "viewport": "Cord-weight curtains the scene from the first frame: a dark switchboard bench, cubes as bakelite modules, braided red and blue cords sagging under real gravity.",
+      "risk": "It is the most expected world for a jack product — the category's own postcard; familiarity is the trade.",
+      "comp": ".impeccable/mocks/decision/model-pick.webp"
+    },
+    {
+      "id": "challenger-step-row",
+      "label": "Drum Machine Panel",
+      "verdict": "competitive",
+      "lineage": "early-80s rhythm machines — charcoal steel, silkscreen caps, candy key zones",
+      "thesis": "The sandbox as hardware instrument faceplate: every state silkscreened, the only light being what is actually live.",
+      "palette": ["#2b2d2f", "#e04a2f", "#f5a623", "#f5f5f2"],
+      "materials": ["charcoal steel panel", "silkscreen caps", "injected key caps"],
+      "viewport": "A faceplate-flat HUD strip above the stage; cubes color-zoned like step keys; the linked pulse sweeping like a chase light locked to the sim clock.",
+      "case": "Fuses cleanly — silkscreen state honesty transfers whole; but its hero is the timeline, not the cable, and Cords' hero is the cable.",
+      "risk": "Reads as a music-app costume the moment labels stop naming real state.",
+      "hero": "https://impeccable.style/worlds/cards/signals-instruments-drum-machine-step-row-hero.webp",
+      "board": "https://impeccable.style/worlds/cards/signals-instruments-drum-machine-step-row.webp",
+      "comp": ".impeccable/mocks/decision/challenger-step-row.webp"
+    },
+    {
+      "id": "challenger-ink-basin",
+      "label": "Suminagashi Basin",
+      "verdict": "competitive",
+      "lineage": "suminagashi marbling — indigo and carbon ink obeying real fluid law on still water",
+      "thesis": "The whole stage is a live material: the pointer drags currents through the world and everything answers.",
+      "palette": ["#f4f1e8", "#1d3a5f", "#2b2b2b", "#8a9aa6"],
+      "materials": ["indigo sumi ink", "paper-white water", "carbon black"],
+      "viewport": "A pale paper floor where cube shadows pool like ink; cords dragged through the scene leave marbled wake behind them.",
+      "case": "Pointer-physics wonder matches the toy's soul — but a second GPU fluid competes with the rope solver for the frame budget and veils the jacks.",
+      "risk": "Two physics systems fight for the same 16 milliseconds.",
+      "hero": "https://impeccable.style/worlds/cards/medium-native-fluid-ink-basin-hero.webp",
+      "board": "https://impeccable.style/worlds/cards/medium-native-fluid-ink-basin.webp",
+      "comp": ".impeccable/mocks/decision/challenger-ink-basin.webp"
+    },
+    {
+      "id": "challenger-raku",
+      "label": "Raku Vessel",
+      "verdict": "declined",
+      "lineage": "raku firing — thermal shock, carbon, and exposed clay",
+      "thesis": "The scene as a kiln process: soot-black ground, crackled glaze bodies, one still-hot vessel.",
+      "palette": ["#141312", "#c9c4bb", "#d96e30"],
+      "materials": ["carbonized clay", "crackle glaze"],
+      "viewport": "Black-clay cubes crackle-glazed where cords seat; the shatter as thermal shock.",
+      "case": "Fuses poorly: firing stages have no plug/link reading, and the world buries the jack.",
+      "kept": "Thermal contrast — one still-hot accent discipline in a dark room.",
+      "hero": "https://impeccable.style/worlds/cards/clay-ceramics-fracture-raku-smoke-flash-hero.webp"
+    },
+    {
+      "id": "challenger-alphabet-storm",
+      "label": "Alphabet Storm",
+      "verdict": "declined",
+      "lineage": "surrealist impossible worlds — language as weather and matter",
+      "thesis": "Letters condense, storm, and reshape the landscape by grammar.",
+      "palette": ["#f7f6f2", "#161616", "#b9c0c9"],
+      "materials": ["monumental grotesk", "paper white"],
+      "viewport": "Type as weather over the stage; cords as letterform ribbons.",
+      "case": "Fuses poorly: language-as-weather has no cord mechanics to carry.",
+      "kept": "Scale courage — labels as environmental typography, never UI captions.",
+      "hero": "https://impeccable.style/worlds/cards/dream-surreal-impossible-worlds-alphabet-storm-hero.webp"
+    },
+    {
+      "id": "challenger-plate-section",
+      "label": "Design Annual Plate",
+      "verdict": "declined",
+      "lineage": "design annual plate sections — uncoated stock, registration crosshairs, hairline rules",
+      "thesis": "The sandbox as a printed plate: crosshairs, hairlines, one grotesque, a stamp of authorship.",
+      "palette": ["#F5F4F6", "#16181A", "#DCDDF3"],
+      "materials": ["uncoated near-white stock", "hairline rules"],
+      "viewport": "Cubes registered by crosshair marks; cords tensioned like plotted diagrams.",
+      "case": "Fuses poorly: gallery stillness fights a kinetic toy.",
+      "kept": "Registration furniture — measurement ticks appear while the cord learns its length.",
+      "hero": "https://impeccable.style/worlds/cards/design-annual-s-plate-section-hero.webp"
+    },
+    {
+      "id": "challenger-googie",
+      "label": "Googie Diner",
+      "verdict": "declined",
+      "lineage": "Googie roadside America — starburst signs, boomerang laminate, neon orbits",
+      "thesis": "The space age served all night: swooping lines, orbiting controls, neon joy.",
+      "palette": ["#40c1ac", "#ff7f66", "#2b2b2b", "#fff8ec"],
+      "materials": ["turquoise laminate", "neon tube", "chrome trim"],
+      "viewport": "The linked cord as the one swooping cantilever line carrying the whole scene.",
+      "case": "Fuses poorly: diner grammar fights the vintage-audio-jack brand commitment.",
+      "kept": "Performed delight — the pulse and the shatter are allowed to perform.",
+      "hero": "https://impeccable.style/worlds/cards/design-canon-googie-starburst-diner-hero.webp"
+    }
+  ],
+  "reroll": { "registers": ["safer", "bolder"] },
+  "buildPath": { "value": "code", "toggle": false },
+  "canon": true,
+  "canonCard": {
+    "label": "The category standard",
+    "thesis": "What cable-puzzle toys always ship — a flat pastel board of rounded props — executed impeccably.",
+    "palette": ["#fdf6ee", "#88b6f2", "#f4a6b0", "#5c5470"],
+    "materials": ["flat vector props", "soft shadows"],
+    "viewport": "A friendly pastel mat, cubes as rounded cartoon blocks, cords as clean bezier ribbons.",
+    "risk": "Indistinguishable from the competition by design.",
+    "comp": ".impeccable/mocks/decision/canon.webp"
+  },
+  "steer": true
+}

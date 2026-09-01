@@ -1,0 +1,38 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>Cords — REN-2 12-cord stage (dev harness)</title>
+    <style>
+      /* Dev harness for the REN-2 renderer: same full-bleed stage as the
+         product, plus one honest readout strip for the frame-budget numbers.
+         Not part of the built product (index.html is). */
+      html,
+      body {
+        margin: 0;
+        height: 100%;
+        overflow: hidden;
+        background: #111114;
+      }
+      #perf-out {
+        position: fixed;
+        left: 12px;
+        bottom: 12px;
+        margin: 0;
+        padding: 10px 14px;
+        background: rgba(13, 15, 18, 0.9);
+        color: #a9d6ae;
+        font: 12px/1.55 ui-monospace, Menlo, Consolas, monospace;
+        border: 1px solid #2a2d31;
+        white-space: pre;
+        display: none;
+      }
+    </style>
+  </head>
+  <body>
+    <div id="app"></div>
+    <pre id="perf-out"></pre>
+    <script type="module" src="/src/tools/stage12.ts"></script>
+  </body>
+</html>
