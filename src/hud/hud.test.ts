@@ -27,6 +27,7 @@ import {
   readHudCountsInto,
   sameHudCounts,
   sceneSummary,
+  vanishNotice,
 } from './model';
 
 // --- Part 1 — the model through the real world --------------------------------
@@ -306,6 +307,99 @@ describe('A11Y-1 — the scene summary speaks EVERY lifecycle transition', () =>
     expect(after).not.toBe(before);
     expect(after).toBe('2 cords, 1 awaiting plug. Press N for a new cord, R to reset.');
     expect(before).toBe('2 cords, 2 awaiting plugs. Press N for a new cord, R to reset.');
+  });
+});
+
+// --- REFINE-1 — the failure's one spoken line (the "why did it die") ----------
+
+describe('REFINE-1 — vanishNotice + the notice-led summary (the death is NAMED once)', () => {
+  it('names the death in the panel\'s own voice: shattered, unplugged — honest for BOTH entry paths', () => {
+    // Grace expiry and the off-cube release both shatter the jack of a cord
+    // that was unplugged; one sentence covers every death the lifecycle owns.
+    expect(vanishNotice(1)).toBe('Cord shattered — unplugged.');
+    expect(vanishNotice(2)).toBe('2 cords shattered — unplugged.'); // one frame, two deaths: one line
+    expect(vanishNotice(5)).toBe('5 cords shattered — unplugged.');
+    // Garbage fails to the singular (a broken count must not invent a plural).
+    expect(vanishNotice(Number.NaN)).toBe('Cord shattered — unplugged.');
+    expect(vanishNotice(0)).toBe('Cord shattered — unplugged.');
+    expect(vanishNotice(-3)).toBe('Cord shattered — unplugged.');
+  });
+
+  it('sceneSummary leads with the notice, ahead of the counts, exactly as composed at vanish start', () => {
+    // What main.ts composes the frame a popped cord's grace expires:
+    expect(
+      sceneSummary({ cords: 2, awaitingPlug: 1, linked: 0, popped: 0, vanishing: 1 }, vanishNotice(1)),
+    ).toBe('Cord shattered — unplugged. 2 cords, 1 awaiting plug, 1 vanishing. Press N for a new cord, R to reset.');
+    // Without a notice the sentence is the ordinary counts (the retired state).
+    expect(sceneSummary({ cords: 2, awaitingPlug: 1, linked: 0, popped: 0, vanishing: 1 }))
+      .toBe('2 cords, 1 awaiting plug, 1 vanishing. Press N for a new cord, R to reset.');
+    // An empty/whitespace notice is no notice (composition garbage stays silent).
+    expect(sceneSummary({ cords: 1, awaitingPlug: 0, linked: 0, popped: 0, vanishing: 0 }, ''))
+      .toBe('1 cord. Press N for a new cord, R to reset.');
+    expect(sceneSummary({ cords: 1, awaitingPlug: 0, linked: 0, popped: 0, vanishing: 0 }, null))
+      .toBe('1 cord. Press N for a new cord, R to reset.');
+  });
+
+  it('through the REAL world: the expiry frame is exactly where the notice rides (the counts move with it)', () => {
+    // The composition's law: popped → vanishing always changes the counts,
+    // so the one-shot notice is consumed by the very update that follows it.
+    const world = makeWorld();
+    world.advance(1, { pointerRay: null, spawnCord: { cordId: 1, at: { x: 0.5, y: 1, z: 0 } } });
+    world.advance(3, { pointerRay: null,
+      seatTargets: [
+        { cordId: 1, index: 0, position: A },
+        { cordId: 1, index: END, position: B },
+      ],
+    });
+    world.advance(1, { pointerRay: null, popCords: [{ cordId: 1, index: 0 }] });
+    world.advance(400, { pointerRay: null }); // past the ~3s grace → vanishing
+    const atExpiry = countsOf(world);
+    expect(atExpiry).toEqual({ cords: 2, awaitingPlug: 1, linked: 0, popped: 0, vanishing: 1 });
+    const withNotice = sceneSummary(atExpiry, vanishNotice(1));
+    expect(withNotice.startsWith('Cord shattered — unplugged. ')).toBe(true);
+    // And the despawn retires it: the next sentence never speaks the death again.
+    world.advance(1, { pointerRay: null, despawnCords: [{ cordId: 1 }] });
+    expect(sceneSummary(countsOf(world)).includes('shattered')).toBe(false);
+  });
+});
+
+describe('REFINE-1 — the panel speaks the notice ONCE (no spam, no swallowed line)', () => {
+  it('a notice forces the repaint the gate would have swallowed, then retires on the next change', () => {
+    const { panel, fixture } = makePanel();
+    const f = fixture();
+    const counts = { cords: 2, awaitingPlug: 1, linked: 0, popped: 0, vanishing: 1 };
+    panel.update(counts);
+    expect(f.summary.textContent)
+      .toBe('2 cords, 1 awaiting plug, 1 vanishing. Press N for a new cord, R to reset.');
+    // The death line lands even though the counts did NOT change this frame
+    // (the gate must not swallow a spoken event).
+    panel.update(counts, vanishNotice(1));
+    expect(f.summary.textContent)
+      .toBe('Cord shattered — unplugged. 2 cords, 1 awaiting plug, 1 vanishing. Press N for a new cord, R to reset.');
+    // Identical counts and no notice: gated — the line is NOT repeated.
+    const spoken = f.summary.textContent;
+    panel.update(counts);
+    expect(f.summary.textContent).toBe(spoken);
+    // The next real change (the despawn) rewrites the sentence WITHOUT the
+    // death line — it fired exactly once.
+    panel.update({ cords: 1, awaitingPlug: 1, linked: 0, popped: 0, vanishing: 0 });
+    expect(f.summary.textContent)
+      .toBe('1 cord, 1 awaiting plug. Press N for a new cord, R to reset.');
+  });
+
+  it('a notice-led repaint leaves the meters exactly what the counts say (the line is speech, not state)', () => {
+    const { panel, fixture } = makePanel();
+    const f = fixture();
+    panel.update({ cords: 2, awaitingPlug: 1, linked: 0, popped: 0, vanishing: 0 });
+    panel.update({ cords: 2, awaitingPlug: 1, linked: 0, popped: 0, vanishing: 1 }, vanishNotice(1));
+    expect(f.litCords()).toBe(2); // meters still honest — no phantom segment
+    expect(f.litLinked()).toBe(0);
+    expect(f.countText('cords')).toBe('2');
+    expect(f.countText('linked')).toBe('0');
+    // The notice is not state: an identical frame WITHOUT it gates shut again.
+    const spoken = f.summary.textContent;
+    panel.update({ cords: 2, awaitingPlug: 1, linked: 0, popped: 0, vanishing: 1 });
+    expect(f.summary.textContent).toBe(spoken);
   });
 });
 

@@ -157,8 +157,9 @@
  *   through LIFE-2's fade with no flash at expiry). The renderer derives
  *   everything else: stretch ticks on taut carried/awaiting-plug cords
  *   (silkscreen furniture), the cord's countdown dimming, and the popped
- *   jack's low-battery band blink in the final second (steady under reduced
- *   motion). The shatter event also names the failing end's POLARITY (index
+ *   jack's low-battery band blink through the grace window's final half,
+ *   quickening toward expiry (steady under reduced motion). The shatter
+ *   event also names the failing end's POLARITY (index
  *   0 is the red input end for every production cord — INT-4's spawn law),
  *   so the burst carries a red or blue BAND shard: THAT end dying.
  * - A11Y-1 — THE ACCESSIBILITY FLOOR, composed here because the preference
@@ -229,7 +230,7 @@ import type { CarryController } from './interaction/carry';
 import { createCubeDragController } from './interaction/cubeDrag';
 import { createSocketRegistry, pickSeatTarget, planSeat } from './interaction/socket';
 import { createHudPanel } from './hud/panel';
-import { createHudCounts, readHudCountsInto } from './hud/model';
+import { createHudCounts, readHudCountsInto, vanishNotice } from './hud/model';
 
 const app = document.querySelector<HTMLDivElement>('#app');
 if (!app) {
@@ -507,6 +508,14 @@ function prefersReducedMotion(): boolean {
 }
 
 /**
+ * REFINE-1 — vanish sequences that BEGAN inside the current frame's substeps
+ * (the 'start' event, either entry path: grace expiry or the off-cube
+ * release). Consumed by the frame loop's HUD update, which folds it into ONE
+ * `vanishNotice` line — the failure is named once per death, never spammed.
+ */
+let vanishStartsSinceUpdate = 0;
+
+/**
  * THE SHADOW-HAZARD FIX (LIFE-1 verifier's carry-forward): take one end's
  * jack proxy out of the pick set. Un-registering is what un-shadows the host
  * cube's face (the render layer also drops its proxies' raycast layers at
@@ -533,6 +542,11 @@ function handleVanishEvent(event: VanishEvent): void {
   const slot: 0 | 1 | null = event.end === null ? null : event.end === 0 ? 0 : 1;
   switch (event.kind) {
     case 'start': {
+      // REFINE-1 — the failure's one spoken line: the death counts here
+      // (whatever the bookkeeping below finds), and the frame loop's HUD
+      // update turns this frame's vanish starts into ONE notice riding the
+      // next summary repaint — the screen reader's "why did it die".
+      vanishStartsSinceUpdate += 1;
       // The failing end is a free rope end from here: nobody may hold or
       // target it (the world ignores carry intents on vanishing cords; this
       // side stops COMPOSING them), and its proxy stops shadowing whatever
@@ -1366,8 +1380,15 @@ render.start((dtSeconds) => {
 
   // T-REN-3 — the faceplate reads the SIM's truth once per frame: the live
   // cord list plus each cord's lifecycle state. The panel gates on equality
-  // (model.ts), so an unchanged scene touches no DOM.
-  hud.update(readHudCountsInto(simState.cords, world.lifecycle.stateOf, hudCounts));
+  // (model.ts), so an unchanged scene touches no DOM. REFINE-1: any vanish
+  // that began inside this frame's substeps rides ONE failure notice on this
+  // repaint ("Cord shattered — unplugged." — the critique's "why did it
+  // die"); popped→vanishing always moves the counts, so the notice is
+  // consumed the same frame it fires, spoken exactly once.
+  const vanishNoticeLine =
+    vanishStartsSinceUpdate > 0 ? vanishNotice(vanishStartsSinceUpdate) : null;
+  vanishStartsSinceUpdate = 0;
+  hud.update(readHudCountsInto(simState.cords, world.lifecycle.stateOf, hudCounts), vanishNoticeLine);
 
   // LIFE-2 — the vanish fade: the choreography's pull-window progress drives
   // the render (tube opacity + riding-jack scale). One map probe per live

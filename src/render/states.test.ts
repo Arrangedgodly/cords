@@ -1,14 +1,16 @@
 /**
  * T-REN-5 — STATE PAINT, the pure laws (src/render/states.ts): stretch-tick
  * appearance keyed on tautness (appear past the threshold, vanish at rest),
- * the grace dimming's monotone countdown, and the final-second band blink
- * (sim-clock-deterministic; steady under reduced motion). Pure math — no
- * three.js, no DOM, no clock.
+ * the grace dimming's monotone countdown, and the final-half band blink
+ * (sim-clock-deterministic, quickening toward expiry; steady under reduced
+ * motion). Pure math — no three.js, no DOM, no clock.
  */
 import { describe, expect, it } from 'vitest';
 import {
   GRACE_BLINK_DUTY,
   GRACE_BLINK_FINAL_SECONDS,
+  GRACE_BLINK_HZ,
+  GRACE_BLINK_HZ_URGENT,
   GRACE_DIM_FLOOR,
   TICK_APPEAR_AT,
   TICK_FULL_AT,
@@ -98,7 +100,7 @@ describe('T-REN-5 — graceDimming (the visible countdown)', () => {
 describe('T-REN-5 — graceBlinkOn (the low-battery LED law)', () => {
   const WINDOW = 3;
 
-  it('steady LIT through the window until the final second begins', () => {
+  it('steady LIT through the window until the final half begins', () => {
     for (let t = 0; t < 40; t += 1) {
       const remaining = GRACE_BLINK_FINAL_SECONDS + (t / 40) * (WINDOW - GRACE_BLINK_FINAL_SECONDS);
       expect(graceBlinkOn(remaining, t * 0.137)).toBe(true);
@@ -120,14 +122,63 @@ describe('T-REN-5 — graceBlinkOn (the low-battery LED law)', () => {
     }
     expect(lit).toBeGreaterThan(0);
     expect(lit).toBeLessThan(total); // it BLINKS, not glows steady
-    // Duty is honest: the lit fraction sits at GRACE_BLINK_DUTY (3 Hz × 1 s).
+    // Duty is honest: the lit fraction sits at GRACE_BLINK_DUTY.
     const duty = lit / total;
     expect(Math.abs(duty - GRACE_BLINK_DUTY)).toBeLessThan(0.05);
+  });
+
+  it('REFINE-1: the blink already speaks at 1.2s remaining — half the window, not its last second', () => {
+    // The critique's ruling: the old law blinked only under 1.0s, so the
+    // countdown was invisible at the decision moment. 1.2s remaining sits
+    // inside the new 1.5s window (and inside its FIRST half — the base
+    // tempo band) and must flicker: both phases over one sim second.
+    const DT = 1 / 120;
+    let lit = 0;
+    for (let i = 0; i < 120; i += 1) {
+      if (graceBlinkOn(1.2, i * DT)) lit += 1;
+    }
+    expect(lit).toBeGreaterThan(0);
+    expect(lit).toBeLessThan(120); // blinking, not steady
+    expect(graceBlinkOn(1.2 + 1e-9, 0)).toBe(true); // and 1.2s+ is past-free
+    expect(graceBlinkOn(GRACE_BLINK_FINAL_SECONDS + 0.01, 7.7)).toBe(true); // steady above the window
+  });
+
+  it('REFINE-1: the tempo RAMPS — the window’s last half flickers faster than its first', () => {
+    // Falling (lit→off) edges over one sim second at sim cadence: the base
+    // band (remaining 1.2, inside the first half of the 1.5s window) blinks
+    // at GRACE_BLINK_HZ; the urgent band (remaining 0.4, inside the last
+    // half) at GRACE_BLINK_HZ_URGENT. Deterministic pins with one edge of
+    // sampling slack.
+    const DT = 1 / 120;
+    const fallingEdges = (remaining: number): number => {
+      let edges = 0;
+      let prev = graceBlinkOn(remaining, 0);
+      for (let i = 1; i < 120; i += 1) {
+        const now = graceBlinkOn(remaining, i * DT);
+        if (prev && !now) edges += 1;
+        prev = now;
+      }
+      return edges;
+    };
+    const base = fallingEdges(1.2);
+    const urgent = fallingEdges(0.4);
+    expect(base).toBeGreaterThanOrEqual(GRACE_BLINK_HZ - 1);
+    expect(base).toBeLessThanOrEqual(GRACE_BLINK_HZ + 1);
+    expect(urgent).toBeGreaterThanOrEqual(GRACE_BLINK_HZ_URGENT - 1);
+    expect(urgent).toBeLessThanOrEqual(GRACE_BLINK_HZ_URGENT + 1);
+    expect(urgent).toBeGreaterThan(base); // dying quickens — the ramp is real
   });
 
   it('reduced motion NEVER blinks — the band stays steady (the A11Y-1 seam)', () => {
     for (let i = 0; i < 240; i += 1) {
       expect(graceBlinkOn(0.01, i * (1 / 120), { reduced: true })).toBe(true);
+    }
+    // REFINE-1: the widened window keeps the same seam — every remaining
+    // inside it (early band included) holds steady under reduced motion.
+    for (const remaining of [1.49, 1.2, 0.75, 0.4, 0.01]) {
+      for (let i = 0; i < 120; i += 1) {
+        expect(graceBlinkOn(remaining, i * (1 / 120), { reduced: true })).toBe(true);
+      }
     }
   });
 

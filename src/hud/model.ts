@@ -11,9 +11,12 @@
  *     LINKED segmented readouts and the scene summary.
  *   litSegments(count, segments) — how many meter segments light (a level
  *     meter pegs at its last segment; the numeral carries the exact value).
- *   sceneSummary(counts) — the aria-live sentence ("3 cords, 1 awaiting
- *     plug, 2 linked" + the N/R action hint; total over every lifecycle
- *     transition — the A11Y-1 audit).
+ *   sceneSummary(counts, notice?) — the aria-live sentence ("3 cords, 1
+ *     awaiting plug, 2 linked" + the N/R action hint; total over every
+ *     lifecycle transition — the A11Y-1 audit), optionally led by the
+ *     one-shot failure line (REFINE-1, see vanishNotice).
+ *   vanishNotice(count) — the failure's one spoken line ("Cord shattered —
+ *     unplugged."), prepended to exactly one summary repaint per death.
  *
  * Pure TypeScript plain data: no three.js, no DOM, no wall-clock, no RNG
  * (the sim's house rules — this module is unit-testable headless and stays
@@ -137,13 +140,27 @@ export function litSegments(count: number, segments: number = HUD_SEGMENTS): num
  * R is omitted there on purpose: resetting an empty bench does nothing, and
  * the summary does not advertise no-ops.
  *
+ * REFINE-1 — `notice` (the critique's "why did it die"): a ONE-SHOT event
+ * line the composition prepends when a cord's vanish BEGINS (see
+ * vanishNotice). It rides exactly ONE repaint of the region — the death is
+ * named once, ahead of the counts, and the despawn's own counts rewrite
+ * retires it — so the failure is explained without spamming the channel.
+ *
  * BOUNDARY (A11Y-1, documented): the keyboard floor is SPAWN + RESET +
  * summary. Plugging a jack needs pointer aiming (no approved keyboard plug
  * path exists), so the hint names only the actions a keyboard alone can
  * actually complete.
  */
-export function sceneSummary(counts: Readonly<HudCounts>): string {
-  if (counts.cords <= 0) return 'No cords on the bench. Press N for a new cord.';
+export function sceneSummary(counts: Readonly<HudCounts>, notice?: string | null): string {
+  const body =
+    counts.cords <= 0
+      ? 'No cords on the bench. Press N for a new cord.'
+      : `${summaryParts(counts).join(', ')}. Press N for a new cord, R to reset.`;
+  return typeof notice === 'string' && notice.length > 0 ? `${notice} ${body}` : body;
+}
+
+/** The counts clause shared by every non-empty summary sentence. */
+function summaryParts(counts: Readonly<HudCounts>): string[] {
   const parts: string[] = [`${counts.cords} cord${counts.cords === 1 ? '' : 's'}`];
   if (counts.awaitingPlug > 0) {
     parts.push(`${counts.awaitingPlug} awaiting plug${counts.awaitingPlug === 1 ? '' : 's'}`);
@@ -151,5 +168,18 @@ export function sceneSummary(counts: Readonly<HudCounts>): string {
   if (counts.linked > 0) parts.push(`${counts.linked} linked`);
   if (counts.popped > 0) parts.push(`${counts.popped} popped`);
   if (counts.vanishing > 0) parts.push(`${counts.vanishing} vanishing`);
-  return `${parts.join(', ')}. Press N for a new cord, R to reset.`;
+  return parts;
+}
+
+/**
+ * REFINE-1 — the failure's one spoken line, for the live region's `notice`:
+ * when a cord's vanish begins (either entry path — the popped grace
+ * expiring, or the off-cube release of a half-plugged cord), the jack
+ * shatters and the cord was unplugged, so ONE sentence names every death
+ * the lifecycle owns. `count` deaths beginning in the same frame speak as
+ * one pluralized line (no spam); garbage counts fail to the singular.
+ */
+export function vanishNotice(count: number): string {
+  const n = Number.isFinite(count) && count > 1 ? Math.floor(count) : 1;
+  return n === 1 ? 'Cord shattered — unplugged.' : `${n} cords shattered — unplugged.`;
 }

@@ -20,10 +20,13 @@
  *   and the moment the window closes LIFE-2's fade owns the tube from there
  *   (the two compose multiplicatively — no flash back to full at expiry).
  * - GRACE BLINK (`graceBlinkOn`): the popped jack's color band as a
- *   low-battery LED — steady through the window, then flickering in the
- *   FINAL second (duty < 1 so it reads as dying, not strobing). Pure in the
- *   sim clock: deterministic, testable. REDUCED MOTION = steady (no blink)
- *   — the A11Y-1 seam; the dimming stays (it is state, not motion).
+ *   low-battery LED — steady through the window's first half, then flickering
+ *   through the FINAL half (duty < 1 so it reads as dying, not strobing), the
+ *   tempo stepping up as expiry nears (REFINE-1: the critique ruled the old
+ *   final-1s blink illegible at decision time — the countdown now signals
+ *   through half its window). Pure in the sim clock: deterministic,
+ *   testable. REDUCED MOTION = steady (no blink) — the A11Y-1 seam; the
+ *   dimming stays (it is state, not motion).
  *
  * Headless-testable: zero imports, zero DOM, zero three.js.
  */
@@ -46,13 +49,25 @@ export const TICK_FULL_AT = 0.985;
 export const GRACE_DIM_FLOOR = 0.22;
 
 /**
- * The blink window: the jack's band flickers only in the final this-many
- * seconds of the grace (a low-battery LED is quiet until it is dying).
+ * The blink window: the jack's band flickers through the final this-many
+ * seconds of the grace — HALF the production ~3s window (REFINE-1: a
+ * low-battery LED that only flickers in its last second is illegible at the
+ * decision moment; half the window reads as a countdown, not a surprise).
  */
-export const GRACE_BLINK_FINAL_SECONDS = 1.0;
+export const GRACE_BLINK_FINAL_SECONDS = 1.5;
 
-/** Blink tempo (Hz) inside the final window. */
+/** Blink tempo (Hz) in the blink window's FIRST half (the flicker waking up). */
 export const GRACE_BLINK_HZ = 3;
+
+/**
+ * Blink tempo (Hz) in the blink window's LAST half — REFINE-1's stepped
+ * urgency ramp: the flicker quickens as expiry nears. Stepped, not
+ * continuous, on purpose: the phase stays keyed on the absolute sim clock,
+ * and a continuously varying rate would swing the phase's time derivative
+ * with the (unbounded) sim time itself — aliasing the blink into noise. A
+ * two-step band keeps every half a clean pure frequency.
+ */
+export const GRACE_BLINK_HZ_URGENT = 5;
 
 /** Fraction of each blink period the band stays LIT (dying flicker, not strobe). */
 export const GRACE_BLINK_DUTY = 0.65;
@@ -90,10 +105,11 @@ export function graceDimming(graceRemaining: number, windowSeconds = 3): number 
 /**
  * Is the popped jack's color band LIT this frame? True (steady) through the
  * window until GRACE_BLINK_FINAL_SECONDS remain, then a deterministic
- * sim-clock flicker at GRACE_BLINK_HZ / GRACE_BLINK_DUTY. `reduced` (the
- * A11Y-1 seam, wired from prefers-reduced-motion) holds the band STEADY —
- * reduced motion means no blink; the cord's dimming stays (it is state).
- * Garbage inputs fail LIT.
+ * sim-clock flicker — base tempo in the window's first half, the faster
+ * GRACE_BLINK_HZ_URGENT in its last (REFINE-1's stepped urgency ramp), at
+ * GRACE_BLINK_DUTY. `reduced` (the A11Y-1 seam, wired from
+ * prefers-reduced-motion) holds the band STEADY — reduced motion means no
+ * blink; the cord's dimming stays (it is state). Garbage inputs fail LIT.
  */
 export function graceBlinkOn(
   graceRemaining: number,
@@ -106,10 +122,14 @@ export function graceBlinkOn(
     ? (options.finalSeconds as number)
     : GRACE_BLINK_FINAL_SECONDS;
   if (graceRemaining >= finalSeconds) return true; // steady outside the window
+  const duty = clamp01(Number.isFinite(options.duty) ? (options.duty as number) : GRACE_BLINK_DUTY);
+  // An explicit `hz` is the tuner's FLAT law; the default is the stepped
+  // ramp (base through the window's first half, urgent through its last).
   const hz = Number.isFinite(options.hz) && (options.hz as number) > 0
     ? (options.hz as number)
-    : GRACE_BLINK_HZ;
-  const duty = clamp01(Number.isFinite(options.duty) ? (options.duty as number) : GRACE_BLINK_DUTY);
+    : graceRemaining > finalSeconds / 2
+      ? GRACE_BLINK_HZ
+      : GRACE_BLINK_HZ_URGENT;
   const phase = (simTime * hz) % 1;
   return phase < duty;
 }

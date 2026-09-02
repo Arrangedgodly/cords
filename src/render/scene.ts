@@ -91,9 +91,10 @@
  *   stretch and vanish at rest, linked/popped/vanishing cords carry none.
  * - POPPED GRACE: the cord dims linearly toward states.ts's floor through
  *   the ~3s window (the visible countdown), and the popped jack's color band
- *   blinks like a low-battery LED in the final second — reduced motion holds
- *   the band steady (the A11Y seam). The dim composes multiplicatively with
- *   LIFE-2's vanish fade, so the expiry hand-off never flashes back to full.
+ *   blinks like a low-battery LED through the window's final half,
+ *   quickening toward expiry — reduced motion holds the band steady (the
+ *   A11Y seam). The dim composes multiplicatively with LIFE-2's vanish fade,
+ *   so the expiry hand-off never flashes back to full.
  * - SHATTER (LIFE-2's first pass, refined): small dark METAL shards plus one
  *   red/blue BAND shard (the failure reads as THAT end dying), two floor
  *   bounces then a friction slide, resting briefly and scaling out with the
@@ -413,7 +414,8 @@ const CUBE_COLORS = [
   '#e8433f', // signal red
   '#f2903a', // tangerine
   '#f2d43a', // sulfur yellow
-  '#58c470', // jade
+  '#2fbd72', // jade — REFINE-2: cooler/deeper green (was #58c470, HSV hue 133°);
+             // beside the CORDS amber it read amber-warm at meter scale
   '#3ec8d8', // reef cyan
   '#4a7df2', // cobalt
   '#d857c8', // magenta
@@ -992,8 +994,19 @@ const PLUG_RADIAL_SEGMENTS = 16;
 /** Red input coding (PRODUCT.md) — deep signal red; it must survive the
  * warm key without drifting to orange. */
 const PLUG_RED = 0xc22e26;
-/** Blue output coding — the palette's cobalt, readable against charcoal. */
-const PLUG_BLUE = 0x4a7df2;
+/**
+ * Blue output coding — REFINE-2: a deeper cobalt than the cube zone's
+ * (#4a7df2 → #2e58de; G/B 0.52 → 0.40, same hue family, +0.02 OKLCH chroma),
+ * the exact treatment PLUG_RED already documents: the warm key (#ffd2a0,
+ * ACES 1.45) drains the blue channel and lifts green, and the old band's
+ * carry-distance pixels rendered ~(79,104,154) — desaturated slate that read
+ * teal/gray mid-air. Measured at the critique's own carry point, the deeper
+ * albedo renders (65,91,173) — hue 220.6°→225.8°, sat 0.49→0.64 — while the
+ * red control holds (206,64,48); like-for-like with the red (OKLCH L 51.7
+ * vs the red's 53.6 — the polarity pair sits at matched lightness and
+ * differentiates by hue alone).
+ */
+const PLUG_BLUE = 0x2e58de;
 /**
  * REN-4 — the seated-jack LIT ACCENT (the approved reading: "the pulse +
  * seated jacks may read lit"): a linked cord's seated plugs brighten their
@@ -1290,7 +1303,20 @@ const FRAGMENT_GRAVITY = 9.81;
 const FRAGMENT_RESTITUTIONS = [0.4, 0.22] as const;
 /** Rest-slide friction, per second (exponential decay — dt-honest). */
 const FRAGMENT_SLIDE_FRICTION = 9;
-const FRAGMENT_BASE_SIZE = 0.02; // a shard of the plug's own scale
+/**
+ * REFINE-1 — the burst's default shard count: 18 (was 14). The critique read
+ * the old burst as "a few pixels" at full-frame distance; three more steel
+ * pieces + one more band piece restore the "jack broke" read while staying
+ * far inside the 64-slot pool (three concurrent bursts before wrap).
+ */
+const FRAGMENT_BURST_COUNT = 18;
+/**
+ * REFINE-1 — a shard of the plug's own scale: base 0.03 (was 0.02). At the
+ * bench's ~173 px/world-unit the old 0.024–0.032 rendered shards were 4–5 px
+ * of noise; 0.03 with the widened scale range below puts steel at ~6–9 px and
+ * the band piece at ~10 px — legible metal, still zero glow.
+ */
+const FRAGMENT_BASE_SIZE = 0.03;
 /**
  * The dark-steel shard ink, PER CHANNEL (a numeric hex RANGE would carry
  * bytes across channels): the base byte varies 0x23..0x3a (slight LCG
@@ -1388,7 +1414,7 @@ export class FragmentPool {
     options: { count?: number; reduced?: boolean; band?: 'red' | 'blue' } = {},
   ): number {
     if (options.reduced === true) return 0;
-    const count = Math.max(0, Math.min(options.count ?? 14, this.capacity));
+    const count = Math.max(0, Math.min(options.count ?? FRAGMENT_BURST_COUNT, this.capacity));
     const bandHex = options.band === 'red' ? PLUG_RED : options.band === 'blue' ? PLUG_BLUE : null;
     for (let k = 0; k < count; k += 1) {
       const slot = this.cursor;
@@ -1406,7 +1432,9 @@ export class FragmentPool {
       this.vx[slot] = cosE * Math.cos(theta) * speed;
       this.vy[slot] = Math.sin(elevation) * speed;
       this.vz[slot] = cosE * Math.sin(theta) * speed;
-      this.size[slot] = 0.6 + this.nextRandom();
+      // REFINE-1 — scale range widened 0.6–1.6 → 0.75–1.75 so every shard
+      // clears the pixel-noise floor at full-frame camera distance.
+      this.size[slot] = 0.75 + this.nextRandom();
       this.yaw[slot] = this.nextRandom() * Math.PI * 2;
       this.pitch[slot] = this.nextRandom() * Math.PI;
       this.spin[slot] = (this.nextRandom() > 0.5 ? 1 : -1) * (2 + this.nextRandom() * 4);
@@ -1418,7 +1446,7 @@ export class FragmentPool {
       const isBand = bandHex !== null && (k === 0 || k === Math.min(3, count - 1));
       if (isBand) {
         this.scratchColor.setHex(bandHex);
-        if (k === 0) this.size[slot] = Math.max(this.size[slot], 1.45); // the big one
+        if (k === 0) this.size[slot] = Math.max(this.size[slot], 1.8); // the big one
       } else {
         const base =
           FRAGMENT_STEEL_MIN_BYTE + Math.floor(this.nextRandom() * FRAGMENT_STEEL_RANGE_BYTE);
@@ -1680,7 +1708,8 @@ export class CordView {
     const arc = this.tube.measuredArc;
     this.tickSpacing.value = arc > 1e-9 ? this.segmentLength / arc : 0.25;
     // Grace: the tube dims toward the floor, and the failing jack's band
-    // blinks in the final second (steady under reduced motion — A11Y-1).
+    // blinks through the final half of the window, quickening toward expiry
+    // (steady under reduced motion — A11Y-1).
     let bandOff = false;
     if (inGrace && paint !== undefined) {
       const g = paint.grace as CordGraceInfo;

@@ -296,8 +296,8 @@ describe('T-LIFE-2 — FragmentPool (the shatter’s first-pass effect)', () => 
   it('bursts pooled dark shards at the impact point, ballistic and finite, and clears after its life', () => {
     const pool = new FragmentPool(new THREE.MeshStandardMaterial(), 32);
     const n = pool.burst({ x: 0.2, y: 0.05, z: -0.1 });
-    expect(n).toBe(14); // the default count
-    expect(pool.activeCount).toBe(14);
+    expect(n).toBe(18); // the default count (REFINE-1: 14 → 18, legibility)
+    expect(pool.activeCount).toBe(18);
     const mesh = pool.mesh;
     expect(mesh.count).toBe(32); // the full pool: dead slots carry zero matrices
     // Advance past the (longest) life: everything expires, nothing draws.
@@ -327,7 +327,7 @@ describe('T-LIFE-2 — FragmentPool (the shatter’s first-pass effect)', () => 
         }
       }
     }
-    expect(peak).toBe(14); // all live until expiry begins
+    expect(peak).toBe(18); // all live until expiry begins
     expect(pool.activeCount).toBe(0); // 1.1s > max life 0.55·1.15
   });
 
@@ -1105,9 +1105,9 @@ describe('T-REN-5 — FragmentPool, refined to the panel grammar', () => {
       else if (r < 0.2) steelShards += 1;
     }
     expect(redShards).toBe(2); // the band breaks into exactly two readable pieces
-    expect(steelShards).toBe(12); // the rest is dark metal
+    expect(steelShards).toBe(16); // the rest is dark metal (18 − 2 band)
     const first = readSlot(pool, 0);
-    expect(first.s).toBeGreaterThanOrEqual(1.44); // the big one leads (f32)
+    expect(first.s).toBeGreaterThanOrEqual(1.79); // the big one leads (f32; REFINE-1 floor 1.8)
 
     const blue = new FragmentPool(new THREE.MeshStandardMaterial(), 32);
     blue.burst(IMPACT, { band: 'blue' });
@@ -1120,7 +1120,7 @@ describe('T-REN-5 — FragmentPool, refined to the panel grammar', () => {
     const pool = new FragmentPool(new THREE.MeshStandardMaterial(), 32);
     pool.burst(IMPACT);
     const color = pool.mesh.instanceColor!;
-    for (let slot = 0; slot < 14; slot += 1) {
+    for (let slot = 0; slot < 18; slot += 1) {
       expect(color.getX(slot)).toBeLessThan(0.2);
       expect(color.getY(slot)).toBeLessThan(0.2);
       expect(color.getZ(slot)).toBeLessThan(0.2);
@@ -1133,12 +1133,12 @@ describe('T-REN-5 — FragmentPool, refined to the panel grammar', () => {
     // Fine sampling (240 Hz): the SECOND bounce's small rise resolves between
     // the 60 Hz frames it hides inside.
     const DT = 1 / 240;
-    const xs: number[][] = Array.from({ length: 14 }, () => []);
-    const ys: number[][] = Array.from({ length: 14 }, () => []);
+    const xs: number[][] = Array.from({ length: 18 }, () => []);
+    const ys: number[][] = Array.from({ length: 18 }, () => []);
     for (let f = 0; f < 720; f += 1) {
       pool.update(DT);
       const m = pool.mesh.instanceMatrix.array as Float32Array;
-      for (let slot = 0; slot < 14; slot += 1) {
+      for (let slot = 0; slot < 18; slot += 1) {
         xs[slot].push(m[slot * 16 + 12]);
         ys[slot].push(m[slot * 16 + 13]);
       }
@@ -1146,7 +1146,7 @@ describe('T-REN-5 — FragmentPool, refined to the panel grammar', () => {
     // BOUNCE = touching a running minimum of height, then rising off it.
     let totalBounces = 0;
     let maxBounces = 0;
-    for (let slot = 0; slot < 14; slot += 1) {
+    for (let slot = 0; slot < 18; slot += 1) {
       let minSoFar = Infinity;
       let bounces = 0;
       for (let i = 0; i < ys[slot].length - 1; i += 1) {
@@ -1157,14 +1157,14 @@ describe('T-REN-5 — FragmentPool, refined to the panel grammar', () => {
       totalBounces += bounces;
       maxBounces = Math.max(maxBounces, bounces);
     }
-    expect(totalBounces).toBeGreaterThanOrEqual(14); // every shard bounces at least once
+    expect(totalBounces).toBeGreaterThanOrEqual(18); // every shard bounces at least once
     expect(maxBounces).toBeGreaterThanOrEqual(2); // and at least one bounces a couple of times
     // SLIDE: after a shard's first sustained rest, it keeps traveling while
     // friction eats the run — the first 0.125s of the resting slide must
     // outrun the next (accumulated only while the shard is still alive).
     let slideEarly = 0;
     let slideLate = 0;
-    for (let slot = 0; slot < 14; slot += 1) {
+    for (let slot = 0; slot < 18; slot += 1) {
       let minSoFar = Infinity;
       let rest0 = -1;
       for (let i = 0; i < ys[slot].length; i += 1) {

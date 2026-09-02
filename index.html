@@ -26,9 +26,11 @@
        *
        * Contrast (WCAG, on the panel #17191d unless noted): legends #c3c8d1
        * 10.48:1 · nameplate #e8e3d5 13.73:1 · dim ink #9aa0ab 6.70:1 · amber
-       * LED #f2d43a 11.95:1 · jade LED #58c470 8.00:1 · cap ink #d9dde4 on
-       * #242930 10.74:1 · key chip #b6bcc6 on #2c323b 6.76:1 · focus
-       * bracket amber 11.95:1 (non-text, needs 3:1). All >= 4.5:1.
+       * LED #f2d43a 11.95:1 · jade LED #2fbd72 7.24:1 (REFINE-2: was #58c470
+       * 8.00:1 — cooled/deepened so the LINKED row never reads amber-warm
+       * beside the CORDS row; hue 133°→148°, sat 0.55→0.75, deeper L) · cap
+       * ink #d9dde4 on #242930 10.74:1 · key chip #b6bcc6 on #2c323b 6.76:1 ·
+       * focus bracket amber 11.95:1 (non-text, needs 3:1). All >= 4.5:1.
        * ------------------------------------------------------------------- */
       .hud {
         position: fixed;
@@ -112,9 +114,12 @@
         box-shadow: 0 0 6px rgba(242, 212, 58, 0.45);
       }
       .led-jade .hud-seg.lit {
-        background: #58c470; /* jade — the LINKED row */
-        border-color: #2c7f46;
-        box-shadow: 0 0 6px rgba(88, 196, 112, 0.4);
+        background: #2fbd72; /* jade — the LINKED row. REFINE-2: cooled to hue
+                                148° and deepened (was #58c470 / 133°, which
+                                read amber-warm beside the CORDS amber); the
+                                two meter rows now differ by hue AND depth */
+        border-color: #1f7a4a;
+        box-shadow: 0 0 6px rgba(47, 189, 114, 0.4);
       }
       .hud-count {
         min-width: 2.5ch;
@@ -128,22 +133,26 @@
         color: #f2d43a;
       }
       .led-jade .hud-count {
-        color: #58c470;
+        color: #2fbd72;
       }
       .hud-count.is-zero {
         color: #9aa0ab; /* zero is an unlit state */
       }
 
-      /* Empty-scene invitation (surface brief): one dim silkscreen line that
-       * names the real state — gone the moment a cord exists. */
+      /* Empty-scene invitation (surface brief): one silkscreen line that
+       * names the real state — gone the moment a cord exists. REFINE-1: this
+       * is the page's ONLY first-run instruction, so it prints at the meter
+       * labels' own legibility — 12px/700 Legend Ink (10.48:1) — still
+       * honest furniture inside the 9–15px silkscreen scale, no longer a
+       * 10px Dim-Ink whisper a first-timer can miss. */
       .hud-hint {
         flex: 1;
         margin: 0;
         text-align: center;
-        font-size: 10px;
-        font-weight: 600;
+        font-size: 12px;
+        font-weight: 700;
         letter-spacing: 0.2em;
-        color: #9aa0ab;
+        color: #c3c8d1; /* legend ink — the labels' class, readable at rest */
         visibility: hidden;
       }
       .hud.is-empty .hud-hint {

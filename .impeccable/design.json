@@ -1,0 +1,695 @@
+{
+  "schemaVersion": 2,
+  "generatedAt": "2026-09-02T08:50:16.000Z",
+  "title": "Design System: Cords",
+  "extensions": {
+    "colorMeta": {
+      "signal-red": {
+        "role": "secondary",
+        "displayName": "Signal Red",
+        "canonical": "#e8433f",
+        "tonalRamp": [
+          "oklch(15.0% 0.071 26.4)",
+          "oklch(26.4% 0.133 26.4)",
+          "oklch(37.9% 0.202 26.4)",
+          "oklch(49.3% 0.202 26.4)",
+          "oklch(60.7% 0.202 26.4)",
+          "oklch(72.1% 0.202 26.4)",
+          "oklch(83.6% 0.149 26.4)",
+          "oklch(95.0% 0.071 26.4)"
+        ],
+        "purpose": "Cube 01 candy zone."
+      },
+      "tangerine": {
+        "role": "tertiary",
+        "displayName": "Tangerine",
+        "canonical": "#f2903a",
+        "tonalRamp": [
+          "oklch(15.0% 0.054 57.8)",
+          "oklch(26.4% 0.100 57.8)",
+          "oklch(37.9% 0.153 57.8)",
+          "oklch(49.3% 0.153 57.8)",
+          "oklch(60.7% 0.153 57.8)",
+          "oklch(72.1% 0.153 57.8)",
+          "oklch(83.6% 0.113 57.8)",
+          "oklch(95.0% 0.054 57.8)"
+        ],
+        "purpose": "Cube 02 candy zone."
+      },
+      "sulfur-yellow": {
+        "role": "primary",
+        "displayName": "Sulfur Yellow",
+        "canonical": "#f2d43a",
+        "tonalRamp": [
+          "oklch(15.0% 0.057 97.5)",
+          "oklch(26.4% 0.108 97.5)",
+          "oklch(37.9% 0.164 97.5)",
+          "oklch(49.3% 0.164 97.5)",
+          "oklch(60.7% 0.164 97.5)",
+          "oklch(72.1% 0.164 97.5)",
+          "oklch(83.6% 0.121 97.5)",
+          "oklch(95.0% 0.057 97.5)"
+        ],
+        "purpose": "Lit CORDS segments + numeral, the linked cord chase pulse, the focus bracket."
+      },
+      "jade": {
+        "role": "primary",
+        "displayName": "Jade",
+        "canonical": "#2fbd72",
+        "tonalRamp": [
+          "oklch(15.0% 0.057 154.7)",
+          "oklch(26.4% 0.106 154.7)",
+          "oklch(37.9% 0.161 154.7)",
+          "oklch(49.3% 0.161 154.7)",
+          "oklch(60.7% 0.161 154.7)",
+          "oklch(72.1% 0.161 154.7)",
+          "oklch(83.6% 0.119 154.7)",
+          "oklch(95.0% 0.057 154.7)"
+        ],
+        "purpose": "Lit LINKED segments + numeral; cube 04 candy zone. REFINE-2: cooled 133°→148° and deepened (was #58c470, which read amber-warm beside the CORDS amber) — 7.24:1 on the panel."
+      },
+      "reef-cyan": {
+        "role": "tertiary",
+        "displayName": "Reef Cyan",
+        "canonical": "#3ec8d8",
+        "tonalRamp": [
+          "oklch(15.0% 0.041 -153.6)",
+          "oklch(26.4% 0.076 -153.6)",
+          "oklch(37.9% 0.116 -153.6)",
+          "oklch(49.3% 0.116 -153.6)",
+          "oklch(60.7% 0.116 -153.6)",
+          "oklch(72.1% 0.116 -153.6)",
+          "oklch(83.6% 0.086 -153.6)",
+          "oklch(95.0% 0.041 -153.6)"
+        ],
+        "purpose": "Cube 05 candy zone."
+      },
+      "cobalt": {
+        "role": "tertiary",
+        "displayName": "Cobalt",
+        "canonical": "#4a7df2",
+        "tonalRamp": [
+          "oklch(15.0% 0.064 -96.0)",
+          "oklch(26.4% 0.121 -96.0)",
+          "oklch(37.9% 0.184 -96.0)",
+          "oklch(49.3% 0.184 -96.0)",
+          "oklch(60.7% 0.184 -96.0)",
+          "oklch(72.1% 0.184 -96.0)",
+          "oklch(83.6% 0.136 -96.0)",
+          "oklch(95.0% 0.064 -96.0)"
+        ],
+        "purpose": "Cube 06 candy zone. (REFINE-2: the blue plug band moved to its own Plug Blue ink.)"
+      },
+      "magenta": {
+        "role": "tertiary",
+        "displayName": "Magenta",
+        "canonical": "#d857c8",
+        "tonalRamp": [
+          "oklch(15.0% 0.072 -27.2)",
+          "oklch(26.4% 0.136 -27.2)",
+          "oklch(37.9% 0.206 -27.2)",
+          "oklch(49.3% 0.206 -27.2)",
+          "oklch(60.7% 0.206 -27.2)",
+          "oklch(72.1% 0.206 -27.2)",
+          "oklch(83.6% 0.152 -27.2)",
+          "oklch(95.0% 0.072 -27.2)"
+        ],
+        "purpose": "Cube 07 candy zone."
+      },
+      "bone": {
+        "role": "tertiary",
+        "displayName": "Bone",
+        "canonical": "#e8e3d5",
+        "tonalRamp": [
+          "oklch(15.0% 0.007 90.5)",
+          "oklch(26.4% 0.013 90.5)",
+          "oklch(37.9% 0.019 90.5)",
+          "oklch(49.3% 0.019 90.5)",
+          "oklch(60.7% 0.019 90.5)",
+          "oklch(72.1% 0.019 90.5)",
+          "oklch(83.6% 0.014 90.5)",
+          "oklch(95.0% 0.007 90.5)"
+        ],
+        "purpose": "Cube 08 candy zone; the CORDS nameplate ink."
+      },
+      "plug-red": {
+        "role": "secondary",
+        "displayName": "Plug Red",
+        "canonical": "#c22e26",
+        "tonalRamp": [
+          "oklch(15.0% 0.065 28.4)",
+          "oklch(26.4% 0.122 28.4)",
+          "oklch(37.9% 0.186 28.4)",
+          "oklch(49.3% 0.186 28.4)",
+          "oklch(60.7% 0.186 28.4)",
+          "oklch(72.1% 0.186 28.4)",
+          "oklch(83.6% 0.137 28.4)",
+          "oklch(95.0% 0.065 28.4)"
+        ],
+        "purpose": "Red input plug band/boot + the soft-cap deny ring."
+      },
+      "plug-blue": {
+        "role": "secondary",
+        "displayName": "Plug Blue",
+        "canonical": "#2e58de",
+        "tonalRamp": [
+          "oklch(15.0% 0.074 265.8)",
+          "oklch(26.4% 0.138 265.8)",
+          "oklch(37.9% 0.21 265.8)",
+          "oklch(49.3% 0.21 265.8)",
+          "oklch(60.7% 0.21 265.8)",
+          "oklch(72.1% 0.21 265.8)",
+          "oklch(83.6% 0.154 265.8)",
+          "oklch(95.0% 0.074 265.8)"
+        ],
+        "purpose": "Blue output plug band/boot + the blue band shard. REFINE-2: a deeper cobalt than the zone (#4a7df2, which rendered desaturated slate at carry distance under the warm key) — the blue twin of Plug Red's rule; OKLCH L 51.7 sits at Plug Red's 53.6, so the polarity pair differentiates by hue alone."
+      },
+      "stage-void": {
+        "role": "neutral",
+        "displayName": "Stage Void",
+        "canonical": "#111114",
+        "tonalRamp": [
+          "oklch(15.0% 0.002 -74.2)",
+          "oklch(26.4% 0.004 -74.2)",
+          "oklch(37.9% 0.006 -74.2)",
+          "oklch(49.3% 0.006 -74.2)",
+          "oklch(60.7% 0.006 -74.2)",
+          "oklch(72.1% 0.006 -74.2)",
+          "oklch(83.6% 0.005 -74.2)",
+          "oklch(95.0% 0.002 -74.2)"
+        ],
+        "purpose": "Page/scene background + fog color."
+      },
+      "bench-charcoal": {
+        "role": "neutral",
+        "displayName": "Bench Charcoal",
+        "canonical": "#22252a",
+        "tonalRamp": [
+          "oklch(15.0% 0.004 -99.3)",
+          "oklch(26.4% 0.007 -99.3)",
+          "oklch(37.9% 0.010 -99.3)",
+          "oklch(49.3% 0.010 -99.3)",
+          "oklch(60.7% 0.010 -99.3)",
+          "oklch(72.1% 0.010 -99.3)",
+          "oklch(83.6% 0.008 -99.3)",
+          "oklch(95.0% 0.004 -99.3)"
+        ],
+        "purpose": "Floor plate albedo (lit steel, not black)."
+      },
+      "faceplate-charcoal": {
+        "role": "neutral",
+        "displayName": "Faceplate Charcoal",
+        "canonical": "#17191d",
+        "tonalRamp": [
+          "oklch(15.0% 0.003 -95.6)",
+          "oklch(26.4% 0.006 -95.6)",
+          "oklch(37.9% 0.008 -95.6)",
+          "oklch(49.3% 0.008 -95.6)",
+          "oklch(60.7% 0.008 -95.6)",
+          "oklch(72.1% 0.008 -95.6)",
+          "oklch(83.6% 0.006 -95.6)",
+          "oklch(95.0% 0.003 -95.6)"
+        ],
+        "purpose": "HUD strip panel."
+      },
+      "brushed-steel": {
+        "role": "neutral",
+        "displayName": "Brushed Steel",
+        "canonical": "#2a2d31",
+        "tonalRamp": [
+          "oklch(15.0% 0.003 -104.4)",
+          "oklch(26.4% 0.006 -104.4)",
+          "oklch(37.9% 0.008 -104.4)",
+          "oklch(49.3% 0.008 -104.4)",
+          "oklch(60.7% 0.008 -104.4)",
+          "oklch(72.1% 0.008 -104.4)",
+          "oklch(83.6% 0.006 -104.4)",
+          "oklch(95.0% 0.003 -104.4)"
+        ],
+        "purpose": "Cube faceplate base tone."
+      },
+      "cord-rubber": {
+        "role": "neutral",
+        "displayName": "Cord Rubber",
+        "canonical": "#2e3138",
+        "tonalRamp": [
+          "oklch(15.0% 0.005 -92.9)",
+          "oklch(26.4% 0.009 -92.9)",
+          "oklch(37.9% 0.013 -92.9)",
+          "oklch(49.3% 0.013 -92.9)",
+          "oklch(60.7% 0.013 -92.9)",
+          "oklch(72.1% 0.013 -92.9)",
+          "oklch(83.6% 0.010 -92.9)",
+          "oklch(95.0% 0.005 -92.9)"
+        ],
+        "purpose": "The cord tube."
+      },
+      "plug-chrome": {
+        "role": "neutral",
+        "displayName": "Plug Chrome",
+        "canonical": "#d6dade",
+        "tonalRamp": [
+          "oklch(15.0% 0.002 -112.1)",
+          "oklch(26.4% 0.005 -112.1)",
+          "oklch(37.9% 0.007 -112.1)",
+          "oklch(49.3% 0.007 -112.1)",
+          "oklch(60.7% 0.007 -112.1)",
+          "oklch(72.1% 0.007 -112.1)",
+          "oklch(83.6% 0.005 -112.1)",
+          "oklch(95.0% 0.002 -112.1)"
+        ],
+        "purpose": "Plug tip + shaft metal."
+      },
+      "grip-rubber": {
+        "role": "neutral",
+        "displayName": "Grip Rubber",
+        "canonical": "#17181c",
+        "tonalRamp": [
+          "oklch(15.0% 0.003 -85.5)",
+          "oklch(26.4% 0.005 -85.5)",
+          "oklch(37.9% 0.008 -85.5)",
+          "oklch(49.3% 0.008 -85.5)",
+          "oklch(60.7% 0.008 -85.5)",
+          "oklch(72.1% 0.008 -85.5)",
+          "oklch(83.6% 0.006 -85.5)",
+          "oklch(95.0% 0.003 -85.5)"
+        ],
+        "purpose": "Plug knurled grip; blinked-off band ink."
+      },
+      "unlit-slot": {
+        "role": "neutral",
+        "displayName": "Unlit Slot",
+        "canonical": "#232730",
+        "tonalRamp": [
+          "oklch(15.0% 0.006 -93.7)",
+          "oklch(26.4% 0.012 -93.7)",
+          "oklch(37.9% 0.018 -93.7)",
+          "oklch(49.3% 0.018 -93.7)",
+          "oklch(60.7% 0.018 -93.7)",
+          "oklch(72.1% 0.018 -93.7)",
+          "oklch(83.6% 0.013 -93.7)",
+          "oklch(95.0% 0.006 -93.7)"
+        ],
+        "purpose": "Meter segment at rest."
+      },
+      "legend-ink": {
+        "role": "neutral",
+        "displayName": "Legend Ink",
+        "canonical": "#c3c8d1",
+        "tonalRamp": [
+          "oklch(15.0% 0.005 -97.6)",
+          "oklch(26.4% 0.009 -97.6)",
+          "oklch(37.9% 0.014 -97.6)",
+          "oklch(49.3% 0.014 -97.6)",
+          "oklch(60.7% 0.014 -97.6)",
+          "oklch(72.1% 0.014 -97.6)",
+          "oklch(83.6% 0.010 -97.6)",
+          "oklch(95.0% 0.005 -97.6)"
+        ],
+        "purpose": "Meter labels (10.48:1)."
+      },
+      "dim-ink": {
+        "role": "neutral",
+        "displayName": "Dim Ink",
+        "canonical": "#9aa0ab",
+        "tonalRamp": [
+          "oklch(15.0% 0.006 -97.3)",
+          "oklch(26.4% 0.011 -97.3)",
+          "oklch(37.9% 0.017 -97.3)",
+          "oklch(49.3% 0.017 -97.3)",
+          "oklch(60.7% 0.017 -97.3)",
+          "oklch(72.1% 0.017 -97.3)",
+          "oklch(83.6% 0.013 -97.3)",
+          "oklch(95.0% 0.006 -97.3)"
+        ],
+        "purpose": "Zero numerals, subtitle (6.70:1). The empty hint was promoted to Legend Ink (REFINE-1)."
+      },
+      "tick-ink": {
+        "role": "neutral",
+        "displayName": "Tick Ink",
+        "canonical": "#b6bcc6",
+        "tonalRamp": [
+          "oklch(15.0% 0.005 -99.3)",
+          "oklch(26.4% 0.010 -99.3)",
+          "oklch(37.9% 0.016 -99.3)",
+          "oklch(49.3% 0.016 -99.3)",
+          "oklch(60.7% 0.016 -99.3)",
+          "oklch(72.1% 0.016 -99.3)",
+          "oklch(83.6% 0.012 -99.3)",
+          "oklch(95.0% 0.005 -99.3)"
+        ],
+        "purpose": "Stretch-tick registration marks; keycap chip ink (6.76:1)."
+      },
+      "cap-face": {
+        "role": "neutral",
+        "displayName": "Cap Face",
+        "canonical": "#242930",
+        "tonalRamp": [
+          "oklch(15.0% 0.005 -103.2)",
+          "oklch(26.4% 0.010 -103.2)",
+          "oklch(37.9% 0.015 -103.2)",
+          "oklch(49.3% 0.015 -103.2)",
+          "oklch(60.7% 0.015 -103.2)",
+          "oklch(72.1% 0.015 -103.2)",
+          "oklch(83.6% 0.011 -103.2)",
+          "oklch(95.0% 0.005 -103.2)"
+        ],
+        "purpose": "Keycap button rest face."
+      },
+      "cap-hover": {
+        "role": "neutral",
+        "displayName": "Cap Hover",
+        "canonical": "#2b313a",
+        "tonalRamp": [
+          "oklch(15.0% 0.006 -101.6)",
+          "oklch(26.4% 0.012 -101.6)",
+          "oklch(37.9% 0.018 -101.6)",
+          "oklch(49.3% 0.018 -101.6)",
+          "oklch(60.7% 0.018 -101.6)",
+          "oklch(72.1% 0.018 -101.6)",
+          "oklch(83.6% 0.013 -101.6)",
+          "oklch(95.0% 0.006 -101.6)"
+        ],
+        "purpose": "Keycap button hover."
+      },
+      "cap-pressed": {
+        "role": "neutral",
+        "displayName": "Cap Pressed",
+        "canonical": "#1f242b",
+        "tonalRamp": [
+          "oklch(15.0% 0.005 -103.2)",
+          "oklch(26.4% 0.010 -103.2)",
+          "oklch(37.9% 0.015 -103.2)",
+          "oklch(49.3% 0.015 -103.2)",
+          "oklch(60.7% 0.015 -103.2)",
+          "oklch(72.1% 0.015 -103.2)",
+          "oklch(83.6% 0.011 -103.2)",
+          "oklch(95.0% 0.005 -103.2)"
+        ],
+        "purpose": "Keycap button active."
+      },
+      "cap-ink": {
+        "role": "neutral",
+        "displayName": "Cap Ink",
+        "canonical": "#d9dde4",
+        "tonalRamp": [
+          "oklch(15.0% 0.004 -98.2)",
+          "oklch(26.4% 0.007 -98.2)",
+          "oklch(37.9% 0.010 -98.2)",
+          "oklch(49.3% 0.010 -98.2)",
+          "oklch(60.7% 0.010 -98.2)",
+          "oklch(72.1% 0.010 -98.2)",
+          "oklch(83.6% 0.008 -98.2)",
+          "oklch(95.0% 0.004 -98.2)"
+        ],
+        "purpose": "Button text (10.74:1 on cap)."
+      },
+      "key-chip-face": {
+        "role": "neutral",
+        "displayName": "Key Chip Face",
+        "canonical": "#2c323b",
+        "tonalRamp": [
+          "oklch(15.0% 0.006 -101.6)",
+          "oklch(26.4% 0.012 -101.6)",
+          "oklch(37.9% 0.018 -101.6)",
+          "oklch(49.3% 0.018 -101.6)",
+          "oklch(60.7% 0.018 -101.6)",
+          "oklch(72.1% 0.018 -101.6)",
+          "oklch(83.6% 0.013 -101.6)",
+          "oklch(95.0% 0.006 -101.6)"
+        ],
+        "purpose": "Shortcut chip background."
+      },
+      "machined-seam": {
+        "role": "neutral",
+        "displayName": "Machined Seam",
+        "canonical": "#0e1013",
+        "tonalRamp": [
+          "oklch(15.0% 0.002 -101.6)",
+          "oklch(26.4% 0.005 -101.6)",
+          "oklch(37.9% 0.007 -101.6)",
+          "oklch(49.3% 0.007 -101.6)",
+          "oklch(60.7% 0.007 -101.6)",
+          "oklch(72.1% 0.007 -101.6)",
+          "oklch(83.6% 0.005 -101.6)",
+          "oklch(95.0% 0.002 -101.6)"
+        ],
+        "purpose": "Segment/keycap borders; panel seam ink."
+      },
+      "amber-keyline": {
+        "role": "tertiary",
+        "displayName": "Amber Keyline",
+        "canonical": "#a98f1d",
+        "tonalRamp": [
+          "oklch(15.0% 0.044 95.0)",
+          "oklch(26.4% 0.083 95.0)",
+          "oklch(37.9% 0.126 95.0)",
+          "oklch(49.3% 0.126 95.0)",
+          "oklch(60.7% 0.126 95.0)",
+          "oklch(72.1% 0.126 95.0)",
+          "oklch(83.6% 0.093 95.0)",
+          "oklch(95.0% 0.044 95.0)"
+        ],
+        "purpose": "Lit amber segment border."
+      },
+      "jade-keyline": {
+        "role": "tertiary",
+        "displayName": "Jade Keyline",
+        "canonical": "#1f7a4a",
+        "tonalRamp": [
+          "oklch(15.0% 0.04 155.3)",
+          "oklch(26.4% 0.075 155.3)",
+          "oklch(37.9% 0.113 155.3)",
+          "oklch(49.3% 0.113 155.3)",
+          "oklch(60.7% 0.113 155.3)",
+          "oklch(72.1% 0.113 155.3)",
+          "oklch(83.6% 0.083 155.3)",
+          "oklch(95.0% 0.04 155.3)"
+        ],
+        "purpose": "Lit jade segment border."
+      },
+      "silkscreen-id": {
+        "role": "neutral",
+        "displayName": "Silkscreen ID",
+        "canonical": "#8f96a0",
+        "tonalRamp": [
+          "oklch(15.0% 0.006 -102.8)",
+          "oklch(26.4% 0.011 -102.8)",
+          "oklch(37.9% 0.017 -102.8)",
+          "oklch(49.3% 0.017 -102.8)",
+          "oklch(60.7% 0.017 -102.8)",
+          "oklch(72.1% 0.017 -102.8)",
+          "oklch(83.6% 0.012 -102.8)",
+          "oklch(95.0% 0.006 -102.8)"
+        ],
+        "purpose": "Painted module numbers 01-08."
+      }
+    },
+    "typographyMeta": {
+      "nameplate": {
+        "displayName": "Nameplate",
+        "purpose": "The product name CORDS — the panel's own silkscreen."
+      },
+      "nameplate-sub": {
+        "displayName": "Nameplate Sub",
+        "purpose": "CABLE PATCH SANDBOX beneath the name."
+      },
+      "label": {
+        "displayName": "Meter Label",
+        "purpose": "CORDS / LINKED legends."
+      },
+      "control-label": {
+        "displayName": "Control Label",
+        "purpose": "NEW CORD / RESET button text."
+      },
+      "hint": {
+        "displayName": "Empty Hint",
+        "purpose": "The empty-scene invitation line; gone once a cord exists."
+      },
+      "readout-numeral": {
+        "displayName": "Readout Numeral",
+        "purpose": "Exact counts, tabular so digits do not jitter."
+      },
+      "keycap": {
+        "displayName": "Keycap",
+        "purpose": "N / R shortcut chips."
+      }
+    },
+    "shadows": [
+      {
+        "name": "cap-bevel",
+        "value": "inset 0 1px 0 rgba(255,255,255,0.07)",
+        "purpose": "Keycap button top chamfer at rest."
+      },
+      {
+        "name": "pressed-cap",
+        "value": "inset 0 1px 3px rgba(0,0,0,0.55)",
+        "purpose": "Button :active — the cap sinking into its well."
+      },
+      {
+        "name": "fastener-head",
+        "value": "inset 0 1px 1px rgba(255,255,255,0.07)",
+        "purpose": "9px screw heads holding the strip; cubes and floor panels paint the same furniture into their textures."
+      },
+      {
+        "name": "led-glow-amber",
+        "value": "0 0 6px rgba(242,212,58,0.45)",
+        "purpose": "A lit amber meter segment — sanctioned glow, live state only."
+      },
+      {
+        "name": "led-glow-jade",
+        "value": "0 0 6px rgba(47,189,114,0.4)",
+        "purpose": "A lit jade meter segment — sanctioned glow, live state only."
+      }
+    ],
+    "motion": [
+      {
+        "name": "chase-pulse",
+        "value": "0.6 traverses/s of sim time; phase = (t x speed) mod 1, pure sim clock",
+        "purpose": "The linked cord's amber chase light, red end to blue end. Slowed x0.5 under prefers-reduced-motion, never removed — the pulse IS the linked signal."
+      },
+      {
+        "name": "grace-dim",
+        "value": "linear opacity ramp to the 0.22 floor over the ~3 s grace window",
+        "purpose": "The popped cord's visible countdown; composes multiplicatively with the vanish fade so expiry never flashes back to full."
+      },
+      {
+        "name": "grace-blink",
+        "value": "3 Hz stepping up to 5 Hz at the window's half, 65% duty, final 1.5 s (the grace window's last half); keys on the sim clock",
+        "purpose": "The popped jack's band as a dying low-battery LED — blinking through half its window and quickening toward expiry (REFINE-1). Steady under reduced motion; the dim stays (state, not motion)."
+      },
+      {
+        "name": "deny-fade",
+        "value": "350 ms linear fade",
+        "purpose": "The flat red soft-cap deny ring on a rejected cube face — a mark, not a lamp."
+      },
+      {
+        "name": "shatter-physics",
+        "value": "ballistic 9.81, restitutions 0.4 then 0.22, slide friction 9/s, 0.55 s lifetime, scale-out over the final 35% — 18 shards, base 0.03, scaled 0.75–1.8 (REFINE-1 legibility bump, was 14 at 0.02)",
+        "purpose": "The vanish shatter: deterministic seeded shards (dark steel + the failing end's band color), zero glow. Skipped entirely under reduced motion; the despawn/fade sequence is unchanged."
+      },
+      {
+        "name": "dom-state",
+        "value": "instant — zero CSS transitions, zero keyframes, zero tweens",
+        "purpose": "DOM states flip the frame the sim state flips; hardware does not ease."
+      },
+      {
+        "name": "dangle-settle",
+        "value": "sim-owned: dangle settles ~1.5 s without jitter; brush perturbation dampened x0.5 under reduced motion",
+        "purpose": "The feel layer — every moving pixel in the scene is the fixed-timestep solver, never an animation."
+      }
+    ]
+  },
+  "components": [
+    {
+      "name": "Faceplate Strip",
+      "kind": "custom",
+      "refersTo": "faceplate-strip",
+      "description": "The instrument panel: the only container — nameplate, meters, hint, and controls live on this one machined strip.",
+      "html": "<div class=\"ds-faceplate\">\n  <span class=\"ds-faceplate-screw\"></span>\n  <div class=\"ds-name\">\n    <span class=\"ds-name-word\">CORDS</span>\n    <span class=\"ds-name-sub\">CABLE PATCH SANDBOX</span>\n  </div>\n  <span class=\"ds-faceplate-seam\"></span>\n</div>",
+      "css": ".ds-faceplate { display: flex; align-items: center; gap: 24px; padding: 13px 28px; background: #17191d; border-top: 1px solid rgba(255,255,255,0.08); font-family: \"Helvetica Neue\", Helvetica, Arial, sans-serif; user-select: none; }\n.ds-faceplate-screw { flex: none; width: 9px; height: 9px; border-radius: 50%; background: #101215; border: 1px solid #0a0b0d; box-shadow: inset 0 1px 1px rgba(255,255,255,0.07); }\n.ds-name { display: flex; flex-direction: column; gap: 3px; line-height: 1; }\n.ds-name-word { font-size: 15px; font-weight: 700; letter-spacing: 0.34em; color: #e8e3d5; }\n.ds-name-sub { font-size: 9px; font-weight: 600; letter-spacing: 0.24em; color: #9aa0ab; }\n.ds-faceplate-seam { width: 1px; align-self: stretch; background: #0d0f12; }"
+    },
+    {
+      "name": "Segmented Meter Readout",
+      "kind": "custom",
+      "refersTo": "meter-segment",
+      "description": "The tempo-readout grammar: label, 12 squared slots, exact numeral. One lit segment per live cord; overflow pegs the last slot.",
+      "html": "<div class=\"ds-readout\">\n  <span class=\"ds-readout-label\">CORDS</span>\n  <span class=\"ds-meter\">\n    <span class=\"ds-seg\"></span>\n    <span class=\"ds-seg lit\"></span>\n    <span class=\"ds-seg lit\"></span>\n    <span class=\"ds-seg lit\"></span>\n    <span class=\"ds-seg\"></span>\n  </span>\n  <span class=\"ds-count\">3</span>\n</div>",
+      "css": ".ds-readout { display: flex; align-items: center; gap: 11px; padding-left: 24px; border-left: 1px solid #0d0f12; line-height: 1; font-family: \"Helvetica Neue\", Helvetica, Arial, sans-serif; }\n.ds-readout-label { font-size: 10px; font-weight: 700; letter-spacing: 0.16em; color: #c3c8d1; }\n.ds-meter { display: inline-flex; gap: 3px; }\n.ds-seg { width: 9px; height: 16px; background: #232730; border: 1px solid #0e1013; }\n.ds-seg.lit { background: #f2d43a; border-color: #a98f1d; box-shadow: 0 0 6px rgba(242,212,58,0.45); }\n.ds-count { min-width: 2.5ch; text-align: right; font-family: ui-monospace, \"SF Mono\", Menlo, Consolas, \"Liberation Mono\", monospace; font-size: 13px; font-weight: 600; font-variant-numeric: tabular-nums; color: #f2d43a; }\n.ds-count.is-zero { color: #9aa0ab; }"
+    },
+    {
+      "name": "Machined Keycap Button",
+      "kind": "button",
+      "refersTo": "hud-button",
+      "description": "The only control surface: a squared 2px cap with an inset chamfer and its shortcut keycap. States flip instantly — no transitions.",
+      "html": "<button type=\"button\" class=\"ds-btn\">\n  <span class=\"ds-btn-label\">NEW CORD</span>\n  <span class=\"ds-key\">N</span>\n</button>",
+      "css": ".ds-btn { display: inline-flex; align-items: center; gap: 9px; appearance: none; background: #242930; color: #d9dde4; border: 1px solid #0e1013; border-radius: 2px; padding: 9px 12px 9px 14px; font-family: \"Helvetica Neue\", Helvetica, Arial, sans-serif; font-size: 11px; font-weight: 700; letter-spacing: 0.14em; cursor: pointer; box-shadow: inset 0 1px 0 rgba(255,255,255,0.07); }\n.ds-btn:hover { background: #2b313a; }\n.ds-btn:active { background: #1f242b; box-shadow: inset 0 1px 3px rgba(0,0,0,0.55); }\n.ds-btn:focus-visible { outline: 2px solid #f2d43a; outline-offset: 3px; }\n.ds-key { font-family: ui-monospace, \"SF Mono\", Menlo, Consolas, \"Liberation Mono\", monospace; font-size: 10px; font-weight: 600; color: #b6bcc6; background: #2c323b; border: 1px solid #3d444d; border-radius: 2px; padding: 2px 6px; min-width: 10px; text-align: center; }"
+    },
+    {
+      "name": "Keycap Chip",
+      "kind": "chip",
+      "refersTo": "keycap-chip",
+      "description": "The physical shortcut legend riding inside a button; aria-hidden — the button label carries the meaning.",
+      "html": "<span class=\"ds-keychip\">R</span>",
+      "css": ".ds-keychip { display: inline-block; font-family: ui-monospace, \"SF Mono\", Menlo, Consolas, \"Liberation Mono\", monospace; font-size: 10px; font-weight: 600; line-height: 1; color: #b6bcc6; background: #2c323b; border: 1px solid #3d444d; border-radius: 2px; padding: 2px 6px; min-width: 10px; text-align: center; }"
+    },
+    {
+      "name": "Empty-Scene Hint",
+      "kind": "custom",
+      "refersTo": "empty-hint",
+      "description": "One silkscreen invitation line at the labels' own legibility (12px/700 Legend Ink — REFINE-1), visible only while no cord exists — it names real state, so it disappears the moment one exists.",
+      "html": "<p class=\"ds-hint is-visible\">PRESS N FOR A NEW CORD</p>",
+      "css": ".ds-hint { margin: 0; text-align: center; font-family: \"Helvetica Neue\", Helvetica, Arial, sans-serif; font-size: 12px; font-weight: 700; letter-spacing: 0.2em; color: #c3c8d1; visibility: hidden; }\n.ds-hint.is-visible { visibility: visible; }"
+    },
+    {
+      "name": "Candy Zone Module Face",
+      "kind": "custom",
+      "refersTo": "meter-segment",
+      "description": "The scene's cube faceplate translated to DOM: brushed steel plate, inset faceplate seam, corner screws, one 10px-radius candy zone with a dark keyline, and the painted module id.",
+      "html": "<div class=\"ds-zone-face\">\n  <span class=\"ds-zone-id\">04</span>\n  <span class=\"ds-zone-pad\"></span>\n</div>",
+      "css": ".ds-zone-face { position: relative; width: 128px; height: 128px; background: #2a2d31; border: 6px solid #15171a; outline: 2px solid rgba(255,255,255,0.06); }\n.ds-zone-id { position: absolute; top: 14px; left: 15px; font-family: ui-monospace, \"SF Mono\", Menlo, Consolas, \"Liberation Mono\", monospace; font-size: 12px; font-weight: 700; color: #8f96a0; }\n.ds-zone-pad { position: absolute; left: 32px; top: 59px; width: 64px; height: 28px; border-radius: 5px; background: #2fbd72; border: 1px solid rgba(0,0,0,0.45); }"
+    },
+    {
+      "name": "Scene Summary (sr-only live region)",
+      "kind": "custom",
+      "refersTo": "faceplate-strip",
+      "description": "The honest spoken layer: role=status, aria-live=polite, visually clipped to nothing. Speaks every lifecycle transition — and, once per death, leads with the failure's own line (REFINE-1: \"Cord shattered — unplugged.\"); the meters are aria-hidden because this region already carries the counts.",
+      "html": "<p class=\"ds-summary\" role=\"status\" aria-live=\"polite\">3 cords, 1 awaiting plug, 2 linked. Press N for a new cord, R to reset.</p>",
+      "css": ".ds-summary { position: absolute; width: 1px; height: 1px; margin: -1px; padding: 0; border: 0; overflow: hidden; clip-path: inset(50%); white-space: nowrap; font-family: \"Helvetica Neue\", Helvetica, Arial, sans-serif; }"
+    }
+  ],
+  "narrative": {
+    "northStar": "The Drum Machine Panel",
+    "overview": [
+      "Cords is staged as an early-80s hardware instrument faceplate brought to life: a charcoal steel bench under one warm lamp, machined panel seams falling into fog, eight steel modules each carrying a single candy color zone, and the hero object — real 1/4-inch phone plugs on dark rubber cords — lying across it. The interface recedes to a silkscreen faceplate strip along the bottom edge: tracked small-caps legends, squared segmented meters, machined keycap buttons. Nothing is costume; every printed word names a real state, and every lit pixel is live state.",
+      "The system's core honesty is the lit = live state only contract. The scene is unlit hardware — matte rubber, brushed steel, painted silkscreen — until the simulation says otherwise: a completed link's amber chase pulse traveling the cord, a meter row filling one segment per live cord, a popped jack's band blinking like a dying battery. Failure performs in the same hardware grammar: the jack shatters into dark steel shards plus one shard of its own color band, the cord dims through its grace countdown, and the meters count it down to zero.",
+      "Motion is sim-driven, never scripted — no CSS keyframes and no tweens anywhere. Every animated read is a pure function of the simulation's own clock and state, so the same sim instant always paints the same picture and a frozen sim holds its light still."
+    ],
+    "keyCharacteristics": [
+      "Charcoal steel ground — dark, never black; the bench reads as lit steel under the warm key.",
+      "Eight candy color zones, each doubling as a state ink (amber = live cords, jade = links, red/blue = plug polarity).",
+      "Silkscreen legends: tracked caps that name real state only; if the sim can't say it, the panel doesn't print it.",
+      "One glow budget: the chase-pulse amber on linked cords and the lit meter segments — nothing else glows, ever.",
+      "Machined depth: 1px bevels, seams, screws, and one warm key light; flat surfaces, no glass, no gradients.",
+      "Sim-clock motion: deterministic, headless-testable, no keyframes; reduced motion slows or holds effects, never removes live-state meaning."
+    ],
+    "rules": [
+      {
+        "name": "The One Glow Rule",
+        "body": "Glow exists only where live state lives: the chase-pulse amber on a linked cord, the lit meter segments, and the focus bracket. Everything else is painted, machined, or lit by the key — never emissive. A decorative glow is a bug.",
+        "section": "colors"
+      },
+      {
+        "name": "The State-Ink Rule",
+        "body": "Every saturated color names a live state: amber = cords alive, jade = links, red/blue = plug polarity, candy zones = module identities. Saturated color is never used for mood, section, or filler.",
+        "section": "colors"
+      },
+      {
+        "name": "The Silkscreen Honesty Rule",
+        "body": "Every printed string names a real state or a real control. Labels never become costume; the empty-scene hint disappears the moment one cord exists, and the meters are aria-hidden because the live-region summary already speaks the counts.",
+        "section": "typography"
+      },
+      {
+        "name": "The Machined-Edge Rule",
+        "body": "Surfaces are flat; depth is machined (inset bevels, seams, screws) or lit (the key, the fog). No drop shadows, no glass, no gradients, no blur.",
+        "section": "elevation"
+      }
+    ],
+    "dos": [
+      "Do light a pixel only when the sim justifies it: lit segments = live counts, chase pulse = linked, band lift = seated-and-linked, band blink = dying.",
+      "Do print only real state in silkscreen grammar: tracked caps (0.14-0.34em), Legend/Dim inks, mono numerals for every number.",
+      "Do compose new panel modules from the strip's furniture: #0d0f12 module seam + 24px padding-left, squared slots, 2px keycaps, screw fasteners.",
+      "Do keep candy color tied to state or module identity, each with its darker keyline.",
+      "Do drive every animated read from the sim clock; reuse the purity seam (pure function of sim state + sim time).",
+      "Do honor the reduced-motion seams exactly: slow the pulse x0.5, hold the blink steady, skip particles, keep the dim."
+    ],
+    "donts": [
+      "Don't add decorative glow, bloom, halos, additive blending, or any emissive material outside the chase pulse and lit meter segments.",
+      "Don't use drop shadows, glass, blur, or gradients — depth is machined or lit.",
+      "Don't print a label, hint, or number the sim cannot back with live state; don't show the empty hint while a cord exists.",
+      "Don't animate with CSS transitions/keyframes, wall-clock tweens, or Math.random().",
+      "Don't let red mean anything but input polarity / denial, or recolor the stretch ticks — measurement furniture is neutral ink.",
+      "Don't introduce display type or sentence case on the panel; the voice is all-caps silkscreen at 9-15px with tabular mono numerals."
+    ]
+  }
+}

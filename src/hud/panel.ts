@@ -20,9 +20,13 @@
  *   formalizes) whose sentence comes from the pure model's `sceneSummary`.
  *   The meters/numerals are aria-hidden: the summary already speaks the
  *   counts, and a screen reader has no use for "12 segments" of chrome.
- * - EMPTY-SCENE HINT — the surface brief's invitation state: one dim
- *   silkscreen line, visible only while the bench holds no cords (it names
- *   real state, so it disappears the moment one exists).
+ *   REFINE-1: the sentence may be LED by a one-shot failure notice
+ *   (`vanishNotice`) — a cord's death is NAMED ("Cord shattered —
+ *   unplugged.") exactly once, in the region the counts already own.
+ * - EMPTY-SCENE HINT — the surface brief's invitation state: one readable
+ *   silkscreen line (12px/700 Legend Ink — REFINE-1's legibility fix),
+ *   visible only while the bench holds no cords (it names real state, so
+ *   it disappears the moment one exists).
  *
  * The element/document seams below are deliberately narrow structural
  * interfaces: the real DOM satisfies them, and so does a ~40-line test
@@ -76,8 +80,12 @@ export interface HudOptions {
 
 /** The panel's live side: one honest update per frame, DOM touched only on change. */
 export interface HudPanel {
-  /** Paints `counts`. Gated: identical counts leave the DOM untouched. */
-  update(counts: Readonly<HudCounts>): void;
+  /**
+   * Paints `counts`. Gated: identical counts leave the DOM untouched —
+   * UNLESS a `notice` arrived (REFINE-1: the failure line must be spoken
+   * even in the frames the counts alone would gate the repaint away).
+   */
+  update(counts: Readonly<HudCounts>, notice?: string | null): void;
   /** The strip's root element (appended to the host at construction). */
   readonly root: HudElementLike;
 }
@@ -199,8 +207,11 @@ export function createHudPanel(
 
   return {
     root,
-    update(counts: Readonly<HudCounts>): void {
-      if (lastInitialized.value && sameHudCounts(last, counts)) return; // nothing changed
+    update(counts: Readonly<HudCounts>, notice?: string | null): void {
+      const spoken = typeof notice === 'string' && notice.length > 0 ? notice : null;
+      if (lastInitialized.value && spoken === null && sameHudCounts(last, counts)) {
+        return; // nothing changed
+      }
       last.cords = counts.cords;
       last.awaitingPlug = counts.awaitingPlug;
       last.linked = counts.linked;
@@ -211,7 +222,10 @@ export function createHudPanel(
       setMeter(linkedMeter, counts.linked);
       if (counts.cords === 0) root.classList.add('is-empty');
       else root.classList.remove('is-empty');
-      summary.textContent = sceneSummary(counts);
+      // REFINE-1 — a notice rides exactly this one repaint: the region's
+      // text changes once (one announcement), and the next counts change —
+      // at the latest the despawn — rewrites the sentence without it.
+      summary.textContent = sceneSummary(counts, spoken);
     },
   };
 }
