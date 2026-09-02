@@ -23,10 +23,19 @@ colors:
   brushed-steel: "#2a2d31"
   unlit-slot: "#232730"
   machined-seam: "#0e1013"
+  # Machined edges — the lit bevel, panel seams, fastener heads (depth is machined, never dropped; the shadow-syntax vocabulary lives in .impeccable/design.json extensions.shadows)
+  machined-bevel: "rgba(255,255,255,0.08)"
+  panel-seam: "#0d0f12"
+  fastener-ink: "#101215"
+  fastener-rim: "#0a0b0d"
   # Materials in the scene
   cord-rubber: "#2e3138"
   grip-rubber: "#17181c"
   plug-chrome: "#d6dade"
+  # The bench's light — one warm key over a dim cool hemisphere (src/render/scene.ts)
+  warm-key: "#ffd2a0"
+  hemi-sky: "#3a4150"
+  hemi-ground: "#101216"
   # Silkscreen inks
   legend-ink: "#c3c8d1"
   dim-ink: "#9aa0ab"
@@ -38,6 +47,7 @@ colors:
   cap-hover: "#2b313a"
   cap-pressed: "#1f242b"
   key-chip-face: "#2c323b"
+  key-chip-rim: "#3d444d"
 typography:
   nameplate:
     fontFamily: "\"Helvetica Neue\", Helvetica, Arial, sans-serif"
@@ -182,10 +192,13 @@ A candy-on-charcoal instrument palette: eight saturated 80s hardware colors rese
 - **Faceplate Charcoal** (#17191d): The HUD strip's machined panel.
 - **Brushed Steel** (#2a2d31): The cube faceplates' base tone under the candy zones.
 - **Unlit Slot** (#232730): A meter segment at rest — recessed, honest, waiting.
-- **Machined Seam** (#0e1013): Segment and keycap borders; the same near-black ink as the panel seams (#0d0f12).
+- **Machined Seam** (#0e1013): Segment and keycap borders; its darker twin **Panel Seam** (#0d0f12) closes the strip's modules and the floor's machined panels.
 - **Cord Rubber** (#2e3138): The cord tube — dark matte rubber that reads against the bench via the key light.
 - **Grip Rubber** (#17181c): The plug's knurled sleeve grip; also the popped band's blinked-off "unlit plastic" ink.
 - **Plug Chrome** (#d6dade): The jack's metal tip and shaft (metalness 1.0, roughness 0.24, environment-lit).
+- **Machined Bevel** (rgba(255,255,255,0.08)): The strip's 1px top bevel — the lit edge that closes the panel. A border, not a box-shadow, so it is a palette token (REFINE-5: tokenized from the shipped CSS; the shadow-syntax bevels below stay in the sidecar's shadow vocabulary).
+- **Fastener Ink / Fastener Rim** (#101215 / #0a0b0d): The screw heads holding the strip and the floor panels' corner bolts, and each head's 1px machined rim.
+- **Warm Key / Hemisphere Sky / Hemisphere Ground** (#ffd2a0 / #3a4150 / #101216): The bench's lighting, tonal members of the system because the warm key is what makes the charcoal read as lit steel — see Elevation & Depth for intensities and angles.
 
 ### Ink neutrals (all silkscreen)
 - **Legend Ink** (#c3c8d1): Meter labels ("CORDS", "LINKED") — 10.48:1 on the faceplate.
@@ -207,7 +220,7 @@ A candy-on-charcoal instrument palette: eight saturated 80s hardware colors rese
 
 ### Hierarchy
 - **Nameplate** (700, 15px, 0.34em tracking, line-height 1, Bone #e8e3d5): The product's own name — "CORDS", the panel's silkscreen.
-- **Nameplate Sub** (600, 9px, 0.24em, Dim Ink): "CABLE PATCH SANDBOX" beneath the name.
+- **Nameplate Sub** (600, 9px, 0.24em, Dim Ink): "CABLE PATCH SANDBOX" beneath the name. The panel's smallest print is a deliberate type role, not an oversight: the subtitle is identification, not instruction — when REFINE-1 promoted the page's one functional whisper (the empty-scene hint) to 12px Legend Ink, the sub stayed at the genre's 9px floor (Dim Ink 6.70:1).
 - **Label** (700, 10px, 0.16em, Legend Ink): Meter legends — CORDS, LINKED.
 - **Control Label** (700, 11px, 0.14em, Cap Ink): Button text — NEW CORD, RESET.
 - **Hint** (700, 12px, 0.2em, Legend Ink, centered): The empty-scene invitation "PRESS N FOR A NEW CORD"; visible only while no cord exists. The one functional line a first-timer must read, so it prints at the labels' own legibility (10.48:1) — still inside the 9–15px silkscreen scale.

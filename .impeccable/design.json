@@ -1,6 +1,6 @@
 {
   "schemaVersion": 2,
-  "generatedAt": "2026-09-02T08:50:16.000Z",
+  "generatedAt": "2026-09-02T14:14:02.000Z",
   "title": "Design System: Cords",
   "extensions": {
     "colorMeta": {
@@ -260,6 +260,54 @@
         ],
         "purpose": "Plug tip + shaft metal."
       },
+      "warm-key": {
+        "role": "neutral",
+        "displayName": "Warm Key",
+        "canonical": "#ffd2a0",
+        "tonalRamp": [
+          "oklch(15.0% 0.029 69.4)",
+          "oklch(26.4% 0.054 69.4)",
+          "oklch(37.9% 0.082 69.4)",
+          "oklch(49.3% 0.082 69.4)",
+          "oklch(60.7% 0.082 69.4)",
+          "oklch(72.1% 0.082 69.4)",
+          "oklch(83.6% 0.061 69.4)",
+          "oklch(95.0% 0.029 69.4)"
+        ],
+        "purpose": "The bench's one warm lamp — the DirectionalLight (intensity 6.0, low angle from (4, 3.2, 3)) that models the cube faces and makes the charcoal read as lit steel."
+      },
+      "hemi-sky": {
+        "role": "neutral",
+        "displayName": "Hemisphere Sky",
+        "canonical": "#3a4150",
+        "tonalRamp": [
+          "oklch(15.0% 0.009 -94.6)",
+          "oklch(26.4% 0.018 -94.6)",
+          "oklch(37.9% 0.027 -94.6)",
+          "oklch(49.3% 0.027 -94.6)",
+          "oklch(60.7% 0.027 -94.6)",
+          "oklch(72.1% 0.027 -94.6)",
+          "oklch(83.6% 0.020 -94.6)",
+          "oklch(95.0% 0.009 -94.6)"
+        ],
+        "purpose": "The hemisphere light's dim cool sky bounce (intensity 1.25)."
+      },
+      "hemi-ground": {
+        "role": "neutral",
+        "displayName": "Hemisphere Ground",
+        "canonical": "#101216",
+        "tonalRamp": [
+          "oklch(15.0% 0.003 -95.7)",
+          "oklch(26.4% 0.006 -95.7)",
+          "oklch(37.9% 0.009 -95.7)",
+          "oklch(49.3% 0.009 -95.7)",
+          "oklch(60.7% 0.009 -95.7)",
+          "oklch(72.1% 0.009 -95.7)",
+          "oklch(83.6% 0.007 -95.7)",
+          "oklch(95.0% 0.003 -95.7)"
+        ],
+        "purpose": "The hemisphere light's ground bounce beneath the bench."
+      },
       "grip-rubber": {
         "role": "neutral",
         "displayName": "Grip Rubber",
@@ -420,6 +468,22 @@
         ],
         "purpose": "Shortcut chip background."
       },
+      "key-chip-rim": {
+        "role": "neutral",
+        "displayName": "Key Chip Rim",
+        "canonical": "#3d444d",
+        "tonalRamp": [
+          "oklch(15.0% 0.006 -105.3)",
+          "oklch(26.4% 0.012 -105.3)",
+          "oklch(37.9% 0.018 -105.3)",
+          "oklch(49.3% 0.018 -105.3)",
+          "oklch(60.7% 0.018 -105.3)",
+          "oklch(72.1% 0.018 -105.3)",
+          "oklch(83.6% 0.013 -105.3)",
+          "oklch(95.0% 0.006 -105.3)"
+        ],
+        "purpose": "The keycap chip's 1px machined border inside the buttons — one step lighter than its well."
+      },
       "machined-seam": {
         "role": "neutral",
         "displayName": "Machined Seam",
@@ -435,6 +499,70 @@
           "oklch(95.0% 0.002 -101.6)"
         ],
         "purpose": "Segment/keycap borders; panel seam ink."
+      },
+      "machined-bevel": {
+        "role": "neutral",
+        "displayName": "Machined Bevel",
+        "canonical": "rgba(255,255,255,0.08)",
+        "tonalRamp": [
+          "oklch(15.0% 0.000 0.0)",
+          "oklch(26.4% 0.000 0.0)",
+          "oklch(37.9% 0.000 0.0)",
+          "oklch(49.3% 0.000 0.0)",
+          "oklch(60.7% 0.000 0.0)",
+          "oklch(72.1% 0.000 0.0)",
+          "oklch(83.6% 0.000 0.0)",
+          "oklch(95.0% 0.000 0.0)"
+        ],
+        "purpose": "The HUD strip's 1px machined top bevel (border-top) — the lit edge that closes the panel. A border, not a box-shadow, so it is a palette token rather than a shadow-vocabulary entry. REFINE-5: tokenized from the shipped CSS to close the detector's design-system-color advisory."
+      },
+      "panel-seam": {
+        "role": "neutral",
+        "displayName": "Panel Seam",
+        "canonical": "#0d0f12",
+        "tonalRamp": [
+          "oklch(15.0% 0.002 -101.6)",
+          "oklch(26.4% 0.005 -101.6)",
+          "oklch(37.9% 0.007 -101.6)",
+          "oklch(49.3% 0.007 -101.6)",
+          "oklch(60.7% 0.007 -101.6)",
+          "oklch(72.1% 0.007 -101.6)",
+          "oklch(83.6% 0.005 -101.6)",
+          "oklch(95.0% 0.002 -101.6)"
+        ],
+        "purpose": "Module seams dividing the strip's readouts and actions, and the floor's 4x4-unit machined panels — the darker twin of machined-seam (#0e1013)."
+      },
+      "fastener-ink": {
+        "role": "neutral",
+        "displayName": "Fastener Ink",
+        "canonical": "#101215",
+        "tonalRamp": [
+          "oklch(15.0% 0.002 -101.6)",
+          "oklch(26.4% 0.005 -101.6)",
+          "oklch(37.9% 0.007 -101.6)",
+          "oklch(49.3% 0.007 -101.6)",
+          "oklch(60.7% 0.007 -101.6)",
+          "oklch(72.1% 0.007 -101.6)",
+          "oklch(83.6% 0.005 -101.6)",
+          "oklch(95.0% 0.002 -101.6)"
+        ],
+        "purpose": "Screw and bolt heads — the strip's two 9px screws and the floor panels' corner bolts."
+      },
+      "fastener-rim": {
+        "role": "neutral",
+        "displayName": "Fastener Rim",
+        "canonical": "#0a0b0d",
+        "tonalRamp": [
+          "oklch(15.0% 0.002 -95.5)",
+          "oklch(26.4% 0.003 -95.5)",
+          "oklch(37.9% 0.005 -95.5)",
+          "oklch(49.3% 0.005 -95.5)",
+          "oklch(60.7% 0.005 -95.5)",
+          "oklch(72.1% 0.005 -95.5)",
+          "oklch(83.6% 0.004 -95.5)",
+          "oklch(95.0% 0.002 -95.5)"
+        ],
+        "purpose": "The 1px machined rim border around each screw head."
       },
       "amber-keyline": {
         "role": "tertiary",
@@ -492,7 +620,7 @@
       },
       "nameplate-sub": {
         "displayName": "Nameplate Sub",
-        "purpose": "CABLE PATCH SANDBOX beneath the name."
+        "purpose": "CABLE PATCH SANDBOX beneath the name. Deliberate 9px — identification, not instruction: REFINE-1 promoted the page's one functional whisper (the hint) to 12px Legend Ink, and the sub stays the genre's smallest print (Dim Ink 6.70:1)."
       },
       "label": {
         "displayName": "Meter Label",
