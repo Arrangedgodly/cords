@@ -405,11 +405,11 @@ try {
   await send(ws, 'Page.navigate', { url: APP_URL });
   await sleep(3500); // the M1 intro converge (~2 s) + margin
 
-  // RESET the scene empty: this drive works ONE cord at a time, and the M1
-  // anchor's dangling free end SWINGS through the blue-jack scan region (a
-  // press there grabs the ANCHOR — the first runs of this drive proved it:
-  // carry engaged, the spawned cord's span bitwise-untouched). With the
-  // anchor gone, a state uniquely identifies the one live cord.
+  // RESET the scene empty: this drive works ONE cord at a time, and the
+  // staged opening cord's draped free end SWINGS through the blue-jack scan
+  // region (a press there grabs ITS BLUE JACK — the first runs of this drive
+  // proved it: carry engaged, the spawned cord's span bitwise-untouched).
+  // With the opening cord gone, a state uniquely identifies the one live cord.
   await pressR(ws);
   await sleep(900);
   const empty = await lifecycleNow(ws);

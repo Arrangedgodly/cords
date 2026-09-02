@@ -133,6 +133,15 @@ describe('T-LIFE-1 — lifecycle at the world boundary: registration + the appro
     expect(world.lifecycle.endMode(0, END)).toBe('free');
     world.advance(1, { pointerRay: null, spawnCord: { cordId: 1, at: { x: 0.5, y: 1.0, z: 0 } } });
     expect(world.lifecycle.stateOf(1)).toBe('carried');
+    // REFINE-4 — the spawn's carry note retires at the step's abandonment
+    // sweep until the composition's controller actually drives the end (the
+    // real page registers the cord's runtime after its first render and
+    // composes the carry from the NEXT frame — mirrored exactly here):
+    expect(world.lifecycle.endMode(1, 0)).toBe('free'); // held by nobody YET
+    world.advance(1, {
+      pointerRay: null,
+      pinTargets: [{ cordId: 1, index: 0, position: { x: 0.5, y: 1.0, z: 0 } }],
+    });
     expect(world.lifecycle.endMode(1, 0)).toBe('carrying'); // the red end lands in hand
     expect(world.lifecycle.endMode(1, END)).toBe('free');
     expect(world.lifecycle.graceRemaining(1)).toBeNull();

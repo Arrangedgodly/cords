@@ -54,9 +54,9 @@
  *   carry intent on a seated end un-seats it (the lifecycle applies
  *   linked→awaiting-plug / awaiting-plug→carried in the same step) while
  *   this layer releases the socket bookkeeping (cap registry count, seat
- *   override, seat record). The still-pinned M1 anchor is the same kind of
- *   seat: grabbing it un-seats the anchor and the cord hangs from the hand.
- *   After an un-seat, either end can seat in ANY order. The grabability
+ *   override, seat record). The REFINE-3 opening cord's staged red end is the
+ *   same kind of seat: grabbing it un-seats the plug and the cord hangs from
+ *   the hand. After an un-seat, either end can seat in ANY order. The grabability
  *   law (see `jackGrabbable`): POPPED's surviving socket is NOT grabbable
  *   (its exits are the re-seat and the grace — the over-stretch pop must
  *   not be dodgeable), and nothing is grabbable while VANISHING (the lock;
@@ -110,6 +110,21 @@
  *   moment its plug physically leaves the socket — until then it is an
  *   honest visible plug). After the pull-out, releases onto that face seat
  *   on the cube again.
+ * - REFINE-4 — SELF-CLEAN WHEN ABANDONED (PRODUCT.md's promise, the
+ *   critique's P2): a dropped `carried` cord (never seated, or pulled by
+ *   hand and let go) lying untouched for ~10 s of SIM time enters the SAME
+ *   LIFE-2 sequence (fall→shatter→pull-out→vanish — a grounded coil's
+ *   "fall" is first contact, so the entry reads as the coil powering down,
+ *   nothing teleports) and the summary names it honestly: "Cord put away.",
+ *   distinct from the shattered failure line. The idle window is the
+ *   machine's (sim-clock, clamped, per cord, `idleSeconds` tunable, wired
+ *   in buildWorld); the world's abandonment sweep opens it the step an
+ *   end's carry targets stop arriving, and this layer's two laws keep the
+ *   honest edge cases honest: a HELD cord never goes idle (a dragging
+ *   controller with the pointer off-stage gets a composed HOLD target, so
+ *   the hand that left the document still holds its jack), and GRABBING an
+ *   idling cord cancels the timer instantly (the machine resets on the
+ *   carry note) — a rescued cord behaves perfectly normally afterward.
  * - MULTI-CORD INPUT: one pointer can drive at most one DRAG, but a drop on
  *   one cord can overlap a carry on another (spawn-while-carrying), and one
  *   dragged cube can transport several seated plugs — so this layer composes
@@ -137,7 +152,7 @@
  *   focus), and the aria-live scene summary. The buttons route through the
  *   same functions the N and R keys use. RESET clears the CORDS only —
  *   cubes keep their positions (repositioning them is not approved scope)
- *   — by rebuilding the world without the anchor cord: no confirmation
+ *   — by rebuilding the world without the opening staging: no confirmation
  *   dialog (toy scale; the action is visual and instantly re-performable).
  * - REN-4 — THE LINK CHASE PULSE (src/render/pulse.ts + the render layer):
  *   on a LINKED cord a warm amber LED travels the tube red end → blue end
@@ -198,6 +213,7 @@
 import * as THREE from 'three';
 import {
   DEFAULT_GRACE_SECONDS,
+  DEFAULT_IDLE_SECONDS,
   DEFAULT_ROPE_CONFIG,
   DEFAULT_OVERSTRETCH_THRESHOLD,
   createCordWorldStep,
@@ -213,7 +229,7 @@ import type {
   VanishEvent,
   Vec3,
 } from './sim';
-import { createRenderLayer, CUBE_SIZE } from './render/scene';
+import { createRenderLayer, CUBE_POSITIONS, CUBE_SIZE } from './render/scene';
 import type { CordGraceInfo, RenderFrameInfo, SeatPose } from './render/scene';
 import {
   DEFAULT_PULSE_SPEED,
@@ -230,7 +246,7 @@ import type { CarryController } from './interaction/carry';
 import { createCubeDragController } from './interaction/cubeDrag';
 import { createSocketRegistry, pickSeatTarget, planSeat } from './interaction/socket';
 import { createHudPanel } from './hud/panel';
-import { createHudCounts, readHudCountsInto, vanishNotice } from './hud/model';
+import { createHudCounts, readHudCountsInto, putAwayNotice, vanishNotice } from './hud/model';
 
 const app = document.querySelector<HTMLDivElement>('#app');
 if (!app) {
@@ -244,18 +260,19 @@ if (!app) {
 const SIM_TIMESTEP = 1 / 120;
 const MAX_SUBSTEPS_PER_FRAME = 5;
 
-// M1 world: ONE cord hanging in view from its seated anchor over the REN-1
-// bench — now cord 0 of the INT-4 world; N spawns more beside it (same
-// segment geometry, so one CORD_SEGMENTS constant serves every cord).
+// The world's cords: ONE opening cord staged at load (REFINE-3, below) plus
+// whatever N spawns (same segment geometry, so one CORD_SEGMENTS constant
+// serves every cord).
 const CORD_SEGMENTS = 24;
-const CORD_PIN: { x: number; y: number; z: number } = { x: 0, y: 1.6, z: 0 };
 const FLOOR_Y = 0;
 // The end rests a hair ABOVE the floor plane (the pin is exempt from the
 // sim's floor clamp, so the interaction layer holds it just off the glass).
 // Height = the plug's grip radius, so a released plug lies ON its grip like
 // real hardware instead of slicing the bench.
 const FLOOR_REST_Y = 0.055;
-const FREE_END_INDEX = DEFAULT_ROPE_CONFIG.pinIndex === 0 ? CORD_SEGMENTS : 0;
+// The opening cord's FREE end — the BLUE output jack (sim index 0 is the RED
+// input end for every production cord: INT-4's spawn law).
+const FREE_END_INDEX = CORD_SEGMENTS;
 
 // INT-4 world cap: the render jack pool holds 16 cords (32 end slots), the
 // perf harness proved 12 — the honest ceiling is the pool. Spawning at the
@@ -299,6 +316,8 @@ const render = createRenderLayer(app, {
     },
   ],
 });
+// (The opening cord's view is pre-staged above; the REFINE-3 staging below
+// spawns and seats it through the production paths before the first frame.)
 
 // A11Y-1 — the stage canvas's ACCESSIBLE NAME. The scene is interactive,
 // but only via the pointer (aiming); the canvas is therefore role="img"
@@ -353,8 +372,8 @@ const cubeDrag = createCubeDragController({ cubeHalfSize: CUBE_SIZE / 2, floorY:
 // ---------------------------------------------------------------------------
 // INT-4 — per-cord runtime: the composition-root side of each cord in the
 // world (pick handles, per-end carry controllers, per-end seat records).
-// Created eagerly for the anchor cord 0 and lazily for each cord the world
-// spawns (after its first render, when its proxies exist and are positioned).
+// Created eagerly for the opening cord 0 (REFINE-3) and lazily for each cord
+// the world spawns (after its first render, when its proxies exist).
 // ---------------------------------------------------------------------------
 
 interface SeatRecord {
@@ -424,7 +443,7 @@ function registerCordRuntime(cordId: number): CordRuntime {
   return runtime;
 }
 
-// The anchor cord is live from frame 0 (its render view is pre-staged).
+// The opening cord is live from frame 0 (its render view is pre-staged).
 registerCordRuntime(0);
 
 // --- Carry / spawn state ----------------------------------------------------
@@ -463,7 +482,7 @@ let pendingRelease: ReleaseJackInput | null = null;
  * reports the end actually in hand (below, before pendingRelease).
  */
 let stagedFailureRelease: { cordId: number; index: number; slot: 0 | 1 } | null = null;
-let nextCordId = 1; // 0 is the anchor cord
+let nextCordId = 1; // 0 is the opening cord (REFINE-3)
 
 // Reused per-frame intent arrays — composed fresh in place every frame, no
 // steady-state allocation. Declared here (before the world's construction)
@@ -516,6 +535,16 @@ function prefersReducedMotion(): boolean {
 let vanishStartsSinceUpdate = 0;
 
 /**
+ * REFINE-4 — abandonment deaths that began inside the current frame's
+ * substeps (the lifecycle's carried→vanishing 'abandoned' transition). The
+ * same once-per-death discipline as vanishStartsSinceUpdate, but its OWN
+ * line: an abandoned coil did not fail — it was put away — and the summary
+ * must name the difference honestly ("Cord put away." vs "Cord shattered —
+ * unplugged.").
+ */
+let putAwaysSinceUpdate = 0;
+
+/**
  * THE SHADOW-HAZARD FIX (LIFE-1 verifier's carry-forward): take one end's
  * jack proxy out of the pick set. Un-registering is what un-shadows the host
  * cube's face (the render layer also drops its proxies' raycast layers at
@@ -542,11 +571,11 @@ function handleVanishEvent(event: VanishEvent): void {
   const slot: 0 | 1 | null = event.end === null ? null : event.end === 0 ? 0 : 1;
   switch (event.kind) {
     case 'start': {
-      // REFINE-1 — the failure's one spoken line: the death counts here
-      // (whatever the bookkeeping below finds), and the frame loop's HUD
-      // update turns this frame's vanish starts into ONE notice riding the
-      // next summary repaint — the screen reader's "why did it die".
-      vanishStartsSinceUpdate += 1;
+      // REFINE-1/REFINE-4 — the death's one spoken line is counted in the
+      // LIFECYCLE transition hook (buildWorld's onTransition), which sees the
+      // reason ('abandoned' speaks "Cord put away."; the failure reasons
+      // speak "Cord shattered — unplugged."); this hook is the choreography's
+      // bookkeeping only.
       // The failing end is a free rope end from here: nobody may hold or
       // target it (the world ignores carry intents on vanishing cords; this
       // side stops COMPOSING them), and its proxy stops shadowing whatever
@@ -562,7 +591,7 @@ function handleVanishEvent(event: VanishEvent): void {
       // Instant on first floor contact: the fragments burst at the impact
       // point and the end jack's mesh despawns with them. REN-5 — the burst
       // names the failing end's POLARITY (sim index 0 is the RED input end
-      // for every production cord: INT-4's spawn law + the anchor's spec),
+      // for every production cord: INT-4's spawn law),
       // so the debris carries a red or blue BAND shard — THAT end dying.
       if (runtime === undefined || slot === null || event.at === null) return;
       render.shatter(event.at, {
@@ -598,16 +627,14 @@ function handleVanishEvent(event: VanishEvent): void {
 // (illegal transitions, production's "no-op-with-warning") surface as console
 // warnings; a strict world would throw instead (tests).
 //
-// T-REN-3 — the world is built by a FACTORY because RESET rebuilds it: the
-// empty scene is the same world minus the anchor cord (the config's own
-// spawn-only mode), so every subscription below is re-armed identically and
-// the old machine's records die with the old world. `world`/`driver` are
-// therefore `let` bindings every closure reads live.
-function buildWorld(withAnchor: boolean) {
+// T-REN-3 — the world is built by a FACTORY because RESET rebuilds it. The
+// world itself is always the EMPTY spawn-only one; the opening cord (REFINE-3,
+// staged below) exists only in the world built at load, so the reset scene is
+// the same factory product minus that staging — every subscription below is
+// re-armed identically and the old machine's records die with the old world.
+// `world`/`driver` are therefore `let` bindings every closure reads live.
+function buildWorld() {
   return createCordWorldStep({
-    ...(withAnchor
-      ? { anchor: { pin: CORD_PIN, segmentCount: CORD_SEGMENTS, floorY: FLOOR_Y } }
-      : {}),
     cord: { segmentCount: CORD_SEGMENTS, floorY: FLOOR_Y },
     maxCords: MAX_CORDS,
     // T-INT-6 — the over-stretch auto-unplug, ON in the production world: a
@@ -624,10 +651,27 @@ function buildWorld(withAnchor: boolean) {
     // T-INT-5 — the passive cursor-brush tunables (feel; see BRUSH above).
     brush: BRUSH,
     lifecycle: {
+      // REFINE-4 — the idle-abandon window, stated like every tunable: a
+      // `carried` cord lying untouched (no end in hand) for ~10 s of SIM time
+      // self-cleans into the LIFE-2 sequence (reason 'abandoned'; the
+      // composition speaks "Cord put away."). Longer than the popped grace's
+      // ~3 s BY DESIGN: the grace carries urgency (a cord just failed); an
+      // abandoned coil is clutter — the user is never punished for setting a
+      // cord down mid-thought, and grabbing one cancels the timer instantly.
+      idleSeconds: DEFAULT_IDLE_SECONDS,
       onTransition: (event) => {
         if (event.to === 'popped' && event.end !== null) {
           const runtime = cordRuntimes.get(event.cordId);
           if (runtime !== undefined) releaseSeat(runtime, event.end === 0 ? 0 : 1);
+        }
+        if (event.to === 'vanishing') {
+          // REFINE-1/REFINE-4 — death counting lives HERE (the transition
+          // carries the REASON; the choreography's 'start' event does not):
+          // every → vanishing entry is exactly one death, named once by its
+          // own line — 'abandoned' was PUT AWAY, every other reason (grace
+          // expiry, the off-cube release) SHATTERED.
+          if (event.reason === 'abandoned') putAwaysSinceUpdate += 1;
+          else vanishStartsSinceUpdate += 1;
         }
       },
       onRejected: (rejection) => {
@@ -638,11 +682,79 @@ function buildWorld(withAnchor: boolean) {
     },
   });
 }
-let world = buildWorld(true);
+let world = buildWorld();
 let driver = createFixedTimestepDriver(world, {
   timestep: SIM_TIMESTEP,
   maxSubsteps: MAX_SUBSTEPS_PER_FRAME,
 });
+
+// --- REFINE-3 — the opening composition ---------------------------------------
+//
+// The critique's P2: the old opening hung the anchor jack from an INVISIBLE
+// pin at (0, 1.6, 0) — an M1 debug leftover that read "broken/placeholder."
+// The restage (the critique's own suggested reading, option (a)): the world
+// opens on the toy's core verb already performed once — the cord's RED END
+// SEATED in a real cube socket, the cord draped down onto the bench, the BLUE
+// end resting beside it, one grab away from completing a link. The seat is a
+// REAL seat through the production paths, not a staged fake:
+//
+// - the POSE comes from the production socket rule (`planSeat` — perpendicular
+//   to the resolved face, tip buried PLUG_SEATED_DEPTH, soft-cap registered);
+// - the RECORD is `seatCarriedJack`'s own SeatRecord (render override, cube
+//   transport, socket count), so the plug RIDES a dragged cube and its socket
+//   counts against the cap like any other;
+// - the SIM seat flows through the world's own intent stream — one production
+//   step at load spawns cord 0 coiled on the module (the ordinary INT-4 spawn:
+//   red in "hand" at the coil's center) and the seat latch plugs that end the
+//   same substep (the machine's carried → awaiting-plug). From the first
+//   frame the cord is a normal awaiting-plug cord: blue grabbable, brushable
+//   (its body), pluggable into a second cube; red grabbable (the hand-pulled
+//   plug), un-pluggable, poppable by over-stretch — every production law.
+//
+// The staging runs BEFORE the first rendered frame and OUTSIDE the rAF loop,
+// as one explicit deterministic world call (the frame path and its 0-substep
+// first frame cannot race it). Cube 08 — the bench's nearest module, its bone
+// zone behind the red band — is the seat: no e2e drive's seating flow passes
+// over it, and at camera depth ~2.7 the plug reads at hero scale.
+const OPENING_SEAT_CUBE_ID = 7; // module 08 (scene.ts CUBE_POSITIONS)
+const [openingCubeX, openingCubeZ] = CUBE_POSITIONS[OPENING_SEAT_CUBE_ID];
+/** The top-face center the release would have hit (y = the cube's top face). */
+const OPENING_SEAT_HIT: { x: number; y: number; z: number } = {
+  x: openingCubeX,
+  y: CUBE_SIZE,
+  z: openingCubeZ,
+};
+/**
+ * The coil's resting plane: one tube radius above the face, so the spawned
+ * coil READS as lying on the module (the spawn's flat spiral is horizontal).
+ */
+const OPENING_SPAWN_AT: { x: number; y: number; z: number } = {
+  x: openingCubeX,
+  y: CUBE_SIZE + 0.03,
+  z: openingCubeZ,
+};
+{
+  const attempt = planSeat(sockets, {
+    cubeId: OPENING_SEAT_CUBE_ID,
+    hitPoint: OPENING_SEAT_HIT,
+    faceNormal: { x: 0, y: 1, z: 0 },
+  });
+  // The registry is fresh at load — the cap cannot deny the opening seat; a
+  // denial here is programmer error (the staging constants drifted).
+  if (attempt.outcome !== 'seated') {
+    throw new Error('main: the opening seat was denied by the socket registry');
+  }
+  seatCarriedJack(registerCordRuntime(0), 0, OPENING_SEAT_CUBE_ID, attempt);
+  const openingSeatRecord = cordRuntimes.get(0)?.seats[0];
+  if (openingSeatRecord === undefined || openingSeatRecord === null) {
+    throw new Error('main: the opening seat record went missing');
+  }
+  simState = world(simState, SIM_TIMESTEP, {
+    pointerRay: null,
+    spawnCord: { cordId: 0, at: { x: OPENING_SPAWN_AT.x, y: OPENING_SPAWN_AT.y, z: OPENING_SPAWN_AT.z } },
+    seatTargets: [openingSeatRecord.seatInput],
+  });
+}
 
 // --- Shared helpers ----------------------------------------------------------
 
@@ -966,6 +1078,8 @@ function readStatePaint(): {
       id: number;
       state: string;
       grace: number | null;
+      /** REFINE-4 — idle-abandon window left (null unless carried). */
+      idle: number | null;
       vanish: { phase: string; progress: number } | null;
     }>;
     setMotionProbe(enabled: boolean): void;
@@ -1011,6 +1125,9 @@ function readStatePaint(): {
       id,
       state: world.lifecycle.stateOf(id) ?? 'gone',
       grace: world.lifecycle.graceRemaining(id),
+      // REFINE-4 — the idle-abandon window's read (null unless carried; full
+      // while an end is in hand). The e2e drive times its rescue against it.
+      idle: world.lifecycle.idleRemaining(id),
       vanish: world.lifecycle.vanishInfo(id),
     })),
   setMotionProbe,
@@ -1029,8 +1146,8 @@ function readStatePaint(): {
  * untouched: repositioning them is not approved scope, and the strip's
  * RESET names cords only. Semantics, documented:
  *
- * - The world is REBUILT without the anchor cord (the config's own
- *   spawn-only mode — "omit to start with an empty world"), so the
+ * - The world is REBUILT empty (the factory's own spawn-only product; the
+ *   REFINE-3 opening staging is load-only and does not re-run), so the
  *   lifecycle machine's records, grace clocks, and in-flight vanish runs
  *   die with the old world instead of being cherry-picked out of it. The
  *   despawnCords intent would not do: it is only accepted while `vanishing`
@@ -1040,7 +1157,7 @@ function readStatePaint(): {
  *   socket cap counts included, so post-reset seats get the registry back).
  * - Cord ids RESTART at 0: the render layer's views are keyed by id and
  *   REVIVED on reuse (its pool is finite), so ids must not grow forever.
- *   In a no-anchor world id 0 is an ordinary spawn id.
+ *   In the reset world id 0 is an ordinary spawn id.
  * - The motion probe's per-id baselines are dropped with the world they
  *   measured (a reused id would otherwise read one bogus speed sample).
  * - No confirmation dialog — toy scale: the action is visible, total, and
@@ -1054,10 +1171,10 @@ function resetScene(): void {
   stagedFailureRelease = null; // LIFE-3: the stage dies with the world it named
   activeCarry = null;
   if (cubeDrag.phase === 'dragging') cubeDrag.endDrag(); // dropping is stopping
-  frameIndex = INTRO_FRAMES; // the intro pose belonged to the anchor cord
+  frameIndex = INTRO_FRAMES; // the intro pose belonged to the opening cord
   setMotionProbe(motionProbeEnabled);
   nextCordId = 0;
-  world = buildWorld(false);
+  world = buildWorld();
   driver = createFixedTimestepDriver(world, {
     timestep: SIM_TIMESTEP,
     maxSubsteps: MAX_SUBSTEPS_PER_FRAME,
@@ -1253,12 +1370,13 @@ const graceEntries: CordGraceInfo[] = Array.from({ length: MAX_CORDS }, () => ({
 }));
 const graceCords: CordGraceInfo[] = [];
 
-// M1 opening pose: the sim spawns cord 0 hanging STRAIGHT down from its pin,
-// which reads as a rigid pole. The composition poses the anchor cord's free
-// end beside the anchor through the carry seam for ~2 s, then stops, so the
-// scene opens on a readable cord at rest. A pointer-down during the intro
-// hands control to the user.
-const RESTING_SPOT: { x: number; y: number; z: number } = { x: -0.4, y: FLOOR_REST_Y, z: -0.15 };
+// REFINE-3 opening pose: the staged coil relaxes off the module under its own
+// springs while the composition poses the cord's FREE (blue) end at its bench
+// rest through the carry seam for ~2 s, then stops — the scene settles on the
+// readable opening: red seated, cord draped down onto the bench, blue lying
+// clear of every module. A pointer-down during the intro hands control to the
+// user.
+const RESTING_SPOT: { x: number; y: number; z: number } = { x: -0.55, y: FLOOR_REST_Y, z: 0.3 };
 const INTRO_FRAMES = 120; // ~2 s of 60 fps; convergence completes long before
 const introTarget: PinTargetInput = { cordId: 0, index: FREE_END_INDEX, position: RESTING_SPOT };
 let frameIndex = 0;
@@ -1286,19 +1404,42 @@ render.start((dtSeconds) => {
     for (const slot of [0, 1] as const) {
       const controller = runtime.carries[slot];
       if (controller.phase === 'idle') continue;
+      const endPoint = cordEndPoint(runtime.id, runtime.endIndex[slot]);
       const target = controller.composeTarget({
         ray: input.pointerRay,
         planeNormal: scratchCameraDir,
-        endPoint: cordEndPoint(runtime.id, runtime.endIndex[slot]),
+        endPoint,
         dtSeconds,
       });
-      if (target !== null) carryTargets.push(target);
+      if (target !== null) {
+        carryTargets.push(target);
+        continue;
+      }
+      // REFINE-4 — A HELD JACK NEVER GOES IDLE: a 'dragging' controller only
+      // fails to compose when the pointer is OFF-STAGE (ray null — the
+      // pointer left the document with the button still down). The hand has
+      // NOT let go, so this layer composes a HOLD target at the end's own
+      // point: the carry intent keeps flowing, the world's abandonment sweep
+      // keeps seeing a driven end, and a cord held off-stage can never
+      // self-clean out of the user's hand. ('dropping' is excluded on
+      // purpose: a converged drop going idle is exactly the abandonment
+      // path.) The rope-side cost is nil — the pin re-aims at the point it is
+      // already at. This is a corner path (pointer off-document mid-drag),
+      // so the small shell allocation here is fine; the steady-state loop
+      // stays allocation-free.
+      if (controller.phase === 'dragging' && input.pointerRay === null) {
+        carryTargets.push({
+          cordId: runtime.id,
+          index: runtime.endIndex[slot],
+          position: { x: endPoint.x, y: endPoint.y, z: endPoint.z },
+        });
+      }
     }
   }
   if (frameIndex < INTRO_FRAMES && world.lifecycle.stateOf(0) !== 'vanishing') {
     // The opening pose outranks cord 0's free-end targets (a user grab ends
     // the intro by setting frameIndex; spawned cords are never overridden).
-    // A vanishing anchor (LIFE-2) owns its own ends — no intro pin may fight
+    // A vanishing opening cord (LIFE-2) owns its own ends — no intro pin may fight
     // the choreography's free fall.
     carryTargets.push(introTarget);
   }
@@ -1383,11 +1524,16 @@ render.start((dtSeconds) => {
   // (model.ts), so an unchanged scene touches no DOM. REFINE-1: any vanish
   // that began inside this frame's substeps rides ONE failure notice on this
   // repaint ("Cord shattered — unplugged." — the critique's "why did it
-  // die"); popped→vanishing always moves the counts, so the notice is
+  // die"); REFINE-4: abandonment deaths ride their OWN honest line ("Cord
+  // put away." — clutter was tidied, nothing failed), each named once per
+  // death; popped→vanishing always moves the counts, so the notice is
   // consumed the same frame it fires, spoken exactly once.
-  const vanishNoticeLine =
-    vanishStartsSinceUpdate > 0 ? vanishNotice(vanishStartsSinceUpdate) : null;
+  const noticeLines: string[] = [];
+  if (vanishStartsSinceUpdate > 0) noticeLines.push(vanishNotice(vanishStartsSinceUpdate));
+  if (putAwaysSinceUpdate > 0) noticeLines.push(putAwayNotice(putAwaysSinceUpdate));
   vanishStartsSinceUpdate = 0;
+  putAwaysSinceUpdate = 0;
+  const vanishNoticeLine = noticeLines.length > 0 ? noticeLines.join(' ') : null;
   hud.update(readHudCountsInto(simState.cords, world.lifecycle.stateOf, hudCounts), vanishNoticeLine);
 
   // LIFE-2 — the vanish fade: the choreography's pull-window progress drives

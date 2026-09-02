@@ -489,8 +489,10 @@ function makeCubeTexture(index: number): THREE.CanvasTexture {
   return texture;
 }
 
-/** Scattered bench placement (x, z) — a stage, not a grid; clear of the cord. */
-const CUBE_POSITIONS: ReadonlyArray<readonly [number, number]> = [
+/** Scattered bench placement (x, z) — a stage, not a grid; clear of the cord.
+ * Exported for the composition root's opening staging (REFINE-3), so the
+ * seated opening plug can never drift from the bench it sits on. */
+export const CUBE_POSITIONS: ReadonlyArray<readonly [number, number]> = [
   [-1.65, -0.35],
   [-0.85, 0.95],
   [-1.25, -1.55],

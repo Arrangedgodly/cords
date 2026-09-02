@@ -6,7 +6,7 @@
  * browser input:
  *
  *   1. wait out the M1 intro; assert the HUD names the real opening scene
- *      (CORDS 1 — the anchor; LINKED 0; the summary sentence)
+ *      (CORDS 1 — the staged opening cord; LINKED 0; the summary sentence)
  *   2. spawn a cord (the real N key), seat RED on cube 04, find + seat BLUE
  *      on cube 05 → LINKED (same trusted-mouse flow as linked-e2e.mjs),
  *      spawn one more cord — a busy bench
@@ -269,7 +269,7 @@ try {
 
   // 1. The opening scene, named honestly by the faceplate.
   await waitFor('hud in the DOM', async () => (await lit(ws, 'cords')) !== undefined);
-  assertEq(await lit(ws, 'cords'), 1, 'opening CORDS segments (the anchor cord)');
+  assertEq(await lit(ws, 'cords'), 1, 'opening CORDS segments (the staged opening cord)');
   assertEq(await numeral(ws, 'cords'), '1', 'opening CORDS numeral');
   assertEq(await lit(ws, 'linked'), 0, 'opening LINKED segments');
   assertEq(await summaryText(ws), '1 cord, 1 awaiting plug. Press N for a new cord, R to reset.', 'opening summary');

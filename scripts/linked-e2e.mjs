@@ -6,7 +6,7 @@
  * the way to the LINKED state — BOTH jacks seated on two cubes — with
  * trusted browser input (Input.dispatchKeyEvent / Input.dispatchMouseEvent):
  *
- *   1. wait out the M1 intro (the anchor cord rests)
+ *   1. wait out the opening intro (the staged cord rests)
  *   2. cursor over the spawn point, press N — a coiled cord spawns IN HAND
  *      (red jack carried at the cursor, blue trailing)
  *   3. wait out the uncoil, carry the RED jack a short hop to cube 04's top
@@ -54,8 +54,10 @@ const CUBE05_BODY = { x: 1050, y: 545 }; // cube 05's front face, clear of its s
 const CUBE05_DRAG = { x: 1120, y: 620 }; // transport destination — away from cube 04, cord stays visible
 // The blue-jack scan window: covers the rest spot (±0.2 world coil radius
 // ≈ ±40 px) and EXCLUDES every cube's screen rect (cube 08 x ≥ 775, cube 07
-// y ≤ 475, cube 02 x ≤ 600) and the M1 cord's resting jack (max x 676) —
-// inside this window a 'grab' hover can only be the spawned cord's blue end.
+// y ≤ 475, cube 02 x ≤ 600) and the OPENING cord's resting jack (REFINE-3:
+// it rests at ≈ (622,547), its grab halo reaching ≈ x 645 — the draped body
+// is never grabbable, only jack proxies and cubes are) — inside this window
+// a 'grab' hover can only be the spawned cord's blue end.
 const SCAN = { x0: 680, x1: 772, y0: 480, y1: 600, step: 12 };
 const NEUTRAL = { x: 640, y: 700 }; // open floor — hover reads 'default' there
 

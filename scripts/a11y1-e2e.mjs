@@ -317,9 +317,9 @@ try {
   }
 
   // --- 2. THE KEYBOARD FLOOR (zero mouse so far) -------------------------------
-  // Opening scene: the anchor cord (awaiting-plug — its pin is a seat).
+  // Opening scene: the staged cord (awaiting-plug — its red end is seated).
   await waitFor('opening summary', async () => (await summaryText(ws)) !== '<missing>');
-  assertEq(await summaryText(ws), '1 cord, 1 awaiting plug. Press N for a new cord, R to reset.', 'opening summary (the anchor names itself)');
+  assertEq(await summaryText(ws), '1 cord, 1 awaiting plug. Press N for a new cord, R to reset.', 'opening summary (the staged cord names itself)');
   assertEq(await litSegs(ws, 'cords'), 1, 'opening CORDS segments');
 
   // Tab order: body → NEW CORD → RESET → wraps to body. No trap.
@@ -359,7 +359,7 @@ try {
   await pressEnter(ws);
   await sleep(1000); // headless swiftshader rAF is slow — give the spawn its frame
   let cords = await lifecycleNow(ws);
-  assertEq(cords.length, 2, 'Enter on NEW CORD spawned (anchor + 1)');
+  assertEq(cords.length, 2, 'Enter on NEW CORD spawned (opening cord + 1)');
   assertEq(await summaryText(ws), '2 cords, 1 awaiting plug. Press N for a new cord, R to reset.', 'summary after the button spawn');
 
   // N works while a BUTTON is focused (the keys are the page's, window-level).

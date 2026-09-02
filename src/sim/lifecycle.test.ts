@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { createCordLifecycle, DEFAULT_GRACE_SECONDS } from './lifecycle';
+import { createCordLifecycle, DEFAULT_GRACE_SECONDS, DEFAULT_IDLE_SECONDS } from './lifecycle';
 import type {
   CordLifecycle,
   LifecycleRejection,
@@ -37,6 +37,16 @@ import type {
  *   behavior); seat transports and noteCarrying never transition.
  * - GRACE: fires at ~3s of SIM time (configurable) and NOT before; a re-seat
  *   cancels it; clock garbage (NaN/≤0) never moves it.
+ * - REFINE-4 — THE IDLE WINDOW (approved #9, 'abandoned'): a `carried` cord
+ *   with NO end in hand counts down `idleSeconds` (~10s default, separate
+ *   from the grace window); expiry → vanishing. IN HAND IS NEVER IDLE
+ *   (a 'carrying' end refills the window every advance); a grab cancels
+ *   INSTANTLY (noteCarrying's own reset — a last-substep grab beats the
+ *   clock that runs earlier in the step) and leaves a brand-new window;
+ *   the floor drop and the hand-pull re-arm a FRESH window; seated states
+ *   never idle (the grace owns their exits); noteCarryStopped is the sweep's
+ *   advisory retirement of a stale carry (never a transition); Infinity
+ *   disables #9 (the pre-REFINE-4 behavior).
  * - EVENTS: emitted in order, with from/to/reason/end and the machine clock.
  * - DETERMINISM + MULTI-CORD ISOLATION: identical call sequences produce
  *   identical event streams; per-cord records (grace included) never leak.
@@ -636,5 +646,223 @@ describe('T-LIFE-1 — determinism + multi-cord isolation', () => {
   it('a bad config fails fast at construction (programmer error)', () => {
     expect(() => createCordLifecycle({ graceSeconds: Number.NaN })).toThrow(/graceSeconds/);
     expect(() => createCordLifecycle({ graceSeconds: -1 })).toThrow(/graceSeconds/);
+    expect(() => createCordLifecycle({ idleSeconds: Number.NaN })).toThrow(/idleSeconds/);
+    expect(() => createCordLifecycle({ idleSeconds: -1 })).toThrow(/idleSeconds/);
+    // Infinity is the explicit disable (the pre-REFINE-4 behavior), not an error.
+    expect(() => createCordLifecycle({ idleSeconds: Number.POSITIVE_INFINITY })).not.toThrow();
+  });
+});
+
+describe('REFINE-4 — the idle-abandon window (approved #9, machine level)', () => {
+  it('the default window is ~10s — longer than the ~3s grace BY DESIGN (clutter, not urgency)', () => {
+    expect(DEFAULT_IDLE_SECONDS).toBe(10);
+    expect(DEFAULT_IDLE_SECONDS).toBeGreaterThan(DEFAULT_GRACE_SECONDS);
+  });
+
+  it('fires at ~10s of sim time and NOT before; the event is carried→vanishing, reason abandoned, end null', () => {
+    const transitions: LifecycleTransition[] = [];
+    const machine = createCordLifecycle({ onTransition: (t) => transitions.push(t) });
+    machine.register(CORD);
+    machine.noteCarrying(CORD, 0); // the spawn flow: red in hand
+    machine.releaseCarriedJack(CORD, 0); // the ordinary floor drop — the window counts from here
+    expect(machine.stateOf(CORD)).toBe('carried');
+    expect(machine.idleRemaining(CORD)).toBe(DEFAULT_IDLE_SECONDS);
+    let simTime = 0;
+    while (simTime < 9.9) {
+      machine.advance(1 / 120);
+      simTime += 1 / 120;
+      expect(machine.stateOf(CORD), `at ${simTime}s`).toBe('carried'); // not before
+    }
+    expect(machine.idleRemaining(CORD)).toBeGreaterThan(0);
+    expect(machine.idleRemaining(CORD)).toBeLessThan(0.101);
+    const crossing = machine.now();
+    while (simTime < 10.0001) {
+      machine.advance(1 / 120);
+      simTime += 1 / 120;
+    }
+    expect(machine.stateOf(CORD)).toBe('vanishing'); // expired on the crossing step
+    expect(machine.idleRemaining(CORD)).toBeNull();
+    expect(transitions[transitions.length - 1]).toMatchObject({
+      cordId: CORD,
+      from: 'carried',
+      to: 'vanishing',
+      reason: 'abandoned',
+      end: null, // cord-level: a dropped coil has no seat to fail
+    });
+    // The crossing landed at the window's edge (float-exact in the machine's
+    // own accumulation; ~10s, never the drifted loop counter's value).
+    expect(transitions[transitions.length - 1]?.time).toBeGreaterThan(crossing);
+    expect(transitions[transitions.length - 1]?.time).toBeLessThan(10.02);
+  });
+
+  it('a configurable window is honored (idleSeconds 0.5)', () => {
+    const transitions: LifecycleTransition[] = [];
+    const machine = createCordLifecycle({
+      idleSeconds: 0.5,
+      onTransition: (t) => transitions.push(t),
+    });
+    machine.register(CORD);
+    machine.noteCarrying(CORD, 0);
+    machine.releaseCarriedJack(CORD, 0);
+    machine.advance(0.4);
+    expect(machine.stateOf(CORD)).toBe('carried');
+    machine.advance(0.1);
+    expect(machine.stateOf(CORD)).toBe('vanishing');
+    expect(transitions.find((t) => t.reason === 'abandoned')?.time).toBeCloseTo(0.5, 12);
+  });
+
+  it('Infinity DISABLES #9 — the pre-REFINE-4 behavior, explicitly', () => {
+    const machine = createCordLifecycle({ idleSeconds: Number.POSITIVE_INFINITY });
+    machine.register(CORD);
+    machine.noteCarrying(CORD, 0);
+    machine.releaseCarriedJack(CORD, 0);
+    for (let i = 0; i < 1200; i += 1) machine.advance(1 / 60); // 20 s of sim time
+    expect(machine.stateOf(CORD)).toBe('carried'); // never abandons
+  });
+
+  it('IN HAND IS NEVER IDLE: a carrying end refills the window every advance', () => {
+    const { machine, transitions } = build('carried');
+    machine.noteCarrying(CORD, 0);
+    for (let i = 0; i < 1200; i += 1) machine.advance(1 / 60); // 20 s held
+    expect(machine.stateOf(CORD)).toBe('carried');
+    expect(machine.idleRemaining(CORD)).toBe(DEFAULT_IDLE_SECONDS); // stayed full
+    expect(transitions).toHaveLength(0);
+  });
+
+  it('GRABBING an idling cord cancels the timer INSTANTLY and resets the window FULLY', () => {
+    // The instant half: a grab in the window's last substep must beat the
+    // clock (noteCarrying resets before the next advance runs).
+    const edge = createCordLifecycle({ idleSeconds: 1 });
+    edge.register(CORD);
+    edge.releaseCarriedJack(CORD, END); // no noteCarrying: hand-rolled release of a free end is a silent no-op…
+    edge.noteCarrying(CORD, 0); // …so open the window the real way: grab, then drop
+    edge.releaseCarriedJack(CORD, 0);
+    edge.advance(1 - 1 / 120 + 1e-9); // inside the window by a hair
+    expect(edge.stateOf(CORD)).toBe('carried');
+    edge.noteCarrying(CORD, END); // THE GRAB — one substep before expiry
+    expect(edge.idleRemaining(CORD)).toBe(1); // already reset, before any advance
+    edge.advance(1 / 120); // the step that WOULD have expired it
+    expect(edge.stateOf(CORD)).toBe('carried'); // rescued
+
+    // The full half: rescue → hold → 20 s → still carried; drop again → a
+    // BRAND-NEW window (not the 1 ms that was left).
+    const { machine } = build('carried');
+    machine.noteCarrying(CORD, 0);
+    machine.releaseCarriedJack(CORD, 0);
+    for (let i = 0; i < 590; i += 1) machine.advance(1 / 60); // 9.83 s — 0.17 s left
+    expect(machine.idleRemaining(CORD)).toBeLessThan(0.2);
+    machine.noteCarrying(CORD, 0); // the rescue grab
+    for (let i = 0; i < 1200; i += 1) machine.advance(1 / 60); // 20 s in hand
+    expect(machine.stateOf(CORD)).toBe('carried');
+    machine.releaseCarriedJack(CORD, 0); // dropped again
+    expect(machine.idleRemaining(CORD)).toBe(DEFAULT_IDLE_SECONDS); // fresh window
+    expect(machine.stateOf(CORD)).toBe('carried');
+  });
+
+  it('the hand-pulled plug (#8) enters carried with a FRESH window — no stale pre-seat count', () => {
+    const machine = createCordLifecycle({ idleSeconds: 1 });
+    machine.register(CORD);
+    machine.noteCarrying(CORD, 0);
+    machine.advance(0.9); // burn most of the window as an untouched coil
+    machine.seat(CORD, 0); // seated (idle no longer applies)
+    machine.noteCarrying(CORD, END);
+    machine.seat(CORD, END); // linked
+    machine.unseat(CORD, 0); // #7: pulled by hand → awaiting-plug
+    machine.unseat(CORD, END); // #8: the last seat pulled → carried, in hand
+    expect(machine.stateOf(CORD)).toBe('carried');
+    expect(machine.idleRemaining(CORD)).toBe(1); // brand new, not the stale 0.1
+    // And the released pulled plug re-arms a fresh window too.
+    machine.releaseCarriedJack(CORD, END);
+    expect(machine.idleRemaining(CORD)).toBe(1);
+  });
+
+  it('SEATED states never idle — the grace clock owns their exits', () => {
+    // awaiting-plug (the anchor/opening-cord shape): seated by construction.
+    const anchor = createCordLifecycle({ idleSeconds: 0.5 });
+    anchor.register(CORD, { seatedEnd: 0 });
+    for (let i = 0; i < 600; i += 1) anchor.advance(1 / 60); // 10 s
+    expect(anchor.stateOf(CORD)).toBe('awaiting-plug'); // the REFINE-3 opening cord never self-cleans
+    expect(anchor.idleRemaining(CORD)).toBeNull();
+    // popped: its own clock is the ~3s grace, and its expiry reason is the
+    // GRACE one — never 'abandoned'.
+    const popped = build('linked');
+    popped.machine.pop(CORD, 0);
+    for (let i = 0; i < 181; i += 1) popped.machine.advance(1 / 60);
+    expect(popped.machine.stateOf(CORD)).toBe('vanishing');
+    expect(popped.transitions.map((t) => t.reason)).toContain('grace-expired');
+    expect(popped.transitions.some((t) => t.reason === 'abandoned')).toBe(false);
+  });
+
+  it('noteCarryStopped — the sweep\u2019s advisory retirement: carrying→free, never a transition, silent no-ops', () => {
+    const { machine, transitions, rejections } = build('carried');
+    machine.noteCarrying(CORD, 0);
+    expect(machine.endMode(CORD, 0)).toBe('carrying');
+    machine.noteCarryStopped(CORD, 0);
+    expect(machine.endMode(CORD, 0)).toBe('free');
+    expect(machine.stateOf(CORD)).toBe('carried');
+    expect(transitions).toHaveLength(0);
+    expect(rejections).toHaveLength(0);
+    // No-ops stay silent: a free end, a seated end, an unknown cord, a locked cord.
+    machine.noteCarryStopped(CORD, 0);
+    machine.noteCarryStopped(CORD, 99);
+    machine.noteCarryStopped(42, 0);
+    expect(rejections).toHaveLength(0);
+    const vanishing = build('vanishing'); // end 0 seated, end 8 was released (free)
+    vanishing.machine.noteCarryStopped(CORD, 0); // frozen while locked
+    expect(vanishing.machine.endMode(CORD, 0)).toBe('seated');
+    expect(vanishing.rejections).toHaveLength(0);
+  });
+
+  it('the retirement OPENS the count; carry intents RESET it — the sweep/carry cadence', () => {
+    const machine = createCordLifecycle({ idleSeconds: 2 });
+    machine.register(CORD);
+    machine.noteCarrying(CORD, 0);
+    machine.releaseCarriedJack(CORD, 0); // dropped; mode free (the release consumed the carry)
+    machine.advance(1); // 1 s of idle
+    expect(machine.idleRemaining(CORD)).toBeCloseTo(1, 12);
+    // A driven frame: the carry re-marks the end — the window refills.
+    machine.noteCarrying(CORD, 0);
+    expect(machine.idleRemaining(CORD)).toBe(2);
+    machine.advance(0.5); // still in hand: refilled every advance
+    expect(machine.idleRemaining(CORD)).toBe(2);
+    machine.noteCarryStopped(CORD, 0); // the sweep: targets stopped
+    machine.advance(1.5);
+    expect(machine.stateOf(CORD)).toBe('carried');
+    machine.advance(0.5); // 2 s after retirement → expiry
+    expect(machine.stateOf(CORD)).toBe('vanishing');
+  });
+
+  it('clock garbage never moves the idle window', () => {
+    const { machine } = build('carried');
+    machine.noteCarrying(CORD, 0);
+    machine.releaseCarriedJack(CORD, 0);
+    machine.advance(Number.NaN);
+    machine.advance(0);
+    machine.advance(-1);
+    machine.advance(Number.POSITIVE_INFINITY);
+    expect(machine.idleRemaining(CORD)).toBe(DEFAULT_IDLE_SECONDS);
+    expect(machine.stateOf(CORD)).toBe('carried');
+  });
+
+  it('per-cord idle clocks are independent; identical runs are bitwise-identical', () => {
+    const run = (): string[] => {
+      const events: string[] = [];
+      const machine = createCordLifecycle({
+        idleSeconds: 0.5,
+        onTransition: (t) => events.push(JSON.stringify(t)),
+        onRejected: (r) => events.push(JSON.stringify(r)),
+      });
+      machine.register(1);
+      machine.register(2);
+      machine.noteCarrying(1, 0);
+      machine.releaseCarriedJack(1, 0); // cord 1 idles toward expiry…
+      machine.noteCarrying(2, 0); // …cord 2 stays in hand the whole time
+      for (let i = 0; i < 120; i += 1) machine.advance(1 / 60); // 2 s
+      return events;
+    };
+    const a = run();
+    const b = run();
+    expect(a).toEqual(b); // determinism: identical streams
+    expect(a.filter((e) => e.includes('abandoned'))).toHaveLength(1); // cord 1 only
   });
 });

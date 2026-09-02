@@ -8,8 +8,10 @@
  * prove those disciplines hold under adversarial input, not to re-derive
  * them:
  *
- * - the PRODUCTION world shape (anchor cord, 24-segment cords, over-stretch
- *   detection ON, vanish choreography ON, brush ON) — but with
+ * - the PRODUCTION world shape (the REFINE-3 opening cord — spawned coiled on
+ *   a module top with its red end plugged through the same seat latch any
+ *   release composes, exactly main.ts's load staging — 24-segment cords,
+ *   over-stretch detection ON, vanish choreography ON, brush ON) — but with
  *   `lifecycle.strict = true`: an ILLEGAL transition THROWS in this harness,
  *   so "FSM legality" is not an assertion, it is the test's failure mode;
  * - the SAME-FRAME LATCH DROP: the seat-latch array handed to the driver as
@@ -191,10 +193,21 @@ export interface FuzzHarness {
 }
 
 export interface FuzzHarnessOptions {
-  /** Include the production anchor cord (id 0, awaiting-plug, end 0 seated). */
+  /**
+   * Include the production opening cord (id 0, awaiting-plug, red end seated
+   * on a module top — the REFINE-3 staging, mirroring main.ts's load step).
+   */
   withAnchor?: boolean;
   /** Skip invariant checks (determinism A/B runs still assert equality). */
   relaxed?: boolean;
+  /**
+   * REFINE-4 — the idle-abandon window for the harness world (production
+   * tunable `lifecycle.idleSeconds`, default ~10 s). The corpus's dedicated
+   * abandonment pattern TUNES IT SHORT (2 s) so the fast corpus exercises
+   * the sweep/#9/laws within its frame budget; every other pattern runs the
+   * production default.
+   */
+  idleSeconds?: number;
 }
 
 export function createFuzzHarness(options: FuzzHarnessOptions = {}): FuzzHarness {
@@ -248,9 +261,6 @@ export function createFuzzHarness(options: FuzzHarnessOptions = {}): FuzzHarness
   }
 
   const world = createCordWorldStep({
-    ...(withAnchor
-      ? { anchor: { pin: { x: 0, y: 1.6, z: 0 }, segmentCount: FUZZ_SEGMENTS, floorY: 0 } }
-      : {}),
     cord: { segmentCount: FUZZ_SEGMENTS, floorY: 0 },
     maxCords: 16,
     overStretch: { threshold: DEFAULT_OVERSTRETCH_THRESHOLD },
@@ -274,6 +284,7 @@ export function createFuzzHarness(options: FuzzHarnessOptions = {}): FuzzHarness
       // STRICT: an illegal transition THROWS — FSM legality is the harness's
       // own failure mode, not an after-the-fact assertion.
       strict: true,
+      ...(options.idleSeconds === undefined ? {} : { idleSeconds: options.idleSeconds }),
       onTransition: (event) => {
         eventLog.push(
           `lifecycle:${event.from}>${event.to}|${event.cordId}|${event.end ?? -1}|${event.reason}`,
@@ -297,6 +308,37 @@ export function createFuzzHarness(options: FuzzHarnessOptions = {}): FuzzHarness
     maxSubsteps: FUZZ_MAX_SUBSTEPS,
   });
   let simState: SimState = { time: 0, cords: [] };
+
+  // REFINE-3 — the composition-faithful OPENING CORD, mirroring main.ts's
+  // load staging exactly: cord 0 is SPAWNED coiled on a module's top (the
+  // ordinary INT-4 spawn) and its RED end is PLUGGED through the same seat
+  // latch any release composes, in ONE explicit production step before the
+  // first frame — deterministic, and outside frame() so the accounting below
+  // sees its transitions against the seeded tags on frame 1. The pin sits
+  // PLUG_SEATED_DEPTH (socket.ts, 0.082) inside the top face, the coil one
+  // tube radius above it — the page's own opening numbers.
+  if (withAnchor) {
+    const [ox, oz] = FUZZ_CUBES[7];
+    const seatPosition = { x: ox, y: 0.5 - 0.082, z: oz };
+    const record: SeatRecord = {
+      cordId: 0,
+      index: 0,
+      cubeId: 7,
+      baseCenter: { x: cubeCenters[7].x, y: cubeCenters[7].y, z: cubeCenters[7].z },
+      basePin: { x: seatPosition.x, y: seatPosition.y, z: seatPosition.z },
+      position: seatPosition,
+      seatInput: { cordId: 0, index: 0, position: seatPosition },
+    };
+    record.seatInput.position = record.position; // alias: transports mutate in place
+    seatRecords.set(seatKey(0, 0), record);
+    pendingTags.add('spawn:0');
+    pendingTags.add('seat:0:0');
+    simState = world(simState, FUZZ_TIMESTEP, {
+      pointerRay: null,
+      spawnCord: { cordId: 0, at: { x: ox, y: 0.53, z: oz } },
+      seatTargets: [record.seatInput],
+    });
+  }
 
   // --- invariant checks (thrown as loud failures, frame-stamped) -----------
 
@@ -433,7 +475,13 @@ export function createFuzzHarness(options: FuzzHarnessOptions = {}): FuzzHarness
       } else if (to === 'awaiting-plug' || to === 'linked') {
         ok = tags.has(`seat:${cordId}:${end}` as IntentTag);
       } else if (to === 'vanishing') {
-        ok = reason === 'grace-expired' || tags.has(`release:${cordId}` as IntentTag);
+        // REFINE-4 — 'abandoned' is the machine's OWN automatic reason (the
+        // idle clock, exactly like 'grace-expired': no pointer intent names
+        // it); every other entry to vanishing must be a tagged release.
+        ok =
+          reason === 'grace-expired' ||
+          reason === 'abandoned' ||
+          tags.has(`release:${cordId}` as IntentTag);
       } else if (to === 'gone') {
         ok = reason === 'vanish-complete';
       }
@@ -661,10 +709,10 @@ export function createFuzzHarness(options: FuzzHarnessOptions = {}): FuzzHarness
       //   popped-dangle, and dropped-from-awaiting survivor) must be BITWISE
       //   STILL one frame to the next — the rope's sleep zeroes velocity
       //   exactly (SIM-3), so this is the DoD's "zero jitter", exact;
-      // - a cord with NO seat (a discarded spawn; the anchor hanging from
-      //   its construction pin) never sleeps BY DESIGN (sleep requires a
-      //   plug — rope.ts) — discarded coils keep relaxing outward on the
-      //   floor for a while. Their contract is DECAY: the residual motion
+      // - a cord with NO seat (a discarded spawn) never sleeps BY DESIGN
+      //   (sleep requires a plug — rope.ts) — discarded coils keep relaxing
+      //   outward on the floor for a while. Their contract is DECAY: the
+      //   residual motion
       //   over the tail's final second must be strictly below the previous
       //   second's and inside the loose absolute cap (a jitter loop or a
       //   sustained swing would hold or grow).
@@ -682,6 +730,11 @@ export function createFuzzHarness(options: FuzzHarnessOptions = {}): FuzzHarness
       for (let w = 0; w < windowFrames * 2; w += 1) {
         harness.frame(FUZZ_FRAME_DT);
         for (const cord of simState.cords) {
+          // REFINE-4 — a coil whose idle window expires MID-TAIL is entering
+          // the vanish sequence (the choreography owns it from here); its
+          // collapse impulse is the sequence's own motion, not a settle
+          // failure, so it neither samples into the decay series…
+          if (world.lifecycle.stateOf(cord.id) === 'vanishing') continue;
           if (seatRecords.has(seatKey(cord.id, 0)) || seatRecords.has(seatKey(cord.id, FUZZ_SEGMENTS))) {
             continue; // seated: bitwise-still check below covers it
           }
@@ -724,6 +777,11 @@ export function createFuzzHarness(options: FuzzHarnessOptions = {}): FuzzHarness
       for (const cord of simState.cords) {
         const was = finalBefore.get(cord.id);
         if (was === undefined) fail(`cord ${cord.id} appeared during the calm tail`);
+        // REFINE-4 — …and a cord still mid-sequence at the tail's final
+        // frame is skipped here for the same reason (the registry accounting
+        // + the goneCords check below prove it left; its exit is the
+        // sequence's, not a settle failure).
+        if (world.lifecycle.stateOf(cord.id) === 'vanishing') continue;
         const seated =
           seatRecords.has(seatKey(cord.id, 0)) || seatRecords.has(seatKey(cord.id, FUZZ_SEGMENTS));
         if (seated) {

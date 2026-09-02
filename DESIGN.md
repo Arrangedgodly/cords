@@ -226,6 +226,8 @@ One surface: the full-viewport WebGL stage IS the page (no marketing shell, no s
 
 **The scene**: camera at (0, 1.45, 4.5) looking at (0, 0.55, 0), 60° fov. Eight 0.5-unit cubes scattered on the bench in authored positions (a stage, not a grid), each sitting on y=0. The floor is a 64×64 plane whose texture repeats every 4 world units as machined panels, half-tile offset so no seam runs under the world origin. Fog (#111114) starts at 8 units and saturates at 26 — the bench dissolves into the void at the horizon line.
 
+**The opening composition (REFINE-3)**: the first frame stages the toy's core verb already performed once — one patch cord with its RED end seated in module 08's top face (the bench's nearest module, its bone zone behind the red band), the cord draped down over the module's edge onto the bench, and the BLUE end resting on the bench beside module 02, one grab away from completing a link. The seat is a real production seat (pickable, grabbable, un-pluggable, transport-riding) — no cord in the world ever hangs from anything invisible.
+
 **Density and responsiveness**: desktop, mouse, landscape — no breakpoints exist. The strip is the only responsive furniture (full-width fixed); the stage letterboxes via WebGL resize. Mobile/touch is out of scope by product decision.
 
 ## Elevation & Depth
@@ -276,12 +278,13 @@ Dark rubber tube (#2e3138, roughness 0.82) — matte, with a slight sheen under 
 - **Stretch ticks** — at ≥ 0.90 tautness (full ink at 0.985) the cord carries thin neutral Tick Ink registration marks, one per rest-length of measured arc, painted into the albedo. They spread with the measured stretch: the cord learning its length. Never red, never emissive; off for linked/counting-down cords.
 - **Popped grace** — the tube dims linearly over the ~3s window to a 0.22 opacity floor (the visible countdown; the floor keeps the jack re-grabbable), composing multiplicatively with the vanish fade so expiry never flashes back to full. The failing band blinks through the window's final 1.5s — 3 Hz stepping up to 5 Hz at the window's half, 65% duty (REFINE-1: the countdown signals through half its window and quickens as it dies; previously only the final 1s).
 - **Vanishing** — the failing jack shatters: ~18 dark cool-steel tetra shards (per-instance ink #23–#3a channel-varied, seeded deterministic; base 0.03, scaled 0.75–1.8 — REFINE-1's legibility bump, was 14 at 0.02) plus its own band's color shard as the largest piece; ballistic, two floor bounces (restitution 0.4 then 0.22), a friction slide, 0.55s lifetime, scaling out with the cord. Zero glow. The tube then fades as it pulls out.
+- **Abandoned decay** (REFINE-4 — PRODUCT.md's "self-clean when abandoned") — an untouched dropped coil self-cleans after a quiet ~10s sim-time idle window: no dim, no blink, nothing painted (clutter carries no urgency; the popped grace's ~3s countdown is the urgent one), and grabbing the coil cancels the timer instantly. The exit is the SAME Vanishing grammar, tuned for a grounded entry: the resting coil releases, the red jack's shard burst marks the decay where it lies, the body collapse-pulls in on itself and fades — the coil powering down, not failing. The live summary names it in its own words ("Cord put away.", never the shattered line).
 - **Deny cue** — the soft-cap rejection: one flat Plug Red ring on the denied face, fading over 350ms. A painted mark, not a lamp; a second denial replaces the first.
 
 ### Motion Grammar (applies to every component)
 All motion is a pure function of sim state + the sim clock (`src/render/pulse.ts`, `src/render/states.ts`): the chase phase is `simTime × speed mod 1` — never wall time, never frame deltas — and the blink keys on the same clock. There are zero CSS transitions, zero keyframes, zero tweens; DOM states flip instantly and the sim owns every moving pixel. A sleeping cord costs zero GPU work (frozen points = no buffer writes).
 
-**Reduced-motion seams** (from `prefers-reduced-motion`): the chase cadence slows ×0.5 (the pulse IS the "linked" signal, so it is never removed); the grace band holds steady (the dim stays — it is state, not motion); the shatter burst is skipped (the despawn/fade sequence runs unchanged); the cursor-brush perturbation is dampened ×0.5.
+**Reduced-motion seams** (from `prefers-reduced-motion`): the chase cadence slows ×0.5 (the pulse IS the "linked" signal, so it is never removed); the grace band holds steady (the dim stays — it is state, not motion); the shatter burst is skipped (the despawn/fade sequence runs unchanged — REFINE-4's abandoned decay rides this same seam: no fragment burst on the grounded decay, the fade holds); the cursor-brush perturbation is dampened ×0.5.
 
 ## Do's and Don'ts
 

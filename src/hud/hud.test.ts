@@ -23,6 +23,7 @@ import {
   HUD_SEGMENTS,
   createHudCounts,
   litSegments,
+  putAwayNotice,
   readHudCounts,
   readHudCountsInto,
   sameHudCounts,
@@ -360,6 +361,57 @@ describe('REFINE-1 — vanishNotice + the notice-led summary (the death is NAMED
     // And the despawn retires it: the next sentence never speaks the death again.
     world.advance(1, { pointerRay: null, despawnCords: [{ cordId: 1 }] });
     expect(sceneSummary(countsOf(world)).includes('shattered')).toBe(false);
+  });
+});
+
+// --- REFINE-4 — the abandonment death's own honest line ------------------------
+
+describe('REFINE-4 — putAwayNotice: the self-clean line (distinct vocabulary)', () => {
+  it('names abandonment in its OWN words — put away, never shattered (nothing failed)', () => {
+    expect(putAwayNotice(1)).toBe('Cord put away.');
+    expect(putAwayNotice(2)).toBe('2 cords put away.');
+    expect(putAwayNotice(4)).toBe('4 cords put away.');
+    // Garbage fails to the singular, same law as vanishNotice.
+    expect(putAwayNotice(Number.NaN)).toBe('Cord put away.');
+    expect(putAwayNotice(0)).toBe('Cord put away.');
+    // The vocabulary is DISJOINT from the failure line (the critique's ask:
+    // the summary names why a cord left, honestly, once).
+    expect(putAwayNotice(1)).not.toContain('shatter');
+    expect(vanishNotice(1)).not.toContain('put away');
+  });
+
+  it('the composed put-away sentence rides the summary once, ahead of the counts', () => {
+    // What main.ts composes the frame an idle coil abandons (window expires,
+    // counts still show the cord while it vanishes):
+    expect(
+      sceneSummary({ cords: 1, awaitingPlug: 0, linked: 0, popped: 0, vanishing: 1 }, putAwayNotice(1)),
+    ).toBe('Cord put away. 1 cord, 1 vanishing. Press N for a new cord, R to reset.');
+    // Both death kinds in ONE frame speak both lines, in stability order.
+    expect(
+      sceneSummary(
+        { cords: 3, awaitingPlug: 0, linked: 1, popped: 0, vanishing: 2 },
+        `${vanishNotice(1)} ${putAwayNotice(1)}`,
+      ),
+    ).toBe(
+      'Cord shattered — unplugged. Cord put away. 3 cords, 1 linked, 2 vanishing. Press N for a new cord, R to reset.',
+    );
+  });
+
+  it('through the REAL world: the abandoned coil\u2019s frame is where the line rides', () => {
+    const world = makeWorld();
+    // A dropped coil (no end driven) counts down the idle window and leaves
+    // through the same vanishing state — the counts move, the line rides.
+    world.advance(1, { pointerRay: null, spawnCord: { cordId: 1, at: { x: 0.5, y: 1, z: 0 } } });
+    // No carry targets ever flow: the sweep retires the spawn's carry the
+    // first target-less step, the window counts, expiry → vanishing.
+    world.advance(1, { pointerRay: null, releaseJack: { cordId: 1, index: 0 } });
+    world.advance(1260, { pointerRay: null }); // 10.5 s > the ~10 s default window
+    const atAbandon = countsOf(world);
+    expect(atAbandon).toEqual({ cords: 2, awaitingPlug: 1, linked: 0, popped: 0, vanishing: 1 });
+    expect(sceneSummary(atAbandon, putAwayNotice(1)).startsWith('Cord put away. ')).toBe(true);
+    // The despawn retires the line like every death.
+    world.advance(1, { pointerRay: null, despawnCords: [{ cordId: 1 }] });
+    expect(sceneSummary(countsOf(world)).includes('put away')).toBe(false);
   });
 });
 

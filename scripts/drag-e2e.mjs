@@ -6,15 +6,15 @@
  * with browser-level mouse events (Input.dispatchMouseEvent — trusted
  * input, the closest thing to a hand):
  *
- *   1. wait out the M1 intro (the free end rests on the bench)
+ *   1. wait out the opening intro (the free end rests on the bench)
  *   2. grab the resting blue jack, drag to cube 05's top face, release
  *      → the INT-2 socket rule SEATS the jack (the cord is now attached
  *        to the cube)
  *   3. wait out the SIM-3 settle window
  *   4. pointer-down on cube 05's front face → INT-3 grabs the CUBE
  *   5. drag the cube across the bench (it follows the cursor on the
- *      camera-parallel plane through the grab point; the seated plug and
- *      the sim's pinned pin ride the cube; the cord trails from the anchor)
+ *      camera-parallel plane through the grab point; the seated plug rides
+ *      the cube; the cord trails from the opening cord's seated red plug)
  *   6. capture MID-DRAG (button still held) — the staged screenshot of record
  *   7. release → the cube stays where dropped (floor-clamped); capture after
  *
@@ -62,19 +62,29 @@ function project(p) {
 }
 
 // --- The drive's world-space waypoints ----------------------------------------
-const JACK_REST = { x: -0.4, y: 0.055, z: -0.15 }; // the resting blue jack (main.ts RESTING_SPOT)
+// REFINE-3 — the opening cord's red end is SEATED on module 08's top (world
+// (0.45, 0.5, 1.95)); its blue jack rests on the bench at main.ts's
+// RESTING_SPOT. The drive performs the toy's core verb on it: grab blue,
+// plug it into cube 05, then drag that cube — the cord trails from the
+// SEATED RED PLUG (a real socket, not the old invisible anchor pin).
+const JACK_REST = { x: -0.55, y: 0.055, z: 0.3 }; // the resting blue jack (main.ts RESTING_SPOT)
 const SEAT_AIM = { x: 1.7, y: 0.5, z: 0.15 }; // cube 05's top face (the socket)
 const CUBE_GRAB = { x: 1.7, y: 0.25, z: 0.4 }; // cube 05's front face center
 // Cursor target ON the drag plane (⊥ the camera through the grab point): a
 // pure +x slide (x is exactly in-plane), same floor-level y and z. The cube
-// center lands at (2.05, 0.25, 0.15): the seated pin rides to (2.05, 0.418,
-// 0.15), 2.37 from the anchor against 2.4 of cord — the trailing cord reads
-// near-taut from the anchor jack to the riding plug (a shorter move leaves
-// so much slack that the body piles on the floor under the anchor and the
-// trailing read disappears into the pile).
+// center lands at (2.05, 0.25, 0.15): the seated blue pin rides to (2.05,
+// 0.418, 0.15), 2.41 from the seated red pin (0.45, 0.418, 1.95) against
+// 2.4 of cord — the trailing cord reads near-taut from the red plug to the
+// riding blue plug, still inside the 2.496 over-stretch bound (a shorter
+// move leaves so much slack that the body piles on the bench under the
+// module and the trailing read disappears into the pile).
 const DRAG_TO = { x: CUBE_GRAB.x + 0.35, y: CUBE_GRAB.y, z: CUBE_GRAB.z };
 
-const GRAB = project(JACK_REST);
+// The grab point: the rope END pins at JACK_REST's projection (622,547), but
+// the jack MESH extends from that point along the plug — the invisible grab
+// proxy rides the mesh, centered at ≈ (629,541) (measured on the built page:
+// the cursor first reads 'grab' over x ≈ 615–645, y ≈ 530–560).
+const GRAB = { x: 629, y: 541 };
 const AIM = project(SEAT_AIM);
 const CUBE = project(CUBE_GRAB);
 const DEST = project(DRAG_TO);
@@ -210,7 +220,7 @@ try {
   await sleep(2800); // the SIM-3 settle window (~1.0–2.0 s) + margin
 
   // Phase 2 — GRAB the cube and drag it across the bench (INT-3). The
-  // seated plug rides the cube; the cord trails near-taut from the anchor.
+  // seated plug rides the cube; the cord trails near-taut from the red plug.
   await send(ws, 'Input.dispatchMouseEvent', {
     type: 'mousePressed', x: CUBE.x, y: CUBE.y, button: 'left', buttons: 1, clickCount: 1,
   });

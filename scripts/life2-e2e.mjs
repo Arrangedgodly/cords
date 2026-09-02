@@ -57,9 +57,13 @@ const CUBE04_TOP = { x: 906, y: 506 };   // world (0.85, 0.5, 1.05) — red seat
 // up to ≈ world y 0.9–1.0, so the free fall is a readable ~0.4–0.6 s.
 const RELEASE_AT = { x: 700, y: 350 };
 // The blue-jack scan window: covers the spawn-column rest spot (which drifts
-// run to run) and excludes the M1 anchor's resting jack (screen x ≈ 655),
-// cube 06's bottom edge (the far-back cube spans y ≈ 407–465 at x 645–703),
-// cube 03's left edge (≈ 810), and cube 08 (≈ (848,643)).
+// run to run) and excludes the OPENING cord's resting jack (REFINE-3: it
+// rests at screen ≈ (622,547), its grab halo reaching ≈ x 645 — 31 px clear
+// of the window's left edge) and its seated red plug on module 08's top
+// (proxy spans ≈ x 816–886 at y ≈ 575, right of x1), the draped BODY being
+// ungrabbable (only jack proxies and cubes are); also clear of cube 06's
+// bottom edge (the far-back cube spans y ≈ 407–465 at x 645–703), cube 03's
+// left edge (≈ 810), and cube 08's body (x ≥ 771 below y ≈ 575).
 const SCAN = { x0: 676, x1: 800, y0: 486, y1: 604, step: 12 };
 const NEUTRAL = { x: 640, y: 700 }; // open floor — hover reads 'default' there
 

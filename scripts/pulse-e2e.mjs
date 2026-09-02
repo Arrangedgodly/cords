@@ -9,7 +9,7 @@
  *      camera and self-checked against its known waypoints): 04↔05, 02↔04,
  *      01↔02, 05↔06 — every pair well inside the 4% over-stretch bound
  *   2. the gate: `window.cords.pulse().linked` === exactly the four ids the
- *      lifecycle reports `linked`; the anchor cord (awaiting-plug) is NOT
+ *      lifecycle reports `linked`; the opening cord (awaiting-plug) is NOT
  *      in it
  *   3. CADENCE DETERMINISM through the seam: phase === (time · speed) mod 1
  *      bitwise-tight at every sample, and the phase advances by Δt·speed
@@ -18,7 +18,7 @@
  *      early-travel (~0.12–0.30 arc) → `.impeccable/review/ren4-pulse.png`
  *      + a closeup straddling the 04↔05 cord; a second trigger at
  *      ~0.55–0.70 → `ren4-pulse-late.png` (two chances at mid-travel)
- *   5. NO-GLOW CONTRAST: a clip along the anchor cord (awaiting-plug — a
+ *   5. NO-GLOW CONTRAST: a clip along the opening cord (awaiting-plug — a
  *      real cord, deliberately not linked) → `ren4-noglow.png`
  *   6. REDUCED MOTION seam: CDP emulated prefers-reduced-motion → the seam
  *      reads reduced + speed halved (0.6 → 0.3), phase advancing at half
@@ -136,9 +136,14 @@ const LINKS = [
   { red: at(TOP.c01), blue: at(TOP.c02, +13) },      // cord 3: 01 ↔ 02
   { red: at(TOP.c05, +13), blue: at(TOP.c06) },      // cord 4: 05 ↔ 06
 ];
-// The no-glow contrast cord: the anchor (awaiting-plug), drape ≈ (0,1.6,0) → (-0.4,0.06,-0.15).
-const ANCHOR_TOP = worldToScreen([0, 1.6, 0]);
-const ANCHOR_REST = worldToScreen([-0.4, 0.06, -0.15]);
+// REFINE-3 — the no-glow contrast cord: the OPENING cord (awaiting-plug —
+// red seated on module 08, blue resting on the bench). The clip spans its
+// bench run: the module's base edge world (0.2, 0, 1.7) → ≈ (771, 674) down
+// to the blue rest world (-0.55, 0.06, 0.3) → ≈ (622, 547) — padded to stay
+// clear of every LINKS plug (cube 02's blue at (552,500) left, cube 04's red
+// at (906,506) right) so the only cord in frame is the unlit opening one.
+const OPENING_BASE = worldToScreen([0.2, 0.0, 1.7]);
+const OPENING_REST = worldToScreen([-0.55, 0.06, 0.3]);
 
 const SPAWN_AT = { x: 789, y: 391 };     // world (0.4, 0.9, 0) — hud-e2e's proven spot
 const SCAN = { x0: 680, x1: 772, y0: 480, y1: 600, step: 12 };
@@ -373,7 +378,7 @@ try {
   }
   const statesFinal = JSON.parse(await lifecycleStates(ws));
   assertEq(JSON.stringify(statesFinal), JSON.stringify(['awaiting-plug', 'linked', 'linked', 'linked', 'linked']),
-    'lifecycle after four links (anchor + 4)');
+    'lifecycle after four links (opening + 4)');
   const pulse1 = JSON.parse(await pulseRead(ws));
   assertEq(JSON.stringify(pulse1.linked), JSON.stringify([1, 2, 3, 4]),
     'pulse().linked === exactly the linked ids');
@@ -385,7 +390,7 @@ try {
   }
   const litGains = pulse1.renderGains.filter((g) => g.gain > 0).map((g) => g.id).sort();
   assertEq(JSON.stringify(litGains), JSON.stringify([1, 2, 3, 4]),
-    'render gains lit on exactly the four linked views (the anchor dark)');
+    'render gains lit on exactly the four linked views (the opening cord dark)');
   process.stdout.write('pulse-e2e: 4 cords linked; gate === lifecycle === render gains\n');
 
   // 3. Cadence determinism: phase === (time·speed) mod 1, and it advances
@@ -443,18 +448,18 @@ try {
   await shoot(ws, LATE_SHOT);
   process.stdout.write('pulse-e2e: mid-pulse bursts captured at early + late travel\n');
 
-  // 5. The no-glow contrast: the anchor cord (awaiting-plug) carries no LED.
+  // 5. The no-glow contrast: the opening cord (awaiting-plug) carries no LED.
   {
-    const x0 = Math.min(ANCHOR_TOP.x, ANCHOR_REST.x) - 90;
-    const y0 = Math.min(ANCHOR_TOP.y, ANCHOR_REST.y) - 60;
+    const x0 = Math.min(OPENING_BASE.x, OPENING_REST.x) - 60;
+    const y0 = Math.min(OPENING_BASE.y, OPENING_REST.y) - 60;
     await shoot(ws, NOGLOW_SHOT, {
       x: x0,
       y: y0,
-      width: Math.abs(ANCHOR_REST.x - ANCHOR_TOP.x) + 180,
-      height: Math.abs(ANCHOR_REST.y - ANCHOR_TOP.y) + 120,
+      width: Math.abs(OPENING_REST.x - OPENING_BASE.x) + 120,
+      height: Math.abs(OPENING_REST.y - OPENING_BASE.y) + 120,
     });
   }
-  process.stdout.write('pulse-e2e: no-glow contrast captured (anchor cord, awaiting-plug)\n');
+  process.stdout.write('pulse-e2e: no-glow contrast captured (opening cord, awaiting-plug)\n');
 
   // 6. The reduced-motion seam, through the browser's own media emulation.
   {

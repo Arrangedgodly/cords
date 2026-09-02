@@ -5,7 +5,7 @@
  * Chrome + swiftshader over CDP, and springs cords from midair with
  * BROWSER-LEVEL KEYBOARD EVENTS (Input.dispatchKeyEvent — trusted input):
  *
- *   1. wait out the M1 intro (the anchor cord rests)
+ *   1. wait out the opening intro (the staged cord rests)
  *   2. move the mouse to a stage point (the cursor's world ray is where the
  *      cord will appear) and press N — a coiled cord spawns IN HAND, red
  *      jack at the cursor, blue trailing, uncoiling by the sim alone

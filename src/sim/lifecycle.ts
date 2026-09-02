@@ -39,6 +39,11 @@
  *   8  awaiting-plug  carried       the remaining seat is     INT-4 re-grab
  *                                    grabbed by hand (nothing
  *                                    seated anymore)
+ *   9  carried        vanishing     idle expiry (~10s;        the idle clock
+ *                                    the abandoned-drop        (advance) +
+ *                                    window — see              the world's
+ *                                    DEFAULT_IDLE_SECONDS)     abandonment
+ *                                                              sweep (REFINE-4)
  *   +  vanishing      gone          the vanish sequence       LIFE-2
  *                                    reports completion       (despawnCords
  *                                    → cord removed            intent →
@@ -62,7 +67,10 @@
  * - Releasing a carried cord's held end off-cube (`carried`, zero seats):
  *   the ordinary floor drop — nothing was ever plugged, so there is no
  *   failure to punish; the cord stays `carried` and re-grabbable. This keeps
- *   the approved spawn/drop churn (fuzz-pinned) intact.
+ *   the approved spawn/drop churn (fuzz-pinned) intact. REFINE-4: the drop is
+ *   no longer FOREVER — see the idle window below; the release itself is
+ *   still a non-transition (the window opens when the world's abandonment
+ *   sweep retires the end's stale carry, not at the release call).
  * - Seat TRANSPORT (the per-frame latch re-sending a seated end's
  *   transform): idempotent physics, not a lifecycle event. Transports stay
  *   legal while `vanishing` (the seated plug stays in its socket until
@@ -85,6 +93,37 @@
  * more than the clamped sim time — the grace window inherits the clamp.
  * Expiry fires #6 exactly when the countdown crosses zero; a re-seat (#5)
  * cancels it.
+ *
+ * IDLE WINDOW (REFINE-4 — PRODUCT.md's "self-clean when abandoned", the
+ * critique's P2): a `carried` cord (a never-seated coil, or one unseated by
+ * hand and then dropped) lying UNTOUCHED past `idleSeconds` of sim time
+ * enters the EXISTING vanishing sequence through approved #9 (reason
+ * 'abandoned'). The window's law:
+ * - IN HAND IS NEVER IDLE: while any end's mode is 'carrying', every advance
+ *   RESETS the window to its full width — a cord being dragged (or held
+ *   off-stage, where the composition keeps composing hold targets) can never
+ *   abandon, and a freshly-grabbed cord's window is brand new again.
+ * - GRABBING CANCELS INSTANTLY: `noteCarrying` itself resets the window (not
+ *   just the next advance) — a grab arriving in the window's last substep
+ *   must beat the clock that runs earlier in the step, and it does.
+ * - WHEN IT OPENS: the machine counts the window for EVERY `carried` cord
+ *   with no end in hand. The world's abandonment sweep (cordWorld.ts)
+ *   retires an end's stale 'carrying' mode the step its carry targets stop
+ *   arriving — the honest "the hand let go" signal (a converging drop is
+ *   still being carried; a settled coil is idle). Seat TRANSPORTS and brush
+ *   impulses never reset the window: passive motion is not touch.
+ * - A cord WITH A SEAT (awaiting-plug/linked/popped) never idles — the grace
+ *   clock owns those states' exits, and #9 never fires there.
+ * - Same clock discipline as the grace window: sim time, one fixed slice per
+ *   step, clamped by the driver, garbage dt a no-op, per-cord independent.
+ * The URGENCY split is deliberate design (the coordinator ruling): a popped
+ * cord's ~3s grace carries URGENCY (it just failed, the blink counts down);
+ * an abandoned coil is mere CLUTTER — its ~10s window is quiet (no dim, no
+ * blink, nothing painted) and its exit reuses LIFE-2's sequence (fall →
+ * shatter → pull-out → vanish), reading as the coil powering down: the
+ * grounded "fall" is trivial (first contact), the collapse pulls the coil in
+ * on itself, the fade finishes it. Reduced motion skips the fragment burst
+ * through the existing render seam (the composition's `reduced` flag).
  *
  * DETERMINISM: pure TypeScript plain data — no three.js, no DOM, no
  * wall-clock, no RNG. Identical construction + call sequences produce
@@ -111,6 +150,17 @@ import type { VanishInfo } from './vanish';
 /** Default popped grace window in seconds of sim time (~3s, plan.md INT-6). */
 export const DEFAULT_GRACE_SECONDS = 3;
 
+/**
+ * REFINE-4 — default idle-abandon window in seconds of sim time: a `carried`
+ * cord (never seated, or unseated by hand and dropped) lying untouched this
+ * long enters the vanishing sequence (approved #9, reason 'abandoned').
+ * ~10s by the coordinator ruling: an abandoned coil is CLUTTER, not urgency
+ * (the popped grace's ~3s is the urgent one), so the user is never punished
+ * for setting a cord down mid-thought. Tunable per world
+ * (`CordLifecycleOptions.idleSeconds`); `Infinity` disables #9.
+ */
+export const DEFAULT_IDLE_SECONDS = 10;
+
 /** Why a transition fired. `pop` carries its caller's reason verbatim. */
 export type TransitionReason =
   | 'seated' // approved #1: carried → awaiting-plug
@@ -120,6 +170,7 @@ export type TransitionReason =
   | 'over-stretch' // approved #4 default: linked → popped
   | 'released-off-cube' // approved #3 / popped's second trigger: → vanishing
   | 'grace-expired' // approved #6: popped → vanishing
+  | 'abandoned' // approved #9 (REFINE-4): carried → vanishing (idle expiry)
   | 'vanish-complete' // vanishing → gone (LIFE-2 completion)
   | (string & {}); // pop reasons are caller-supplied (open set)
 
@@ -153,6 +204,14 @@ export interface LifecycleRejection {
 export interface CordLifecycleOptions {
   /** Popped grace window in seconds of sim time. Default DEFAULT_GRACE_SECONDS. */
   graceSeconds?: number;
+  /**
+   * REFINE-4 — idle-abandon window in seconds of sim time (approved #9): a
+   * `carried` cord lying untouched (no end in hand) this long transitions to
+   * `vanishing` with reason 'abandoned'. Default DEFAULT_IDLE_SECONDS (~10s);
+   * `Number.POSITIVE_INFINITY` disables the transition entirely (the pre-
+   * REFINE-4 behavior, for worlds that want it explicitly).
+   */
+  idleSeconds?: number;
   /**
    * Test loudness: true THROWS on every illegal transition (and on a bad
    * config). Default false — production rejects with a warning event.
@@ -211,14 +270,28 @@ export interface CordLifecycle {
   /**
    * Advisory per-end bookkeeping: a carry intent named this end (free →
    * carrying). NEVER a transition (cord state is seat-derived); a no-op on
-   * unknown, seated, or locked cords.
+   * unknown, seated, or locked cords. REFINE-4: on a `carried` cord this
+   * ALSO resets the idle-abandon window to its full width — the grab cancels
+   * the timer INSTANTLY (the clock runs earlier in the step than the carry
+   * intents land, and a last-substep grab must beat it).
    */
   noteCarrying(cordId: number, index: number): void;
   /**
-   * Advances the sim clock by `dt` and runs every popped cord's grace
-   * countdown; expiry fires approved #6 (popped → vanishing,
-   * 'grace-expired'). Non-finite/non-positive dt is a no-op (clock garbage
-   * can never fast-forward a grace window) — same discipline as rope.step.
+   * REFINE-4 — the abandonment sweep's half of the carry bookkeeping: the
+   * world calls this the step an end's carry targets STOP arriving (the hand
+   * let go; a drop finished converging) — 'carrying' → 'free', the honest
+   * "nobody is driving this end" signal that OPENS the idle window's count.
+   * NEVER a transition (advisory, exactly like noteCarrying); a no-op on
+   * unknown cords, non-carrying ends, and locked (vanishing) records.
+   */
+  noteCarryStopped(cordId: number, index: number): void;
+  /**
+   * Advances the sim clock by `dt` and runs the countdowns: every popped
+   * cord's grace (expiry fires approved #6) and — REFINE-4 — every carried
+   * cord's idle window (expiry fires approved #9, 'abandoned'; an end in
+   * hand resets it to full every advance — in hand is never idle).
+   * Non-finite/non-positive dt is a no-op (clock garbage can never
+   * fast-forward either window) — same discipline as rope.step.
    */
   advance(dt: number): void;
   /**
@@ -233,6 +306,13 @@ export interface CordLifecycle {
   endMode(cordId: number, index: number): EndMode | undefined;
   /** Seconds of grace left while popped; null in every other state. */
   graceRemaining(cordId: number): number | null;
+  /**
+   * REFINE-4 — seconds of idle window left while `carried` (the full window
+   * while an end is in hand); null in every other state and for unknown
+   * cords. Test/telemetry read: NOTHING PAINTS IT (the design — clutter
+   * carries no urgency; the popped grace's blink is the urgent one).
+   */
+  idleRemaining(cordId: number): number | null;
   /** The machine sim clock (advanced only by advance). */
   now(): number;
 }
@@ -249,6 +329,13 @@ export interface CordLifecycleView {
   endMode(cordId: number, index: number): EndMode | undefined;
   /** Seconds of grace left while popped; null in every other state. */
   graceRemaining(cordId: number): number | null;
+  /**
+   * REFINE-4 — seconds of idle-abandon window left while `carried` (the full
+   * window while an end is in hand); null in every other state. Read-only
+   * telemetry: nothing paints it (clutter carries no urgency) — tests and
+   * the e2e seam observe the window through it.
+   */
+  idleRemaining(cordId: number): number | null;
   /**
    * T-LIFE-2 — the vanish choreography's read side (REN-5 fades the cord on
    * `progress`; the e2e drives poll `phase`): the live phase and the 0..1
@@ -276,6 +363,14 @@ interface CordRecord {
   poppedEnd: number | null;
   /** Grace countdown; meaningful only while popped. */
   graceRemaining: number;
+  /**
+   * REFINE-4 — idle-abandon countdown; meaningful only while `carried` with
+   * no end in hand. Initialized to the full window (a fresh register is IN
+   * HAND in every real flow — the world's spawn notes the red end carrying
+   * immediately; a hand-rolled register that never carries counts from
+   * birth, which is the honest reading of a cord nobody holds).
+   */
+  idleRemaining: number;
 }
 
 /** Pseudo-state for rejections naming an unknown/already-gone cord. */
@@ -283,11 +378,17 @@ const GONE: LifecycleState = 'gone';
 
 export function createCordLifecycle(options: CordLifecycleOptions = {}): CordLifecycle {
   const graceSeconds = options.graceSeconds ?? DEFAULT_GRACE_SECONDS;
+  const idleSeconds = options.idleSeconds ?? DEFAULT_IDLE_SECONDS;
   const strict = options.strict ?? false;
   const onTransition = options.onTransition;
   const onRejected = options.onRejected;
   if (!Number.isFinite(graceSeconds) || graceSeconds < 0) {
     throw new Error(`lifecycle: graceSeconds must be a finite number >= 0, got ${graceSeconds}`);
+  }
+  if (!(idleSeconds === Number.POSITIVE_INFINITY || (Number.isFinite(idleSeconds) && idleSeconds >= 0))) {
+    throw new Error(
+      `lifecycle: idleSeconds must be a finite number >= 0 (or Infinity to disable abandonment), got ${idleSeconds}`,
+    );
   }
 
   const cords = new Map<number, CordRecord>();
@@ -350,6 +451,7 @@ export function createCordLifecycle(options: CordLifecycleOptions = {}): CordLif
         ends: new Map(),
         poppedEnd: null,
         graceRemaining: 0,
+        idleRemaining: idleSeconds, // REFINE-4 — armed at birth (see CordRecord)
       };
       if (seatedEnd !== undefined) {
         if (!Number.isFinite(seatedEnd)) {
@@ -428,6 +530,11 @@ export function createCordLifecycle(options: CordLifecycleOptions = {}): CordLif
         const from = record.state;
         record.ends.set(index, 'free');
         record.state = from === 'linked' ? 'awaiting-plug' : 'carried';
+        if (record.state === 'carried') {
+          // REFINE-4 — the freshly-pulled cord is IN HAND: its idle window is
+          // brand new (a stale pre-seat count must not abandon it on grab).
+          record.idleRemaining = idleSeconds;
+        }
         emit(cordId, from, record.state, 'unplugged', index);
         return true;
       }
@@ -487,9 +594,13 @@ export function createCordLifecycle(options: CordLifecycleOptions = {}): CordLif
           // The ordinary floor drop (defined non-transition): nothing was
           // plugged, so nothing failed. IDEMPOTENT across the driver's
           // same-input substep replays: an already-free end was released on
-          // an earlier substep — still a no-op, still silent.
+          // an earlier substep — still a no-op, still silent. REFINE-4: the
+          // drop re-arms the idle window to its full width (the count itself
+          // opens when the world's sweep retires the end — a converging drop
+          // is still being carried; a settled coil is idle).
           if (mode === 'carrying') {
             record.ends.set(index, 'free');
+            record.idleRemaining = idleSeconds;
             return false;
           }
           if (mode === 'free') return false;
@@ -527,6 +638,25 @@ export function createCordLifecycle(options: CordLifecycleOptions = {}): CordLif
         return; // a seated end cannot be carried (the world filters this)
       }
       record.ends.set(index, 'carrying');
+      // REFINE-4 — the grab cancels the idle timer INSTANTLY, not at the next
+      // advance: the clock runs earlier in the world's step than the carry
+      // intents land, and a grab in the window's last substep must beat it.
+      // A re-set of the same carrying mode (the driver's substep replay) is
+      // idempotent — the window is already full.
+      if (record.state === 'carried') record.idleRemaining = idleSeconds;
+    },
+
+    noteCarryStopped(cordId, index) {
+      const record = cords.get(cordId);
+      // Advisory bookkeeping, the sweep's half: frozen once locked/gone, and
+      // only a 'carrying' end can retire. NEVER a transition, never a
+      // rejection — silence on no-ops is the contract (the sweep probes every
+      // live end every step).
+      if (record === undefined || record.state === 'vanishing' || record.state === 'gone') {
+        return;
+      }
+      if (modeOf(record, index) !== 'carrying') return;
+      record.ends.set(index, 'free'); // the idle window's count opens at the next advance
     },
 
     advance(dt) {
@@ -534,12 +664,38 @@ export function createCordLifecycle(options: CordLifecycleOptions = {}): CordLif
       clock += dt;
       // Map iteration is insertion-ordered; advance never inserts/deletes.
       for (const [cordId, record] of cords) {
-        if (record.state !== 'popped') continue;
-        record.graceRemaining -= dt;
-        if (record.graceRemaining <= 0) {
-          // Approved #6: the window closed without a re-seat.
+        if (record.state === 'popped') {
+          record.graceRemaining -= dt;
+          if (record.graceRemaining <= 0) {
+            // Approved #6: the window closed without a re-seat.
+            record.state = 'vanishing';
+            emit(cordId, 'popped', 'vanishing', 'grace-expired', record.poppedEnd);
+          }
+          continue;
+        }
+        if (record.state !== 'carried') continue;
+        // REFINE-4 — approved #9: an untouched coil self-cleans. In hand is
+        // never idle (the window refills while any end is carried); the count
+        // runs only while nobody holds the cord, and expiry enters the SAME
+        // vanishing sequence the failure paths use (end null — the run's
+        // failing end is derived downstream: an abandoned coil has no seat
+        // to fail, its red end leads the decay by convention).
+        if (idleSeconds === Number.POSITIVE_INFINITY) continue; // disabled world
+        let inHand = false;
+        for (const mode of record.ends.values()) {
+          if (mode === 'carrying') {
+            inHand = true;
+            break;
+          }
+        }
+        if (inHand) {
+          record.idleRemaining = idleSeconds;
+          continue;
+        }
+        record.idleRemaining -= dt;
+        if (record.idleRemaining <= 0) {
           record.state = 'vanishing';
-          emit(cordId, 'popped', 'vanishing', 'grace-expired', record.poppedEnd);
+          emit(cordId, 'carried', 'vanishing', 'abandoned', null);
         }
       }
     },
@@ -580,6 +736,12 @@ export function createCordLifecycle(options: CordLifecycleOptions = {}): CordLif
       const record = cords.get(cordId);
       if (record === undefined || record.state !== 'popped') return null;
       return record.graceRemaining;
+    },
+
+    idleRemaining(cordId) {
+      const record = cords.get(cordId);
+      if (record === undefined || record.state !== 'carried') return null;
+      return record.idleRemaining;
     },
 
     now() {

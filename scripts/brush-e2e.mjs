@@ -5,11 +5,11 @@
  * opens the production page in headless Chrome + swiftshader over CDP, and
  * proves the approved behavior in numbers AND pixels:
  *
- *   1. wait out the M1 intro; the anchor cord is calm (motion probe baseline)
+ *   1. wait out the opening intro; the seated opening cord is calm (probe baseline)
  *   2. THOR'S RULE, in pixels: park the cursor ON the cord (the ray sits
  *      inside the brush halo for the whole hold) and HOLD STILL — the motion
  *      probe reads ~zero. An idle pointer injects nothing.
- *   3. THE BRUSH: sweep the cursor horizontally across the dangling cord
+ *   3. THE BRUSH: sweep the cursor horizontally across the draped cord
  *      (buttons: 0 — pure hover). The motion probe — window.cords.
  *      readMotionProbe(), max point speed in world units per second of SIM
  *      time — must JUMP (the cord is visibly perturbed; subtle sway is hard
@@ -37,14 +37,16 @@ const APP_URL = `http://localhost:${PORT}/`;
 const SWEEP_SHOT = process.argv[2] ?? '.impeccable/review/int5-brush.png';
 const LATE_SHOT = process.argv[3] ?? '.impeccable/review/int5-brush-late.png';
 
-// The M1 anchor cord drapes from its pin at world (0, 1.6, 0) — screen
-// (720, 266) — to the resting jack at world (-0.4, 0.055, -0.15) — screen
-// ≈ (655, 524); same fixed-camera derivation as life2-e2e.mjs (which
-// independently confirms the resting jack at x ≈ 655). Mid-drape ≈ (689,
-// 390): the sweep line crosses the cord there; the idle park sits ON it.
-const SWEEP_Y = 390;
-const SWEEP = { x0: 540, x1: 860, y: SWEEP_Y, steps: 18, holdMs: 40 };
-const PARK = { x: 689, y: SWEEP_Y }; // ON the cord's mid-drape
+// REFINE-3 — the opening cord is a REAL seated patch cord: red plugged into
+// module 08's top face (world (0.45, 0.5, 1.95) → screen ≈ (851, 575), the
+// plug standing to ≈ (853, 496)), the cord draping over the module's left
+// edge onto the bench and the blue jack resting at world (-0.55, 0.055, 0.3)
+// → screen ≈ (622, 547). The bench floor run between the module's base
+// (≈ (771, 674)) and the rest reads on screen through ≈ (702, 610): the
+// sweep line crosses the cord there; the idle park sits ON it.
+const SWEEP_Y = 610;
+const SWEEP = { x0: 560, x1: 760, y: SWEEP_Y, steps: 18, holdMs: 40 };
+const PARK = { x: 702, y: SWEEP_Y }; // ON the cord's floor run
 const IDLE_MAX = 0.02; // u/s — an idle pointer injects nothing
 const SWEEP_MIN = 0.2; // u/s — the brush visibly perturbs (strength ≤ 1 u/s)
 
@@ -114,7 +116,7 @@ const cordSpeed = async (ws, id) => {
 const armProbe = (ws) => evalPage(ws, 'window.cords.setMotionProbe(true)');
 
 /**
- * Poll until a full 1.5s probe window reads the anchor cord calm. Headless
+ * Poll until a full 1.5s probe window reads the opening cord calm. Headless
  * rAF speed varies wildly under swiftshader, and the M1 intro pose is
  * FRAME-counted — a fixed sleep cannot know when the intro ends and the
  * dangle settles, so this waits on the physics itself.
@@ -128,7 +130,7 @@ async function waitCalm(ws, threshold, timeoutMs) {
     last = await cordSpeed(ws, 0);
     if (last !== null && last < threshold) return last;
   }
-  throw new Error(`the anchor cord never calmed below ${threshold} (last read ${last})`);
+  throw new Error(`the opening cord never calmed below ${threshold} (last read ${last})`);
 }
 
 const lifecycleNow = async (ws) => {

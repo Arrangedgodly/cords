@@ -183,3 +183,16 @@ export function vanishNotice(count: number): string {
   const n = Number.isFinite(count) && count > 1 ? Math.floor(count) : 1;
   return n === 1 ? 'Cord shattered — unplugged.' : `${n} cords shattered — unplugged.`;
 }
+
+/**
+ * REFINE-4 — the ABANDONMENT death's one spoken line: an untouched dropped
+ * coil self-cleaned into the vanish sequence (idle expiry — nothing failed,
+ * nobody unplugged anything), so the sentence must not borrow the failure's
+ * vocabulary. "Put away" names exactly what the scene did — the bench tidied
+ * itself — in the summary's own plain grammar. Same discipline as
+ * vanishNotice: one line per frame, pluralized honestly, garbage → singular.
+ */
+export function putAwayNotice(count: number): string {
+  const n = Number.isFinite(count) && count > 1 ? Math.floor(count) : 1;
+  return n === 1 ? 'Cord put away.' : `${n} cords put away.`;
+}

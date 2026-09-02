@@ -18,6 +18,10 @@
  *   deltaSpikes        frame deltas from 4ms to 60s (plus garbage) mid-storm
  *   cubePassengers     linked cords dragged past length (auto-pop), re-plug,
  *                      repeat — over-stretch churn under transport
+ *   abandonChurn       REFINE-4: dropped coils left to self-clean, others
+ *                      rescued by a re-grab inside the idle window, others
+ *                      seated — abandonment interleaved with every other
+ *                      lifecycle beat (window tuned to 2s for the corpus)
  *
  * INVARIANTS (checked every frame by the harness, plus suite-level ones):
  *   finite state · position bounds · the EXACT SIM-2 leash · transient-only
@@ -75,6 +79,7 @@ const CORPUS = {
   brushHarassment: [0x5eed_0051, 0x5eed_0052],
   deltaSpikes: [0x5eed_0061, 0x5eed_0062],
   cubePassengers: [0x5eed_0071, 0x5eed_0072],
+  abandonChurn: [0x5eed_0081, 0x5eed_0082],
 } as const;
 const FULL_EXTRA = [0x5eed_0101, 0x5eed_0102, 0x5eed_0103, 0x5eed_0104];
 
@@ -327,6 +332,65 @@ const cubePassengers: Pattern = (h, rng, frames) => {
   }
 };
 
+/**
+ * REFINE-4 — abandonment interleaved with every other beat: coils are
+ * dropped and LEFT (the idle window counts), some are RESCUED by a re-grab
+ * inside the window (the timer cancels; they seat afterward), some are
+ * seated right away, and brush sweeps + cube transports churn around them.
+ * Run at a 2 s window (PATTERN_OPTIONS below) so the fast corpus exercises
+ * expiry, rescue, and the sweep's cadence within its frame budget.
+ */
+const abandonChurn: Pattern = (h, rng, frames) => {
+  for (let f = 0; f < frames; f += 1) {
+    const roll = rng();
+    // Keep 1–5 live cords in play: spawn when the bench thins out.
+    if (roll < 0.14 && h.held === null && h.liveCordIds().length < 5) {
+      h.spawn(v((rng() - 0.5) * 1.4, 0.9 + rng() * 0.9, (rng() - 0.5) * 1.2));
+    } else if (roll < 0.3 && h.held !== null) {
+      // Drop wherever the cursor is (off-cube): an awaiting-plug/popped cord
+      // vanishes at once (the failure path); a carried cord IDLES.
+      h.releaseOffCube();
+    } else if (roll < 0.42) {
+      // THE RESCUE: grab a resting coil mid-window. Any end; the grab
+      // cancels the idle timer instantly in the machine.
+      const resting = h.liveCordIds().filter(
+        (id) => h.world.lifecycle.stateOf(id) === 'carried' && h.grabbable(id, 0),
+      );
+      if (resting.length > 0 && h.held === null) {
+        h.grab(resting[Math.floor(rng() * resting.length)], rng() < 0.5 ? 0 : FUZZ_SEGMENTS);
+      }
+    } else if (roll < 0.54 && h.held !== null) {
+      // The rescued cord's afterlife: seat it (normal behavior post-rescue).
+      const cube = Math.floor(rng() * FUZZ_CUBES.length);
+      const top = cubeTop(cube);
+      h.moveTo(top);
+      h.seatOnCube(cube, top);
+    } else if (roll < 0.66) {
+      // Drag a cube; seated plugs ride (transports never reset the window —
+      // passive motion is not touch).
+      const cube = Math.floor(rng() * FUZZ_CUBES.length);
+      const c = h.cubeCenter(cube);
+      h.dragCubeTo(cube, v(
+        Math.max(-2.4, Math.min(2.4, c.x + (rng() - 0.5) * 0.3)),
+        0.25,
+        Math.max(-2.4, Math.min(2.4, c.z + (rng() - 0.5) * 0.3)),
+      ));
+    } else if (roll < 0.78) {
+      // A brush sweep through the resting coils: perturbation is NOT rescue
+      // — an idle coil sways and still self-cleans on schedule.
+      const resting = h.liveCordIds().filter((id) => h.world.lifecycle.stateOf(id) === 'carried');
+      if (resting.length > 0) {
+        const id = resting[Math.floor(rng() * resting.length)];
+        h.brushMove(rayThrough(h.endPoint(id, rng() < 0.5 ? 0 : FUZZ_SEGMENTS)), rng() < 0.15 ? 0.5 : 1);
+      }
+    }
+    if (h.held !== null) {
+      h.moveTo(v((rng() - 0.5) * 2, 0.2 + rng() * 1.6, (rng() - 0.5) * 2));
+    }
+    h.frame(FUZZ_FRAME_DT);
+  }
+};
+
 const PATTERNS: Record<string, Pattern> = {
   dragStorm,
   bipolarTargets,
@@ -336,6 +400,16 @@ const PATTERNS: Record<string, Pattern> = {
   brushHarassment,
   deltaSpikes,
   cubePassengers,
+  abandonChurn,
+};
+
+/**
+ * REFINE-4 — per-pattern HARNESS options (the production world's own config
+ * seams, tuned for corpus coverage): abandonChurn shortens the idle window
+ * to 2 s so expiry/rescue/cadence all land inside the corpus frame budget.
+ */
+const PATTERN_OPTIONS: Record<string, { idleSeconds?: number }> = {
+  abandonChurn: { idleSeconds: 2 },
 };
 
 // ---------------------------------------------------------------------------
@@ -344,7 +418,7 @@ const PATTERNS: Record<string, Pattern> = {
 const TAIL_SECONDS = 5;
 
 function runPattern(name: string, seed: number): FuzzHarness {
-  const h = createFuzzHarness();
+  const h = createFuzzHarness(PATTERN_OPTIONS[name] ?? {});
   PATTERNS[name](h, mulberry32(seed), FRAMES);
   return h;
 }

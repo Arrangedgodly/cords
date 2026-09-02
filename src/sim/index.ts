@@ -25,7 +25,7 @@ export { createRopeSimStep } from './ropeStep';
 export type { RopeSimStepConfig } from './ropeStep';
 export { createCordWorldStep, DEFAULT_OVERSTRETCH_THRESHOLD } from './cordWorld';
 export type { CordWorldConfig, CordWorldStep, OverStretchOptions } from './cordWorld';
-export { createCordLifecycle, DEFAULT_GRACE_SECONDS } from './lifecycle';
+export { createCordLifecycle, DEFAULT_GRACE_SECONDS, DEFAULT_IDLE_SECONDS } from './lifecycle';
 export type {
   CordLifecycle,
   CordLifecycleOptions,

@@ -282,13 +282,41 @@ try {
 
   // --- ACT 2 — the early grace blink ------------------------------------------
   // (The spawned cord 1 is already carried at the cursor; seat red on 04.)
-  await drag(ws, SPAWN_AT, CUBE04_TOP);
-  await sleep(600);
-  await releaseAt(ws, CUBE04_TOP);
-  await sleep(2400); // red's settle; blue rests at the spawn column
-
-  const blue = await findJackIn(ws, SCAN);
-  if (blue === null) throw new Error('blue jack not found in the scan window');
+  // The drives' documented rest-scan flake gets reset-and-retry attempts —
+  // the same pattern refine2-e2e/hud-e2e carry. One observed cause is
+  // environmental, NOT a product defect (reproduced identically on the
+  // pre-REFINE-3 baseline commit): a headless page can flip document.hidden
+  // mid-drive, LIFE-3's gate correctly pauses the whole tick, and a blue end
+  // that has not settled yet never reaches its rest inside the scan window.
+  // Each retry first waits for the frame gate to run again (the read-only
+  // resilience seam), then rebuilds the one-cord scene from scratch.
+  const framesAdvancing = async (ws2) => {
+    const a = JSON.parse(String((await evaluate(ws2, 'window.cords.resilience().framesDrawn')) ?? '0'));
+    await sleep(400);
+    const b = JSON.parse(String((await evaluate(ws2, 'window.cords.resilience().framesDrawn')) ?? '0'));
+    return b > a;
+  };
+  let blue = null;
+  for (let attempt = 0; attempt < 3 && blue === null; attempt += 1) {
+    if (attempt > 0) {
+      process.stdout.write(`refine1-e2e: rest-scan retry ${attempt} (the documented flake)\n`);
+      await pressR(ws);
+      await sleep(400);
+      for (let guard = 0; guard < 40 && !(await framesAdvancing(ws)); guard += 1) {
+        await sleep(250); // the gate is paused (hidden page): wait it out
+      }
+      await mouseMove(ws, SPAWN_AT.x, SPAWN_AT.y);
+      await sleep(120);
+      await pressN(ws);
+      await sleep(700);
+    }
+    await drag(ws, SPAWN_AT, CUBE04_TOP);
+    await sleep(600);
+    await releaseAt(ws, CUBE04_TOP);
+    await sleep(2400); // red's settle; blue rests at the spawn column
+    blue = await findJackIn(ws, SCAN);
+  }
+  if (blue === null) throw new Error('blue jack not found in the scan window (3 attempts)');
   await grabJack(ws, blue);
   process.stdout.write(`refine1-e2e: blue jack grabbed at ${JSON.stringify(blue)}\n`);
 

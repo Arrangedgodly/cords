@@ -126,6 +126,17 @@ import type {
  *   (sim time, never wall-clock): a backgrounded-tab spike is clamped by the
  *   fixed-timestep driver, so the ~3s window cannot be burned by clamped
  *   frames. Expiry fires popped→vanishing; a re-seat cancels.
+ * - REFINE-4 — THE ABANDONMENT SWEEP + IDLE WINDOW: the world retires an
+ *   end's stale 'carrying' mode the step its carry targets stop arriving
+ *   (the sweep, below), and the machine's idle clock — same sim-time
+ *   discipline as the grace clock, per cord — counts an untouched `carried`
+ *   coil down to approved #9 (carried→vanishing, reason 'abandoned'; default
+ *   window ~10s, `lifecycle.idleSeconds`). The cord then runs the SAME
+ *   LIFE-2 sequence (a grounded coil's "fall" is first contact — the decay
+ *   reads as powering down, nothing teleports), and the composition speaks
+ *   its own line ("Cord put away.", distinct from the shattered failure).
+ *   A cord in hand NEVER idles: carry intents reset the window every step,
+ *   and GRABBING cancels it instantly (noteCarrying's reset).
  * - T-INT-5 — THE PASSIVE CURSOR-BRUSH (`input.brush`, see brush.ts): every
  *   frame the pointer MOVED, each live cord's FREE points inside the halo
  *   around the cursor ray take a small additive velocity impulse away from
@@ -289,6 +300,10 @@ export function createCordWorldStep(config: CordWorldConfig = {}): CordWorldStep
   // dropped at completion (or when any despawn removes the cord first).
   const vanishRuns = new Map<number, VanishRun>();
   const vanishScratch: Vec3 = { x: 0, y: 0, z: 0 };
+  // REFINE-4 — the abandonment sweep's per-step scratch: the (cordId, end)
+  // keys this step's carry intents drive, membership-only. One reused Set —
+  // cleared and refilled every step, allocation-free in steady state.
+  const carrySeen = new Set<number>();
   // T-LIFE-1 — the lifecycle machine: validates every transition before the
   // rope hears about it (rejections leave the rope untouched, so the two can
   // never disagree). Its options flow in verbatim (grace, strict, events) —
@@ -306,6 +321,10 @@ export function createCordWorldStep(config: CordWorldConfig = {}): CordWorldStep
       // Totality over upstream event shapes: the failing end is the one that
       // is NOT seated (both real triggers tag the end correctly; this only
       // covers a hand-rolled transition event with a null/garbage end tag).
+      // REFINE-4 — the 'abandoned' transition tags null BY DESIGN: a dropped
+      // coil has NO seat to fail, so the derivation lands on end 0 (the red
+      // input end leads the decay — deterministic, and the band shard the
+      // shatter throws is the coil's own red).
       failEnd = lifecycle.endMode(cordId, 0) === 'seated' ? N : 0;
     }
     vanishRuns.set(cordId, beginVanishRun(cordId, failEnd));
@@ -314,6 +333,18 @@ export function createCordWorldStep(config: CordWorldConfig = {}): CordWorldStep
     // no scripted fall anywhere in this choreography). A popped/dangling end
     // is already free; wake covers the frozen-mid-air settled case.
     if (entry.rope.carriedIndex === failEnd) entry.rope.releaseCarry(failEnd);
+    else if (
+      entry.rope.carriedIndex !== null &&
+      !entry.rope.isEndSeated(entry.rope.carriedIndex)
+    ) {
+      // REFINE-4 — an abandoned coil may still hold a STALE carry on its
+      // other end (the rope keeps the frozen pin after a drop's targets
+      // stopped; the machine's sweep retired the mode, the rope's slot
+      // remained). The choreography owns every end from this moment: release
+      // the stale pin so nothing on a dying cord is held by a hand that let
+      // go. Seated ends are NOT touched — the pull-out owns those.
+      entry.rope.releaseCarry(entry.rope.carriedIndex);
+    }
     entry.rope.wake();
     emitVanish(cordId, 'start', failEnd, null);
   };
@@ -704,6 +735,7 @@ export function createCordWorldStep(config: CordWorldConfig = {}): CordWorldStep
     stateOf: (cordId) => lifecycle.stateOf(cordId),
     endMode: (cordId, index) => lifecycle.endMode(cordId, index),
     graceRemaining: (cordId) => lifecycle.graceRemaining(cordId),
+    idleRemaining: (cordId) => lifecycle.idleRemaining(cordId),
     vanishInfo: (cordId) => {
       if (vanishOptions === null) return null;
       const run = vanishRuns.get(cordId);
@@ -784,6 +816,46 @@ export function createCordWorldStep(config: CordWorldConfig = {}): CordWorldStep
           brushScale = scale;
           brushPassOptions.strength = brushOptions.strength * scale;
         }
+      }
+    }
+    // REFINE-4 — THE ABANDONMENT SWEEP: retire an end's stale 'carrying' mode
+    // the step its carry targets STOP arriving. The composition composes a
+    // carry target EVERY frame it drives an end (a drag, a staged grab, a
+    // drop still converging) — and composes NO pinTargets field at all the
+    // frame nothing is driven; both shapes mean "nobody is driving this end"
+    // now, and that is the honest moment the machine's idle-abandon count
+    // OPENS (approved #9: a converging drop is still being carried, a settled
+    // coil is idle). Placement is load-bearing, twice:
+    // - AFTER the release routing: a held end's 'carrying' mode must survive
+    //   until its `releaseJack` intent lands in this same step (the failure
+    //   release fires on a frame whose input no longer carries the target —
+    //   retiring first would reject the release and fork the composition).
+    // - BEFORE the carry intents: this step's own targets then re-promote
+    //   their ends in the same step (the sweep demotes, the carry re-marks —
+    //   a driven end never flickers). A fresh spawn's carry note retires
+    //   until its controller's first target flows (the composition registers
+    //   the runtime after the spawn's first render and composes from the
+    //   next frame) — at a 10 s window, the sub-frame of idle it accrues is
+    //   nothing; the note is re-marked the moment the cord is actually held.
+    // Deterministic under the driver's substep replay (every replay sees the
+    // same input, so the same demote/re-mark decisions). Seated ends never
+    // read 'carrying' and vanishing cords' bookkeeping is frozen inside the
+    // machine — both are naturally skipped.
+    carrySeen.clear();
+    const carriesIn = input.pinTargets;
+    if (carriesIn !== null && carriesIn !== undefined) {
+      for (let k = 0; k < carriesIn.length; k += 1) {
+        const t = carriesIn[k];
+        carrySeen.add((t.cordId ?? 0) * 2 + (t.index === 0 ? 0 : 1));
+      }
+    }
+    for (const entry of entries) {
+      const N = entry.rope.segmentCount;
+      if (lifecycle.endMode(entry.id, 0) === 'carrying' && !carrySeen.has(entry.id * 2)) {
+        lifecycle.noteCarryStopped(entry.id, 0);
+      }
+      if (lifecycle.endMode(entry.id, N) === 'carrying' && !carrySeen.has(entry.id * 2 + 1)) {
+        lifecycle.noteCarryStopped(entry.id, N);
       }
     }
     for (const entry of entries) {
