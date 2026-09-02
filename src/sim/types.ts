@@ -148,6 +148,18 @@ export interface BrushInput {
   move: number;
   /** The cursor ray in sim space at the moved position. */
   ray: Ray3;
+  /**
+   * A11Y-1 — the reduced-motion dampening seam: a per-frame multiplier on the
+   * world's configured brush STRENGTH (0.5 = half impulse amplitude), composed
+   * by the interaction/composition layer from prefers-reduced-motion. This is
+   * INPUT, not config: the tuned strength in brush.ts is untouched, and the
+   * world stays a pure function of (state, dt, input) — the scale is frame
+   * data exactly like the ray, so determinism contracts are unaffected.
+   * ABSENT, non-finite, or negative reads as 1 (identity): every pre-A11Y-1
+   * input replays byte-for-byte. 0 tunes the brush off for the frame (the
+   * strength-0 law in brush.ts).
+   */
+  strengthScale?: number;
 }
 
 /**

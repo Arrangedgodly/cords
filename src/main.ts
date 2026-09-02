@@ -161,6 +161,38 @@
  *   motion). The shatter event also names the failing end's POLARITY (index
  *   0 is the red input end for every production cord — INT-4's spawn law),
  *   so the burst carries a red or blue BAND shard: THAT end dying.
+ * - A11Y-1 — THE ACCESSIBILITY FLOOR, composed here because the preference
+ *   is the USER'S ENVIRONMENT, not the sim's: prefers-reduced-motion is
+ *   read live every frame (a cached MediaQueryList) and dampens the
+ *   page-INDUCED motion only — the chase pulse slows ×0.5 (REN-4's seam;
+ *   the linked reading survives: the pulse IS the "linked" signal), the
+ *   popped jack's band holds steady (REN-5's seam; the grace DIM stays —
+ *   it is state, not motion), the shatter burst no-ops (LIFE-2's seam; the
+ *   fall/pull/vanish sequence itself is unchanged — its timings are
+ *   contracts), and the cursor-brush's impulse amplitude halves (the
+ *   `strengthScale` input seam). THE DOCUMENTED BOUNDARY: the sim's own
+ *   physics — SIM-3's settle/damping tunables, the leash, gravity, LIFE-2's
+ *   choreography timings — is determinism/DoD-pinned and is NOT altered by
+ *   a user preference; reduced motion dampens what the page INDUCES, never
+ *   the physics' honest response. The floor's keyboard half lives in the
+ *   HUD (real buttons, focus brackets) and the N/R keys below; the stage
+ *   canvas carries an accessible name, and the scene summary (aria-live)
+ *   speaks every lifecycle transition. Keyboard BOUNDARY, disclosed:
+ *   plugging a jack needs pointer aiming — the keyboard floor covers
+ *   SPAWN, RESET, and the summary, not seating.
+ * - LIFE-3 — RESILIENCE, the composition's honest answer to the two
+ *   environmental failures a GPU page must survive: the render layer's
+ *   frame gate (see render/frameGate.ts) pauses the whole tick on
+ *   `webglcontextlost` (preventDefault — the sim is pure plain data, so
+ *   pausing loses NOTHING; resuming is exact) and on the hidden-tab
+ *   `visibilitychange` path (explicit, on top of ARC-3's delta clamp, so
+ *   the pause holds even where rAF still ticks); both resumes are CLEAN —
+ *   one zero-delta frame, no backlog ever reaches the driver. On context
+ *   RESTORE the gate re-bakes the one GPU-only resource (the PMREM env)
+ *   before the first frame. The `window.cords.resilience()` read seam is
+ *   the verification truth; the two `force*` seams exist ONLY for the e2e
+ *   drive (they fire the REAL browser events via WEBGL_lose_context — no
+ *   synthetic shortcut).
  */
 import * as THREE from 'three';
 import {
@@ -242,6 +274,19 @@ const SPAWN_REFERENCE: { x: number; y: number; z: number } = { x: 0, y: 0.9, z: 
 // speeds: a swept cord sways visibly and calms in the ordinary settle window.
 const BRUSH = { radiusRestLengths: 1.5, strength: 1.0 } as const;
 
+/**
+ * A11Y-1 — reduced motion DAMPENS THE PAGE-INDUCED DANGLE: the brush's
+ * impulse amplitude halves (the same ×0.5 the chase pulse slows by). The
+ * scale rides the per-frame brush INPUT (`BrushInput.strengthScale`), never
+ * the world's config: the world was built once and the preference can flip
+ * mid-session, and the sim stays a pure function of its inputs. DOCUMENTED
+ * BOUNDARY: the sim's settle/damping physics is untouched — SIM-3's settle
+ * window and jitter floor are DoD/determinism contracts, so reduced motion
+ * softens what the page INDUCES (the brush nudge), not how a cord honestly
+ * settles once moved.
+ */
+const BRUSH_REDUCED_STRENGTH_FACTOR = 0.5;
+
 const render = createRenderLayer(app, {
   cords: [
     {
@@ -253,6 +298,23 @@ const render = createRenderLayer(app, {
     },
   ],
 });
+
+// A11Y-1 — the stage canvas's ACCESSIBLE NAME. The scene is interactive,
+// but only via the pointer (aiming); the canvas is therefore role="img"
+// with a description of WHAT the scene is and HOW it is driven — the
+// keyboard's actual powers (N/R) are named here AND in the live summary,
+// and the dynamic state is the summary's job, not a static label's. The
+// canvas itself stays out of the tab order (no tabindex): it holds nothing
+// keyboard-operable, and a focus stop with no action is a trap in disguise.
+render.domElement.setAttribute('role', 'img');
+render.domElement.setAttribute(
+  'aria-label',
+  'Interactive cable patch bench: eight steel cubes on a dark studio stage. ' +
+    'Cords spring from the cursor and their red and blue jacks plug into cube ' +
+    'faces to link cubes; dragging linked cubes too far pops a jack. Keyboard: ' +
+    'N spawns a cord, R resets the bench; plugging itself needs the mouse. ' +
+    'The faceplate below the stage reports live cord and link counts.',
+);
 
 // INT-1 picking: real ray conversion injected; the REN-2 world registers its
 // pickables here — cubes (grabbable since INT-3) and, since INT-4, BOTH end
@@ -389,6 +451,17 @@ let pendingSpawn: SpawnCordInput | null = null;
  * → vanishing). Consumed by the next frame's first substep, like the spawn.
  */
 let pendingRelease: ReleaseJackInput | null = null;
+/**
+ * LIFE-3 (surfaced by QA-1's fuzz harness) — a failure release whose carry
+ * intent has not FLOWED yet: the pointer went down AND back up inside one
+ * frame, so no frame has composed the carry and the machine has not applied
+ * the grab (#7/#8) — the end's mode is still 'seated'/'free', and a
+ * releaseJack now would be rejected (production: a console warning and a
+ * composition/sim seat-latch desync). The drag stays alive so the carry
+ * flows, and the frame loop fires the release the first frame the machine
+ * reports the end actually in hand (below, before pendingRelease).
+ */
+let stagedFailureRelease: { cordId: number; index: number; slot: 0 | 1 } | null = null;
 let nextCordId = 1; // 0 is the anchor cord
 
 // Reused per-frame intent arrays — composed fresh in place every frame, no
@@ -417,10 +490,12 @@ let simState: SimState = { time: 0, cords: [] };
 // would scream and the caller contract would be broken).
 
 /**
- * A11Y-1 seam (documented, wired early): reduced motion skips the particles
- * and SLOWS the REN-4 chase pulse (the link's live-state reading survives —
- * the pulse IS the "linked" signal; A11Y-1 formalizes the policy). The media
- * query list is cached: this is read once per frame.
+ * A11Y-1 — the ONE environmental read the composition makes: a cached
+ * prefers-reduced-motion query, sampled per frame (never mid-step), feeding
+ * every seam — the REN-4 chase pulse (×0.5 slower), the REN-5 band blink
+ * (steady), the LIFE-2 shatter burst (skipped), and the INT-5 brush
+ * amplitude (halved, via the per-frame `strengthScale` below). What it never
+ * touches: the sim's own physics (see BRUSH_REDUCED_STRENGTH_FACTOR).
  */
 const reducedMotionQuery: MediaQueryList | null =
   typeof window.matchMedia === 'function'
@@ -704,7 +779,11 @@ function spawnCordRequest(): void {
 window.addEventListener('keydown', (event: KeyboardEvent) => {
   if (event.repeat) return; // one press, one cord / one reset
   // Modifier chords stay the browser's (Cmd+R must still reload, Cmd+N is
-  // the browser's own) — the page's keys are bare N and R only.
+  // the browser's own) — the page's keys are bare N and R only. Shift is
+  // deliberately NOT guarded: Shift+N is still the user typing N with caps
+  // intent, and both cases are handled below. A11Y-1 pins this floor: the
+  // keys work wherever focus sits (window-level listener — body or a HUD
+  // button), and no focusable element on the page traps Tab.
   if (event.metaKey || event.ctrlKey || event.altKey) return;
   if (event.key === 'n' || event.key === 'N') spawnCordRequest();
   else if (event.key === 'r' || event.key === 'R') resetScene();
@@ -888,6 +967,28 @@ function readStatePaint(): {
       renderGains: Array<{ id: number; gain: number }>;
     };
     statePaint(): ReturnType<typeof readStatePaint>;
+    /**
+     * LIFE-3 — the resilience gate's live probe (read-only truth): context
+     * loss/restore counts, hidden/paused flags, frames drawn/skipped. The
+     * e2e drive asserts against this after a REAL context kill.
+     */
+    resilience(): {
+      contextLost: boolean;
+      hidden: boolean;
+      paused: boolean;
+      framesDrawn: number;
+      framesSkipped: number;
+      contextLosses: number;
+      contextRestores: number;
+    };
+    /**
+     * E2E-ONLY SEAMS (LIFE-3): kill/revive the REAL WebGL context via the
+     * browser's WEBGL_lose_context extension — the real `webglcontextlost`
+     * / `webglcontextrestored` events fire and the gate handles them. Not
+     * used by the app itself, ever.
+     */
+    forceContextLoss(): void;
+    forceContextRestore(): void;
   };
 }).cords = {
   spawnCord: spawnCordRequest,
@@ -902,6 +1003,9 @@ function readStatePaint(): {
   readMotionProbe,
   pulse: readPulse,
   statePaint: readStatePaint,
+  resilience: () => render.frameGate.probe(),
+  forceContextLoss: () => render.renderer.forceContextLoss(),
+  forceContextRestore: () => render.renderer.forceContextRestore(),
 };
 
 // --- T-REN-3 — the faceplate HUD (Drum Machine Panel strip) -------------------
@@ -933,6 +1037,7 @@ function resetScene(): void {
   pendingSpawn = null;
   pendingCarry = null;
   pendingRelease = null;
+  stagedFailureRelease = null; // LIFE-3: the stage dies with the world it named
   activeCarry = null;
   if (cubeDrag.phase === 'dragging') cubeDrag.endDrag(); // dropping is stopping
   frameIndex = INTRO_FRAMES; // the intro pose belonged to the anchor cord
@@ -950,12 +1055,19 @@ function resetScene(): void {
 /** The faceplate's own counts shell — reused every frame, never reallocated. */
 const hudCounts = createHudCounts();
 
-const hud = createHudPanel(document.body, document, {
-  // Both controls route through the SAME functions their keys use: one law
-  // for pointer and keyboard, pixels and sim never diverge.
-  onNewCord: spawnCordRequest,
-  onReset: resetScene,
-});
+const hud = createHudPanel(
+  // A11Y-1 — the faceplate mounts INSIDE the page's <main> landmark (the
+  // strip is position:fixed, so DOM placement is cosmetic — the landmark
+  // structure is not). Falls back to body if a future host drops <main>.
+  (document.querySelector('main') ?? document.body),
+  document,
+  {
+    // Both controls route through the SAME functions their keys use: one law
+    // for pointer and keyboard, pixels and sim never diverge.
+    onNewCord: spawnCordRequest,
+    onReset: resetScene,
+  },
+);
 
 /**
  * LIFE-1/LIFE-2 — the release policy shared by pointer-up and the
@@ -972,8 +1084,16 @@ function releaseHeldEnd(cordId: number, slot: 0 | 1, endPoint: Vec3): void {
   if (runtime === undefined) return;
   const cordState = world.lifecycle.stateOf(cordId);
   if (cordState === 'awaiting-plug' || cordState === 'popped') {
-    pendingRelease = { cordId, index: runtime.endIndex[slot] };
-    runtime.carries[slot].cancel(); // the FALL is the sim's — no scripted drop
+    const index = runtime.endIndex[slot];
+    if (world.lifecycle.endMode(cordId, index) === 'carrying') {
+      pendingRelease = { cordId, index };
+      runtime.carries[slot].cancel(); // the FALL is the sim's — no scripted drop
+      return;
+    }
+    // Same-frame grab+release: the machine has not seen the grab yet. Keep
+    // the drag alive so the carry flows (the approved #7/#8 applies), and
+    // let the frame loop fire the release the moment the end is in hand.
+    stagedFailureRelease = { cordId, index, slot };
     return;
   }
   runtime.carries[slot].endDrag(endPoint);
@@ -1015,6 +1135,16 @@ render.domElement.addEventListener('pointerdown', (event: PointerEvent) => {
     // mid-drop other end stops dropping — the rope re-frees that end when
     // the carry switches, and it falls damped. Matches the rope exactly.
     runtime.carries[1 - slot].cancel();
+    // LIFE-3 — re-grabbing the staged end keeps the plug in hand: the user
+    // changed their mind inside the same-frame window; their NEXT release
+    // routes again through releaseHeldEnd.
+    if (
+      stagedFailureRelease !== null &&
+      stagedFailureRelease.cordId === payload.cordId &&
+      stagedFailureRelease.slot === slot
+    ) {
+      stagedFailureRelease = null;
+    }
     runtime.carries[slot].beginDrag(cordEndPoint(payload.cordId, payload.index));
     activeCarry = { cordId: payload.cordId, slot, payload };
   } else if (hit.class === 'cube') {
@@ -1123,6 +1253,18 @@ render.start((dtSeconds) => {
   const input = pointer.readInput();
   render.camera.getWorldDirection(scratchCameraDir);
 
+  // A11Y-1 — the brush dampening seam: every frame that COMPOSES a brush
+  // field states its scale honestly (never a stale value if the preference
+  // flips mid-session — the pointer's shell is reused across frames, so the
+  // scale must be rewritten each brush frame, not just set under reduce).
+  // The world multiplies its tuned strength by this; absent = 1 = INT-5
+  // bitwise.
+  if (input.brush !== null && input.brush !== undefined) {
+    input.brush.strengthScale = prefersReducedMotion()
+      ? BRUSH_REDUCED_STRENGTH_FACTOR
+      : 1;
+  }
+
   // Per-cord carries: every non-idle end controller composes its target
   // (one dragging + any drops in flight — spawn-while-carrying overlaps).
   carryTargets.length = 0;
@@ -1198,6 +1340,24 @@ render.start((dtSeconds) => {
   if (pendingRelease !== null) {
     input.releaseJack = pendingRelease;
     pendingRelease = null;
+  }
+
+  // LIFE-3 — the staged same-frame failure release (see its declaration):
+  // fire it the first frame the machine reports the end actually in hand;
+  // if the cord left the world another way (vanish, reset), drop the stage.
+  if (stagedFailureRelease !== null) {
+    const staged = stagedFailureRelease;
+    const stagedRuntime = cordRuntimes.get(staged.cordId);
+    const stagedState = world.lifecycle.stateOf(staged.cordId);
+    if (stagedRuntime === undefined || stagedState === 'vanishing' || stagedState === undefined) {
+      stagedFailureRelease = null;
+    } else if (world.lifecycle.endMode(staged.cordId, staged.index) === 'carrying') {
+      pendingRelease = { cordId: staged.cordId, index: staged.index };
+      stagedRuntime.carries[staged.slot].cancel();
+      stagedFailureRelease = null;
+      input.releaseJack = pendingRelease;
+      pendingRelease = null;
+    }
   }
 
   const frame = driver.advance(simState, dtSeconds, input);

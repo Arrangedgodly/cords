@@ -8,6 +8,7 @@
     "build": "npm run check:sim && tsc && vite build",
     "preview": "vite preview",
     "test": "npm run check:sim && vitest run",
+    "fuzz": "CORDS_FUZZ_FULL=1 vitest run src/sim/fuzz.test.ts",
     "check:sim": "node scripts/check-sim-purity.mjs"
   },
   "dependencies": {

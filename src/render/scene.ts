@@ -108,6 +108,8 @@ import * as THREE from 'three';
 import { mergeGeometries } from 'three/examples/jsm/utils/BufferGeometryUtils.js';
 import { RoomEnvironment } from 'three/examples/jsm/environments/RoomEnvironment.js';
 import type { CordState, SimState, Vec3 } from '../sim';
+import { createFrameGate } from './frameGate';
+import type { FrameGate } from './frameGate';
 import { pulsePhase } from './pulse';
 import { graceBlinkOn, graceDimming, stretchTickGain } from './states';
 
@@ -268,6 +270,13 @@ export interface RenderLayer {
   readonly scene: THREE.Scene;
   /** REN-1/REN-2: what the composition root registers as pickable. */
   readonly pickables: StagePickables;
+  /**
+   * LIFE-3 — the resilience gate (context-loss + hidden-tab pauses, clean
+   * resume, the env re-bake hook). start() wires the real DOM events through
+   * it; the probe is read-only verification truth (main.ts re-exposes it as
+   * `window.cords.resilience()` for the e2e drives).
+   */
+  readonly frameGate: FrameGate;
   /** REN-4 — the render layer's live pulse read (verification seam). */
   readonly pulseProbe: PulseProbe;
   /**
@@ -1867,10 +1876,44 @@ export function createRenderLayer(
   host.appendChild(renderer.domElement);
 
   // Baked environment for the plugs' chrome (startup-only; the committed
-  // stage's own materials are untouched — no scene.environment).
-  const pmrem = new THREE.PMREMGenerator(renderer);
-  const envTexture = pmrem.fromScene(new RoomEnvironment(), 0.04).texture;
-  pmrem.dispose();
+  // stage's own materials are untouched — no scene.environment). The bake's
+  // pixels exist ONLY on the GPU (a PMREM render-target pass), so a WebGL
+  // context loss destroys it — rebakeEnvironment() (LIFE-3) re-bakes it on
+  // restore; three.js re-uploads every CPU-backed resource itself.
+  let envTexture: THREE.Texture;
+  {
+    const pmrem = new THREE.PMREMGenerator(renderer);
+    envTexture = pmrem.fromScene(new RoomEnvironment(), 0.04).texture;
+    pmrem.dispose();
+  }
+
+  /**
+   * LIFE-3 — the app-level half of WebGL context-restore: re-bake the ONE
+   * resource whose pixels live only on the GPU (the PMREM environment) and
+   * re-point every material at the fresh texture. Called by the frame gate's
+   * restore hook AFTER three's own `webglcontextrestored` handler rebuilt its
+   * GL caches (listener order: three's listener was registered at renderer
+   * construction, ours at start()), so the new bake lands on a live context
+   * and every CPU-backed resource (geometries, canvas textures, the fleet's
+   * one shader program) re-uploads on the next render.
+   */
+  function rebakeEnvironment(): void {
+    const pmrem = new THREE.PMREMGenerator(renderer);
+    const next = pmrem.fromScene(new RoomEnvironment(), 0.04).texture;
+    pmrem.dispose();
+    envTexture.dispose();
+    envTexture = next;
+    cordMaterial.envMap = next;
+    cordMaterial.needsUpdate = true;
+    plugMaterials.metal.envMap = next;
+    plugMaterials.metal.needsUpdate = true;
+    plugMaterials.grip.envMap = next;
+    plugMaterials.grip.needsUpdate = true;
+    plugMaterials.coded.envMap = next;
+    plugMaterials.coded.needsUpdate = true;
+    fragmentMaterial.envMap = next;
+    fragmentMaterial.needsUpdate = true;
+  }
 
   const scene = new THREE.Scene();
   scene.background = new THREE.Color(0x111114);
@@ -1933,7 +1976,8 @@ export function createRenderLayer(
     envMap: envTexture,
     envMapIntensity: 0.1,
   });
-  const jacks = new JackInstances(createPlugMaterials(envTexture));
+  const plugMaterials = createPlugMaterials(envTexture);
+  const jacks = new JackInstances(plugMaterials);
   scene.add(jacks.group);
 
   // Pick proxies: invisible to pixels AND skipped by the draw loop
@@ -1970,15 +2014,14 @@ export function createRenderLayer(
   // METAL shards (per-instance dark-steel inks over a white-based material,
   // the baked env for the chrome glint) plus the failing end's color-BAND
   // shard — one pooled InstancedMesh, NO glow/additive blend.
-  const fragments = new FragmentPool(
-    new THREE.MeshStandardMaterial({
-      color: 0xffffff, // instanceColor carries each shard's ink
-      roughness: 0.45,
-      metalness: 0.8,
-      envMap: envTexture,
-      envMapIntensity: 0.5,
-    }),
-  );
+  const fragmentMaterial = new THREE.MeshStandardMaterial({
+    color: 0xffffff, // instanceColor carries each shard's ink
+    roughness: 0.45,
+    metalness: 0.8,
+    envMap: envTexture,
+    envMapIntensity: 0.5,
+  });
+  const fragments = new FragmentPool(fragmentMaterial);
   scene.add(fragments.mesh);
   let lastFragmentWallMs = performance.now();
 
@@ -2026,6 +2069,15 @@ export function createRenderLayer(
   };
   window.addEventListener('resize', onResize);
 
+  // LIFE-3 — the resilience gate: context-loss and hidden-tab pauses, the
+  // clean zero-delta resume, and the app-level restore hook (the env
+  // re-bake). start() wires the real DOM events through it; the probe is
+  // exposed read-only for the composition's verification seam.
+  const frameGate = createFrameGate({ onContextRestored: rebakeEnvironment });
+
+  // LIFE-3 — the DOM half of the wiring, alive only while the loop runs.
+  let teardownResilience: (() => void) | null = null;
+
   return {
     camera,
     domElement: renderer.domElement,
@@ -2040,6 +2092,7 @@ export function createRenderLayer(
         return endIndex === 0 ? view.proxies[0] : view.proxies[1];
       },
     },
+    frameGate,
     pulseProbe: () => ({
       phase: pulseState.phase.value,
       cords: Array.from(views, ([id, view]) => ({ id, gain: view.pulseGain.value })),
@@ -2189,14 +2242,49 @@ export function createRenderLayer(
       let lastTime = performance.now();
       renderer.setAnimationLoop(() => {
         const now = performance.now();
-        const dtSeconds = (now - lastTime) / 1000;
+        // LIFE-3 — the gate decides every tick. A paused tick refreshes the
+        // delta baseline so the resume can never hand the loop the pause's
+        // whole wall-clock gap; the first UNpaused tick after a pause is a
+        // 'resume' and advances with dt 0 (nothing was owed — the backlog is
+        // discarded before it exists, belt and braces under ARC-3's clamp).
+        const verdict = frameGate.beforeFrame();
+        if (verdict === 'skip') {
+          lastTime = now;
+          return;
+        }
+        const dtSeconds = verdict === 'resume' ? 0 : (now - lastTime) / 1000;
         lastTime = now;
         frame(dtSeconds);
       });
+      // LIFE-3 — the environmental listeners. Three's own context listeners
+      // (registered at renderer construction) run first on each event — its
+      // restore handler rebuilds the GL caches before our hook re-bakes the
+      // environment. Our loss handler preventDefaults again (idempotent) and
+      // pauses the loop; the visibility handler is the explicit hidden-tab
+      // path on top of ARC-3's delta clamp.
+      const onContextLost = (event: Event): void => {
+        frameGate.handleContextLost(event);
+      };
+      const onContextRestored = (): void => {
+        frameGate.handleContextRestored();
+      };
+      const onVisibility = (): void => {
+        frameGate.setVisibility(document.hidden);
+      };
+      renderer.domElement.addEventListener('webglcontextlost', onContextLost, false);
+      renderer.domElement.addEventListener('webglcontextrestored', onContextRestored, false);
+      document.addEventListener('visibilitychange', onVisibility, false);
+      frameGate.setVisibility(document.hidden); // open-hidden (automation) starts paused
+      teardownResilience = () => {
+        renderer.domElement.removeEventListener('webglcontextlost', onContextLost, false);
+        renderer.domElement.removeEventListener('webglcontextrestored', onContextRestored, false);
+        document.removeEventListener('visibilitychange', onVisibility, false);
+      };
     },
     dispose() {
       renderer.setAnimationLoop(null);
       window.removeEventListener('resize', onResize);
+      teardownResilience?.();
       renderer.dispose();
       renderer.domElement.remove();
     },

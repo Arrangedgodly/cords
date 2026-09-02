@@ -202,6 +202,7 @@ export function createHudPanel(
     update(counts: Readonly<HudCounts>): void {
       if (lastInitialized.value && sameHudCounts(last, counts)) return; // nothing changed
       last.cords = counts.cords;
+      last.awaitingPlug = counts.awaitingPlug;
       last.linked = counts.linked;
       last.popped = counts.popped;
       last.vanishing = counts.vanishing;

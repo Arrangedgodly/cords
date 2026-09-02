@@ -69,16 +69,20 @@ describe('T-REN-3 — HUD counts through the world seams (the model)', () => {
   it('names the anchor-only scene: 1 cord, nothing linked', () => {
     const world = makeWorld();
     world.advance(10, { pointerRay: null });
-    expect(countsOf(world)).toEqual({ cords: 1, linked: 0, popped: 0, vanishing: 0 });
-    expect(sceneSummary(countsOf(world))).toBe('1 cord.');
+    expect(countsOf(world)).toEqual({ cords: 1, awaitingPlug: 1, linked: 0, popped: 0, vanishing: 0 });
+    // The anchor's pin IS a seat (LIFE-1): the cord awaits its other plug,
+    // and A11Y-1's summary says so instead of a bare "1 cord."
+    expect(sceneSummary(countsOf(world)))
+      .toBe('1 cord, 1 awaiting plug. Press N for a new cord, R to reset.');
   });
 
   it('counts spawns (carried cords are cords)', () => {
     const world = makeWorld();
     world.advance(1, { pointerRay: null, spawnCord: { cordId: 1, at: { x: 0.5, y: 1, z: 0 } } });
     world.advance(1, { pointerRay: null, spawnCord: { cordId: 2, at: { x: -0.5, y: 1, z: 0 } } });
-    expect(countsOf(world)).toEqual({ cords: 3, linked: 0, popped: 0, vanishing: 0 });
-    expect(sceneSummary(countsOf(world))).toBe('3 cords.');
+    expect(countsOf(world)).toEqual({ cords: 3, awaitingPlug: 1, linked: 0, popped: 0, vanishing: 0 });
+    expect(sceneSummary(countsOf(world)))
+      .toBe('3 cords, 1 awaiting plug. Press N for a new cord, R to reset.');
   });
 
   it('counts LINKED on the second seat (the first seat stays awaiting-plug)', () => {
@@ -86,7 +90,7 @@ describe('T-REN-3 — HUD counts through the world seams (the model)', () => {
     world.advance(1, { pointerRay: null, spawnCord: { cordId: 1, at: { x: 0.5, y: 1, z: 0 } } });
     world.advance(3, { pointerRay: null, seatTargets: [{ cordId: 1, index: 0, position: A }] });
     expect(world.step.lifecycle.stateOf(1)).toBe('awaiting-plug');
-    expect(countsOf(world)).toEqual({ cords: 2, linked: 0, popped: 0, vanishing: 0 });
+    expect(countsOf(world)).toEqual({ cords: 2, awaitingPlug: 2, linked: 0, popped: 0, vanishing: 0 });
     world.advance(3, { pointerRay: null,
       seatTargets: [
         { cordId: 1, index: 0, position: A },
@@ -94,8 +98,9 @@ describe('T-REN-3 — HUD counts through the world seams (the model)', () => {
       ],
     });
     expect(world.step.lifecycle.stateOf(1)).toBe('linked');
-    expect(countsOf(world)).toEqual({ cords: 2, linked: 1, popped: 0, vanishing: 0 });
-    expect(sceneSummary(countsOf(world))).toBe('2 cords, 1 linked.');
+    expect(countsOf(world)).toEqual({ cords: 2, awaitingPlug: 1, linked: 1, popped: 0, vanishing: 0 });
+    expect(sceneSummary(countsOf(world)))
+      .toBe('2 cords, 1 awaiting plug, 1 linked. Press N for a new cord, R to reset.');
   });
 
   it('counts POPPED and follows the grace expiry into VANISHING', () => {
@@ -108,11 +113,13 @@ describe('T-REN-3 — HUD counts through the world seams (the model)', () => {
       ],
     });
     world.advance(1, { pointerRay: null, popCords: [{ cordId: 1, index: 0 }] });
-    expect(countsOf(world)).toEqual({ cords: 2, linked: 0, popped: 1, vanishing: 0 });
-    expect(sceneSummary(countsOf(world))).toBe('2 cords, 1 popped.');
+    expect(countsOf(world)).toEqual({ cords: 2, awaitingPlug: 1, linked: 0, popped: 1, vanishing: 0 });
+    expect(sceneSummary(countsOf(world)))
+      .toBe('2 cords, 1 awaiting plug, 1 popped. Press N for a new cord, R to reset.');
     world.advance(400, { pointerRay: null }); // ~3.33 s of sim time — past the ~3 s grace
-    expect(countsOf(world)).toEqual({ cords: 2, linked: 0, popped: 0, vanishing: 1 });
-    expect(sceneSummary(countsOf(world))).toBe('2 cords, 1 vanishing.');
+    expect(countsOf(world)).toEqual({ cords: 2, awaitingPlug: 1, linked: 0, popped: 0, vanishing: 1 });
+    expect(sceneSummary(countsOf(world)))
+      .toBe('2 cords, 1 awaiting plug, 1 vanishing. Press N for a new cord, R to reset.');
   });
 
   it('drops the count when the despawn removes the cord (vanish completed)', () => {
@@ -126,10 +133,11 @@ describe('T-REN-3 — HUD counts through the world seams (the model)', () => {
       pinTargets: [{ cordId: 1, index: END, position: { x: 0.5, y: 0.9, z: 0 } }],
     });
     world.advance(1, { pointerRay: null, releaseJack: { cordId: 1, index: END } });
-    expect(countsOf(world)).toEqual({ cords: 2, linked: 0, popped: 0, vanishing: 1 });
+    expect(countsOf(world)).toEqual({ cords: 2, awaitingPlug: 1, linked: 0, popped: 0, vanishing: 1 });
     world.advance(1, { pointerRay: null, despawnCords: [{ cordId: 1 }] });
-    expect(countsOf(world)).toEqual({ cords: 1, linked: 0, popped: 0, vanishing: 0 });
-    expect(sceneSummary(countsOf(world))).toBe('1 cord.');
+    expect(countsOf(world)).toEqual({ cords: 1, awaitingPlug: 1, linked: 0, popped: 0, vanishing: 0 });
+    expect(sceneSummary(countsOf(world)))
+      .toBe('1 cord, 1 awaiting plug. Press N for a new cord, R to reset.');
   });
 
   it('RESET reads the empty scene: a fresh no-anchor world is all zeros', () => {
@@ -137,12 +145,12 @@ describe('T-REN-3 — HUD counts through the world seams (the model)', () => {
     // config's own spawn-only mode. The HUD's read of that world:
     const world = makeWorld(false);
     const counts = countsOf(world);
-    expect(counts).toEqual({ cords: 0, linked: 0, popped: 0, vanishing: 0 });
+    expect(counts).toEqual({ cords: 0, awaitingPlug: 0, linked: 0, popped: 0, vanishing: 0 });
     expect(sceneSummary(counts)).toBe('No cords on the bench. Press N for a new cord.');
     // And the ids RESET reuses are legal there: id 0 is an ordinary spawn id
     // in a no-anchor world (the render layer revives view 0 on reuse).
     world.advance(1, { pointerRay: null, spawnCord: { cordId: 0, at: { x: 0.2, y: 1, z: 0 } } });
-    expect(countsOf(world)).toEqual({ cords: 1, linked: 0, popped: 0, vanishing: 0 });
+    expect(countsOf(world)).toEqual({ cords: 1, awaitingPlug: 0, linked: 0, popped: 0, vanishing: 0 });
     expect(world.step.lifecycle.stateOf(0)).toBe('carried');
   });
 
@@ -156,9 +164,9 @@ describe('T-REN-3 — HUD counts through the world seams (the model)', () => {
       ],
     });
     busy.advance(1, { pointerRay: null, spawnCord: { cordId: 2, at: { x: -0.5, y: 1, z: 0 } } });
-    expect(countsOf(busy)).toEqual({ cords: 3, linked: 1, popped: 0, vanishing: 0 });
+    expect(countsOf(busy)).toEqual({ cords: 3, awaitingPlug: 1, linked: 1, popped: 0, vanishing: 0 });
     const afterReset = countsOf(makeWorld(false));
-    expect(afterReset).toEqual({ cords: 0, linked: 0, popped: 0, vanishing: 0 });
+    expect(afterReset).toEqual({ cords: 0, awaitingPlug: 0, linked: 0, popped: 0, vanishing: 0 });
   });
 
   it('readHudCountsInto reuses the shell (no fresh objects) and stays total over unknown ids', () => {
@@ -168,10 +176,10 @@ describe('T-REN-3 — HUD counts through the world seams (the model)', () => {
     const a = readHudCountsInto(world.advance(0, { pointerRay: null }).cords, world.step.lifecycle.stateOf, shell);
     const b = readHudCountsInto(world.advance(0, { pointerRay: null }).cords, world.step.lifecycle.stateOf, shell);
     expect(a).toBe(b); // same shell, mutated in place
-    expect(a).toEqual({ cords: 2, linked: 0, popped: 0, vanishing: 0 });
+    expect(a).toEqual({ cords: 2, awaitingPlug: 1, linked: 0, popped: 0, vanishing: 0 });
     // Totality: a stateOf that knows nothing still counts the cord on the bench.
     const mystery = readHudCounts([{ id: 42 }, { id: 43 }], () => undefined);
-    expect(mystery).toEqual({ cords: 2, linked: 0, popped: 0, vanishing: 0 });
+    expect(mystery).toEqual({ cords: 2, awaitingPlug: 0, linked: 0, popped: 0, vanishing: 0 });
   });
 });
 
@@ -193,21 +201,111 @@ describe('T-REN-3 — the pure meter/summary primitives', () => {
   });
 
   it('sameHudCounts is structural equality (the update gate)', () => {
-    const a = { cords: 3, linked: 1, popped: 0, vanishing: 0 };
-    expect(sameHudCounts(a, { cords: 3, linked: 1, popped: 0, vanishing: 0 })).toBe(true);
-    expect(sameHudCounts(a, { cords: 3, linked: 2, popped: 0, vanishing: 0 })).toBe(false);
-    expect(sameHudCounts(a, { cords: 2, linked: 1, popped: 0, vanishing: 0 })).toBe(false);
-    expect(sameHudCounts(a, { cords: 3, linked: 1, popped: 1, vanishing: 0 })).toBe(false);
-    expect(sameHudCounts(a, { cords: 3, linked: 1, popped: 0, vanishing: 1 })).toBe(false);
+    const a = { cords: 3, awaitingPlug: 0, linked: 1, popped: 0, vanishing: 0 };
+    expect(sameHudCounts(a, { cords: 3, awaitingPlug: 0, linked: 1, popped: 0, vanishing: 0 })).toBe(true);
+    expect(sameHudCounts(a, { cords: 3, awaitingPlug: 0, linked: 2, popped: 0, vanishing: 0 })).toBe(false);
+    expect(sameHudCounts(a, { cords: 2, awaitingPlug: 0, linked: 1, popped: 0, vanishing: 0 })).toBe(false);
+    expect(sameHudCounts(a, { cords: 3, awaitingPlug: 0, linked: 1, popped: 1, vanishing: 0 })).toBe(false);
+    expect(sameHudCounts(a, { cords: 3, awaitingPlug: 0, linked: 1, popped: 0, vanishing: 1 })).toBe(false);
+    // A11Y-1 — the awaiting-plug count gates too: a first seat must repaint
+    // the summary even though every METER-visible number is unchanged.
+    expect(sameHudCounts(a, { cords: 3, awaitingPlug: 1, linked: 1, popped: 0, vanishing: 0 })).toBe(false);
   });
 
   it('sceneSummary names only non-zero states and pluralizes honestly', () => {
-    expect(sceneSummary({ cords: 1, linked: 0, popped: 0, vanishing: 0 })).toBe('1 cord.');
-    expect(sceneSummary({ cords: 3, linked: 2, popped: 0, vanishing: 0 })).toBe('3 cords, 2 linked.');
-    expect(sceneSummary({ cords: 3, linked: 2, popped: 1, vanishing: 0 }))
-      .toBe('3 cords, 2 linked, 1 popped.');
-    expect(sceneSummary({ cords: 3, linked: 0, popped: 1, vanishing: 1 }))
-      .toBe('3 cords, 1 popped, 1 vanishing.');
+    expect(sceneSummary({ cords: 1, awaitingPlug: 0, linked: 0, popped: 0, vanishing: 0 }))
+      .toBe('1 cord. Press N for a new cord, R to reset.');
+    expect(sceneSummary({ cords: 3, awaitingPlug: 0, linked: 2, popped: 0, vanishing: 0 }))
+      .toBe('3 cords, 2 linked. Press N for a new cord, R to reset.');
+    expect(sceneSummary({ cords: 3, awaitingPlug: 0, linked: 2, popped: 1, vanishing: 0 }))
+      .toBe('3 cords, 2 linked, 1 popped. Press N for a new cord, R to reset.');
+    expect(sceneSummary({ cords: 3, awaitingPlug: 0, linked: 0, popped: 1, vanishing: 1 }))
+      .toBe('3 cords, 1 popped, 1 vanishing. Press N for a new cord, R to reset.');
+    // A11Y-1 — awaiting plugs are named (the first seat is a transition the
+    // summary must speak), pluralized honestly, and ordered by lifecycle
+    // progression (awaiting → linked → popped → vanishing).
+    expect(sceneSummary({ cords: 1, awaitingPlug: 1, linked: 0, popped: 0, vanishing: 0 }))
+      .toBe('1 cord, 1 awaiting plug. Press N for a new cord, R to reset.');
+    expect(sceneSummary({ cords: 2, awaitingPlug: 2, linked: 0, popped: 0, vanishing: 0 }))
+      .toBe('2 cords, 2 awaiting plugs. Press N for a new cord, R to reset.');
+    expect(sceneSummary({ cords: 4, awaitingPlug: 1, linked: 1, popped: 1, vanishing: 1 }))
+      .toBe('4 cords, 1 awaiting plug, 1 linked, 1 popped, 1 vanishing. Press N for a new cord, R to reset.');
+    // The empty scene names the ONE honest action (R on an empty bench is a
+    // no-op — the summary does not advertise no-ops).
+    expect(sceneSummary({ cords: 0, awaitingPlug: 0, linked: 0, popped: 0, vanishing: 0 }))
+      .toBe('No cords on the bench. Press N for a new cord.');
+  });
+});
+
+// --- A11Y-1 — the summary is TOTAL over the lifecycle (nothing silent) ----------
+
+describe('A11Y-1 — the scene summary speaks EVERY lifecycle transition', () => {
+  it('each approved transition changes the sentence (the live region never falls silent)', () => {
+    // Driven through the real world + driver, one summary per stage. Every
+    // APPROVED transition (LIFE-1's eight + despawn + spawn) moves at least
+    // one named count — the audit that motivated the awaiting-plug count:
+    // without it, the FIRST SEAT (#1) and the hand-pull-back (#8) changed
+    // nothing the summary named.
+    const world = makeWorld();
+    const summaries: string[] = [];
+    const snap = () => summaries.push(sceneSummary(countsOf(world)));
+    world.advance(10, { pointerRay: null });
+    snap(); // anchor: awaiting-plug
+    world.advance(1, { pointerRay: null, spawnCord: { cordId: 1, at: { x: 0.5, y: 1, z: 0 } } });
+    snap(); // spawn: carried (#0 — the cord count moves)
+    world.advance(3, { pointerRay: null, seatTargets: [{ cordId: 1, index: 0, position: A }] });
+    snap(); // #1 carried → awaiting-plug (first seat)
+    world.advance(3, { pointerRay: null,
+      seatTargets: [
+        { cordId: 1, index: 0, position: A },
+        { cordId: 1, index: END, position: B },
+      ],
+    });
+    snap(); // #2 awaiting-plug → linked (second seat)
+    world.advance(2, {
+      pointerRay: null,
+      pinTargets: [{ cordId: 1, index: END, position: { x: 0.5, y: 1.0, z: 0 } }],
+    });
+    snap(); // #7 linked → awaiting-plug (the hand-pulled plug)
+    world.advance(3, { pointerRay: null,
+      seatTargets: [
+        { cordId: 1, index: 0, position: A },
+        { cordId: 1, index: END, position: B },
+      ],
+    });
+    snap(); // #2 again: the pulled end re-seats → linked
+    world.advance(1, { pointerRay: null, popCords: [{ cordId: 1, index: 0 }] });
+    snap(); // #4 linked → popped
+    world.advance(400, { pointerRay: null }); // past the ~3 s grace
+    snap(); // #6 popped → vanishing (expiry)
+    world.advance(1, { pointerRay: null, despawnCords: [{ cordId: 1 }] });
+    snap(); // vanish completion → the cord leaves the world
+    // The states the walk actually visited (the world's own truth):
+    expect(world.step.lifecycle.stateOf(0)).toBe('awaiting-plug');
+    // Every consecutive pair differs — no transition is silent.
+    for (let i = 1; i < summaries.length; i += 1) {
+      expect(summaries[i]).not.toBe(summaries[i - 1]);
+    }
+    expect(summaries).toHaveLength(9);
+  });
+
+  it('the #8 grab-back (awaiting-plug → carried) also moves the sentence', () => {
+    // The one transition that only REMOVES a named count: the first seat's
+    // jack is grabbed back off its socket before the second seat ever lands.
+    const world = makeWorld();
+    world.advance(1, { pointerRay: null, spawnCord: { cordId: 1, at: { x: 0.5, y: 1, z: 0 } } });
+    world.advance(3, { pointerRay: null, seatTargets: [{ cordId: 1, index: 0, position: A }] });
+    expect(world.step.lifecycle.stateOf(1)).toBe('awaiting-plug');
+    const before = sceneSummary(countsOf(world));
+    world.advance(2, {
+      pointerRay: null,
+      pinTargets: [{ cordId: 1, index: 0, position: { x: 0.4, y: 1.0, z: 0 } }],
+    });
+    expect(world.step.lifecycle.stateOf(1)).toBe('carried'); // transition #8
+    const after = sceneSummary(countsOf(world));
+    expect(after).not.toBe(before);
+    expect(after).toBe('2 cords, 1 awaiting plug. Press N for a new cord, R to reset.');
+    expect(before).toBe('2 cords, 2 awaiting plugs. Press N for a new cord, R to reset.');
   });
 });
 
@@ -393,33 +491,51 @@ describe('T-REN-3 — the panel: honest painting + the update gate', () => {
   it('lights segments to the counts and writes the exact numerals + summary', () => {
     const { panel, fixture } = makePanel();
     const f = fixture();
-    panel.update({ cords: 3, linked: 1, popped: 0, vanishing: 0 });
+    panel.update({ cords: 3, awaitingPlug: 1, linked: 1, popped: 0, vanishing: 0 });
     expect(f.litCords()).toBe(3);
     expect(f.litLinked()).toBe(1);
     expect(f.countText('cords')).toBe('3');
     expect(f.countText('linked')).toBe('1');
-    expect(f.summary.textContent).toBe('3 cords, 1 linked.');
+    expect(f.summary.textContent)
+      .toBe('3 cords, 1 awaiting plug, 1 linked. Press N for a new cord, R to reset.');
     expect(f.root.hasClass('is-empty')).toBe(false); // hint hidden
   });
 
   it('an identical update touches NO DOM (the gate) — a new one does', () => {
     const { panel, fixture } = makePanel();
     const f = fixture();
-    panel.update({ cords: 2, linked: 1, popped: 0, vanishing: 0 });
+    panel.update({ cords: 2, awaitingPlug: 0, linked: 1, popped: 0, vanishing: 0 });
     const writes = classListWritesIn(f.root);
     const summaryText = f.summary.textContent;
-    panel.update({ cords: 2, linked: 1, popped: 0, vanishing: 0 });
+    panel.update({ cords: 2, awaitingPlug: 0, linked: 1, popped: 0, vanishing: 0 });
     expect(classListWritesIn(f.root)).toBe(writes); // nothing repainted
     expect(f.summary.textContent).toBe(summaryText);
-    panel.update({ cords: 2, linked: 2, popped: 0, vanishing: 0 });
+    panel.update({ cords: 2, awaitingPlug: 0, linked: 2, popped: 0, vanishing: 0 });
     expect(classListWritesIn(f.root)).toBeGreaterThan(writes);
     expect(f.litLinked()).toBe(2);
+  });
+
+  it('A11Y-1: an awaiting-plug change repaints the SUMMARY though the meters are identical', () => {
+    // The first seat moves no meter-visible number — CORDS and LINKED are
+    // unchanged — yet the live region must speak. The gate keys on the full
+    // counts (sameHudCounts incl. awaitingPlug), so the summary rewrites.
+    const { panel, fixture } = makePanel();
+    const f = fixture();
+    panel.update({ cords: 2, awaitingPlug: 0, linked: 0, popped: 0, vanishing: 0 });
+    expect(f.summary.textContent).toBe('2 cords. Press N for a new cord, R to reset.');
+    panel.update({ cords: 2, awaitingPlug: 1, linked: 0, popped: 0, vanishing: 0 });
+    expect(f.summary.textContent)
+      .toBe('2 cords, 1 awaiting plug. Press N for a new cord, R to reset.');
+    // ...and the meters really were untouched by that transition: same lit
+    // counts, same numerals (already asserted above via the stub state).
+    expect(f.litCords()).toBe(2);
+    expect(f.litLinked()).toBe(0);
   });
 
   it('the empty scene: zero lit, dim numerals, hint visible, honest summary', () => {
     const { panel, fixture } = makePanel();
     const f = fixture();
-    panel.update({ cords: 0, linked: 0, popped: 0, vanishing: 0 });
+    panel.update({ cords: 0, awaitingPlug: 0, linked: 0, popped: 0, vanishing: 0 });
     expect(f.litCords()).toBe(0);
     expect(f.litLinked()).toBe(0);
     expect(f.countText('cords')).toBe('0');
@@ -431,7 +547,7 @@ describe('T-REN-3 — the panel: honest painting + the update gate', () => {
   it('pegs the meter past its row while the numeral tells the truth', () => {
     const { panel, fixture } = makePanel();
     const f = fixture();
-    panel.update({ cords: HUD_SEGMENTS + 4, linked: 0, popped: 0, vanishing: 0 });
+    panel.update({ cords: HUD_SEGMENTS + 4, awaitingPlug: 0, linked: 0, popped: 0, vanishing: 0 });
     expect(f.litCords()).toBe(HUD_SEGMENTS);
     expect(f.countText('cords')).toBe(String(HUD_SEGMENTS + 4));
   });
@@ -451,11 +567,13 @@ describe('T-REN-3 — the panel: honest painting + the update gate', () => {
     panel.update(readHudCounts(world.advance(0, { pointerRay: null }).cords, world.step.lifecycle.stateOf));
     expect(f.litCords()).toBe(3); // anchor + linked cord + carried cord
     expect(f.litLinked()).toBe(1);
-    expect(f.summary.textContent).toBe('3 cords, 1 linked.');
+    expect(f.summary.textContent)
+      .toBe('3 cords, 1 awaiting plug, 1 linked. Press N for a new cord, R to reset.');
     // RESET's read: the no-anchor rebuild drives the same panel to empty.
     const afterReset = makeWorld(false);
     panel.update(readHudCounts(afterReset.advance(0, { pointerRay: null }).cords, afterReset.step.lifecycle.stateOf));
     expect(f.litCords()).toBe(0);
     expect(f.root.hasClass('is-empty')).toBe(true);
+    expect(f.summary.textContent).toBe('No cords on the bench. Press N for a new cord.');
   });
 });

@@ -267,6 +267,19 @@ export function createCordWorldStep(config: CordWorldConfig = {}): CordWorldStep
   // T-INT-5 — the passive cursor-brush tunables (fail-fast; defaults when
   // absent — the feature is input-gated, see CordWorldConfig.brush).
   const brushOptions: ResolvedBrushOptions = resolveBrushOptions(config.brush);
+  // A11Y-1 — the reduced-motion dampening's EFFECTIVE pass options: the tuned
+  // config with its strength multiplied by the input's `strengthScale` (the
+  // composition's prefers-reduced-motion seam). One scratch object (a plain
+  // mutable twin of ResolvedBrushOptions) refilled only when the scale
+  // CHANGES (it flips rarely — zero allocation in steady state);
+  // `brushScale` tracks the scale currently baked in, so the default path
+  // (no scale field) never writes anything and is bitwise the pre-A11Y-1
+  // pass.
+  const brushPassOptions: { radiusRestLengths: number; strength: number } = {
+    radiusRestLengths: brushOptions.radiusRestLengths,
+    strength: brushOptions.strength,
+  };
+  let brushScale = 1;
   // T-INT-5 — the last consumed pointer-move counter. NaN initially, so the
   // first finite counter value (0 included) counts as a new move. Scalar
   // closure state: deterministic, zero allocation.
@@ -758,6 +771,19 @@ export function createCordWorldStep(config: CordWorldConfig = {}): CordWorldStep
         ) {
           brushRay = r;
         }
+        // A11Y-1 — resolve the frame's strength scale with the move (inside
+        // the new-counter branch: the scale rides move events like the ray).
+        // Absent/garbage = 1; a changed scale refills the scratch strength
+        // (config strength × scale) so the pass below stays allocation-free.
+        const rawScale = brush.strengthScale;
+        const scale =
+          typeof rawScale === 'number' && Number.isFinite(rawScale) && rawScale >= 0
+            ? rawScale
+            : 1;
+        if (scale !== brushScale) {
+          brushScale = scale;
+          brushPassOptions.strength = brushOptions.strength * scale;
+        }
       }
     }
     for (const entry of entries) {
@@ -778,8 +804,9 @@ export function createCordWorldStep(config: CordWorldConfig = {}): CordWorldStep
       // T-INT-5 — the brush impulse pass LAST, after every intent mutation
       // and immediately before integration, so the impulse lands in the very
       // substep the pointer moved (visible same-frame) and no later intent
-      // can zero it. Pins were skipped inside the pass.
-      if (brushRay !== null) applyBrushToRope(entry.rope, brushRay, brushOptions, dt);
+      // can zero it. Pins were skipped inside the pass. The options are the
+      // A11Y-1-scaled scratch (identity unless the frame carried a scale).
+      if (brushRay !== null) applyBrushToRope(entry.rope, brushRay, brushPassOptions, dt);
       entry.rope.step(dt);
       entry.rope.writePointsTo(entry.points);
     }

@@ -12,7 +12,8 @@
  *      spawn one more cord — a busy bench
  *   3. assert the DOM meters agree with the sim seam (`window.cords.
  *      lifecycle()`): 3 CORDS segments lit, 1 LINKED segment lit, numeral
- *      text 3/1, summary "3 cords, 1 linked." — screenshot of record
+ *      text 3/1, summary "3 cords, 1 awaiting plug, 1 linked. Press N for a
+ *      new cord, R to reset." — screenshot of record
  *      `.impeccable/review/ren3-hud.png`
  *   4. KEYBOARD-ONLY operability: Tab reaches NEW CORD (focus capture of
  *      record `.impeccable/review/ren3-hud-focus.png` — the lit bracket),
@@ -271,7 +272,7 @@ try {
   assertEq(await lit(ws, 'cords'), 1, 'opening CORDS segments (the anchor cord)');
   assertEq(await numeral(ws, 'cords'), '1', 'opening CORDS numeral');
   assertEq(await lit(ws, 'linked'), 0, 'opening LINKED segments');
-  assertEq(await summaryText(ws), '1 cord.', 'opening summary');
+  assertEq(await summaryText(ws), '1 cord, 1 awaiting plug. Press N for a new cord, R to reset.', 'opening summary');
   assertEq(await hintVisible(ws), 'hidden', 'hint hidden while a cord exists');
   process.stdout.write('hud-e2e: opening scene named honestly (CORDS 1, LINKED 0)\n');
 
@@ -285,7 +286,7 @@ try {
   await releaseAt(ws, CUBE04_TOP);
   await sleep(2400); // red's settle; blue rests at the spawn column
   assertEq(await lit(ws, 'cords'), 2, 'CORDS after the first seat');
-  assertEq(await summaryText(ws), '2 cords.', 'summary after the first seat');
+  assertEq(await summaryText(ws), '2 cords, 2 awaiting plugs. Press N for a new cord, R to reset.', 'summary after the first seat');
 
   const blue = await findJack(ws);
   if (blue === null) throw new Error('blue jack not found in the scan window');
@@ -304,7 +305,7 @@ try {
   assertEq(await numeral(ws, 'cords'), '3', 'CORDS numeral');
   assertEq(await lit(ws, 'linked'), 1, 'LINKED segments (1 lit)');
   assertEq(await numeral(ws, 'linked'), '1', 'LINKED numeral');
-  assertEq(await summaryText(ws), '3 cords, 1 linked.', 'summary sentence');
+  assertEq(await summaryText(ws), '3 cords, 1 awaiting plug, 1 linked. Press N for a new cord, R to reset.', 'summary sentence');
   await shoot(ws, HUD_SHOT);
   // Closeup of record: cubes 04 + 05 with the LINKED cord strung between
   // them (both jacks seated) — the state the green meter names.
@@ -322,7 +323,7 @@ try {
   await pressEnter(ws);
   await sleep(1000); // headless swiftshader rAF is slow (~9 fps) — give the spawn its frame
   assertEq(await lit(ws, 'cords'), 4, 'CORDS after Enter on the NEW CORD button');
-  assertEq(await summaryText(ws), '4 cords, 1 linked.', 'summary after the button spawn');
+  assertEq(await summaryText(ws), '4 cords, 1 awaiting plug, 1 linked. Press N for a new cord, R to reset.', 'summary after the button spawn');
   process.stdout.write('hud-e2e: Enter on NEW CORD spawned through the BUTTON path\n');
 
   await pressTab(ws);

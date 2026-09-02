@@ -3,7 +3,9 @@
   <head>
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-    <title>Cords</title>
+    <!-- A11Y-1: the title names the product AND its verb (screen-reader
+         first utterance / tab / history), not a bare codeword. -->
+    <title>Cords — cable patch sandbox</title>
     <style>
       /* Full-bleed 3D stage (surface brief: the sandbox IS the page). */
       html,
@@ -215,7 +217,14 @@
     </style>
   </head>
   <body>
-    <div id="app"></div>
+    <!-- A11Y-1 — landmark structure: the stage canvas mounts in #app inside
+         the page's single <main>; the HUD faceplate is appended into the
+         same landmark by src/hud/panel.ts's host (src/main.ts passes this
+         <main>), so the whole page is one main with a labeled control group
+         and the aria-live scene summary — no orphaned chrome outside it. -->
+    <main>
+      <div id="app"></div>
+    </main>
     <script type="module" src="/src/main.ts"></script>
   </body>
 </html>

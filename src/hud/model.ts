@@ -11,7 +11,9 @@
  *     LINKED segmented readouts and the scene summary.
  *   litSegments(count, segments) — how many meter segments light (a level
  *     meter pegs at its last segment; the numeral carries the exact value).
- *   sceneSummary(counts) — the aria-live sentence ("3 cords, 1 linked").
+ *   sceneSummary(counts) — the aria-live sentence ("3 cords, 1 awaiting
+ *     plug, 2 linked" + the N/R action hint; total over every lifecycle
+ *     transition — the A11Y-1 audit).
  *
  * Pure TypeScript plain data: no three.js, no DOM, no wall-clock, no RNG
  * (the sim's house rules — this module is unit-testable headless and stays
@@ -31,6 +33,16 @@ export const HUD_SEGMENTS = 12;
 export interface HudCounts {
   /** Every cord alive in the world (any lifecycle state incl. vanishing). */
   cords: number;
+  /**
+   * A11Y-1 — cords with EXACTLY ONE end seated (the awaiting-plug state).
+   * The meters do not show it (the panel's two rows are CORDS/LINKED), but
+   * the scene summary speaks it: without this count, the first seat — a real
+   * lifecycle transition — would change NO number the summary names and a
+   * screen reader would hear silence at the exact moment a plug lands. With
+   * it, EVERY approved transition moves at least one count (see
+   * sceneSummary).
+   */
+  awaitingPlug: number;
   /** Cords with BOTH ends seated — the linked state, the chase pulse's. */
   linked: number;
   /** Cords in the popped grace window. */
@@ -41,7 +53,7 @@ export interface HudCounts {
 
 /** A zeroed counts shell for callers that reuse one object per frame. */
 export function createHudCounts(): HudCounts {
-  return { cords: 0, linked: 0, popped: 0, vanishing: 0 };
+  return { cords: 0, awaitingPlug: 0, linked: 0, popped: 0, vanishing: 0 };
 }
 
 /**
@@ -58,12 +70,16 @@ export function readHudCountsInto(
   out: HudCounts,
 ): HudCounts {
   out.cords = 0;
+  out.awaitingPlug = 0;
   out.linked = 0;
   out.popped = 0;
   out.vanishing = 0;
   for (let i = 0; i < cords.length; i += 1) {
     out.cords += 1;
     switch (stateOf(cords[i].id)) {
+      case 'awaiting-plug':
+        out.awaitingPlug += 1;
+        break;
       case 'linked':
         out.linked += 1;
         break;
@@ -74,7 +90,7 @@ export function readHudCountsInto(
         out.vanishing += 1;
         break;
       default:
-        break; // carried / awaiting-plug: the unlabeled remainder
+        break; // carried: the unlabeled remainder
     }
   }
   return out;
@@ -90,7 +106,7 @@ export function readHudCounts(
 
 /** Structural equality — the panel's "nothing changed, touch nothing" gate. */
 export function sameHudCounts(a: Readonly<HudCounts>, b: Readonly<HudCounts>): boolean {
-  return a.cords === b.cords && a.linked === b.linked
+  return a.cords === b.cords && a.awaitingPlug === b.awaitingPlug && a.linked === b.linked
     && a.popped === b.popped && a.vanishing === b.vanishing;
 }
 
@@ -108,17 +124,32 @@ export function litSegments(count: number, segments: number = HUD_SEGMENTS): num
 }
 
 /**
- * The scene summary sentence (aria-live, Daredevil's floor): counts in the
- * task's own grammar — "3 cords, 2 linked, 1 popped" — naming only the
- * non-zero states. Pluralization is honest; the empty scene states itself
- * and the one honest next action (the same words the faceplate's silkscreen
- * hint carries, so ears and eyes are told the same thing).
+ * The scene summary sentence (aria-live, Daredevil's floor; A11Y-1's audit
+ * made it total over the lifecycle): counts in the task's own grammar —
+ * "3 cords, 1 awaiting plug, 2 linked, 1 popped" — naming only the non-zero
+ * states, in lifecycle-progression order, pluralized honestly, plus the
+ * ONE-LINE HINT of the actions the page owns (N/R). Every approved
+ * transition moves at least one named count, so the live region speaks at
+ * every lifecycle change: spawn (cords), first seat (awaiting plug), second
+ * seat (linked), hand-pulled plug (linked→awaiting), pop (popped), grace
+ * expiry / off-cube release (vanishing), and the vanish completion's despawn
+ * (cords drop). The empty scene states itself and the one honest action —
+ * R is omitted there on purpose: resetting an empty bench does nothing, and
+ * the summary does not advertise no-ops.
+ *
+ * BOUNDARY (A11Y-1, documented): the keyboard floor is SPAWN + RESET +
+ * summary. Plugging a jack needs pointer aiming (no approved keyboard plug
+ * path exists), so the hint names only the actions a keyboard alone can
+ * actually complete.
  */
 export function sceneSummary(counts: Readonly<HudCounts>): string {
   if (counts.cords <= 0) return 'No cords on the bench. Press N for a new cord.';
   const parts: string[] = [`${counts.cords} cord${counts.cords === 1 ? '' : 's'}`];
+  if (counts.awaitingPlug > 0) {
+    parts.push(`${counts.awaitingPlug} awaiting plug${counts.awaitingPlug === 1 ? '' : 's'}`);
+  }
   if (counts.linked > 0) parts.push(`${counts.linked} linked`);
   if (counts.popped > 0) parts.push(`${counts.popped} popped`);
   if (counts.vanishing > 0) parts.push(`${counts.vanishing} vanishing`);
-  return `${parts.join(', ')}.`;
+  return `${parts.join(', ')}. Press N for a new cord, R to reset.`;
 }
