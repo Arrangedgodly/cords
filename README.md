@@ -71,6 +71,19 @@ Modifier chords stay with the browser — <kbd>Cmd</kbd>+<kbd>R</kbd> still relo
 - **Frame-budget measurement** — `node scripts/measure-perf.mjs [seconds] [brush\|pulse\|brush+pulse]` drives the perf harness (12 live cords) in headless Chrome and prints the measured frame timings.
 - **Debug seams** — in the running page, `window.cords` exposes read-only probes (`lifecycle()`, `pulse()`, `statePaint()`, `resilience()`) plus `spawnCord()`.
 
+## Deploy (Cloudflare)
+
+The repo ships with `wrangler.jsonc` (Workers static assets) and a GitHub Actions workflow (`.github/workflows/deploy.yml`) that tests, fuzzes, builds, and deploys on every push to `main`. Set the two repository secrets once:
+
+| Secret | Where to get it |
+| --- | --- |
+| `CLOUDFLARE_API_TOKEN` | Cloudflare dashboard → My Profile → API Tokens → **Edit Cloudflare Workers** template |
+| `CLOUDFLARE_ACCOUNT_ID` | Cloudflare dashboard → any domain/account overview, right sidebar |
+
+Then push to `main` (or run the workflow manually) and the site lands on `https://cords.<your-subdomain>.workers.dev`.
+
+To deploy from your machine instead: `npm run build && npx wrangler deploy`.
+
 ## Troubleshooting
 
 - **Blank page** — Cords needs WebGL. Enable hardware acceleration or try another desktop browser.
