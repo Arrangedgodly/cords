@@ -42,7 +42,9 @@ const PIN: Vec3 = { x: 0, y: 1.6, z: 0 };
 const FLOOR_Y = 0;
 const CONTACT = 0.05; // DEFAULT_VANISH_CONTACT_OFFSET
 const PULL_SECONDS = 0.35; // DEFAULT_VANISH_PULL_SECONDS
-const FALL_TIMEOUT = 1.2; // DEFAULT_VANISH_FALL_TIMEOUT_SECONDS
+// T-REN-5 — widened from 1.2 (the LIFE-2 verifier's carry-forward: y≈3
+// releases outran the old budget's drag padding and shattered mid-air).
+const FALL_TIMEOUT = 1.55; // DEFAULT_VANISH_FALL_TIMEOUT_SECONDS
 const GRAVITY = 9.81;
 
 interface Harness {
@@ -421,7 +423,7 @@ describe('T-LIFE-2 — entry path #6: grace expiry (the popped jack falls from w
   it('a dangle that cannot reach the floor still completes — the fall-timeout totality guard', () => {
     const h = makeWorld();
     // Seats HIGH (1.6): the 0.8 cord hangs the popped end at ~0.8 — above the
-    // contact band forever. The sequence must still finish (guard: 1.2s).
+    // contact band forever. The sequence must still finish (guard: 1.55s).
     linkAndPop(h, { x: 0, y: 1.6, z: 0 }, { x: -0.55, y: 1.6, z: 0 });
     for (let f = 0; f < 190; f += 1) h.frame();
     expect(h.lifecycle.stateOf(1)).toBe('vanishing');

@@ -326,6 +326,20 @@ export interface Rope {
   /** Sets the implicit velocity of point `index` for steps of size `dt`. */
   setVelocity(index: number, x: number, y: number, z: number, dt: number): void;
 
+  /**
+   * T-INT-5 — ADDS velocity `(x, y, z)` (world units per second) to point
+   * `index` on top of its current implicit velocity: the passive cursor-brush
+   * impulse. External forces act through their own mutation, and a brush
+   * must not erase the motion it lands on — a swaying cord keeps its sway
+   * and gains the nudge (the impulse is additive by design; `setVelocity`
+   * remains the aiming primitive for authored velocities). A non-zero
+   * impulse wakes a sleeping rope (an impulse must move the cord); a zero
+   * impulse changes nothing, not even the sleep state. Pins are NOT
+   * protected here — the caller skips them (the brush pass does; the pins
+   * would re-exact over any velocity next step anyway). Zero allocation.
+   */
+  addImpulse(index: number, x: number, y: number, z: number, dt: number): void;
+
   /** Teleports the seated pin (pinned point snaps there on the next step). */
   setPin(x: number, y: number, z: number): void;
 
@@ -852,6 +866,25 @@ export function createVerletRope(overrides: Partial<RopeConfig> = {}): Rope {
       asleep = false; // an impulse (e.g. INT-5 brush) must move the cord
     },
 
+    addImpulse(index, x, y, z, dt) {
+      checkIndex(index, 'addImpulse');
+      if (!(dt > 0) || !Number.isFinite(dt)) {
+        throw new Error(`rope: addImpulse needs a positive finite dt, got ${dt}`);
+      }
+      if (!Number.isFinite(x) || !Number.isFinite(y) || !Number.isFinite(z)) {
+        // Garbage must never reach `prev` — one NaN would poison the rope.
+        throw new Error(
+          `rope: addImpulse velocity must be finite, got (${x}, ${y}, ${z})`,
+        );
+      }
+      if (x === 0 && y === 0 && z === 0) return; // nothing to add, nothing to wake
+      const k = index * 3;
+      prev[k] -= x * dt;
+      prev[k + 1] -= y * dt;
+      prev[k + 2] -= z * dt;
+      asleep = false; // a real impulse must move even a settled cord
+    },
+
     setPin(x, y, z) {
       pinX = x;
       pinY = y;
@@ -898,6 +931,16 @@ export function createVerletRope(overrides: Partial<RopeConfig> = {}): Rope {
       // the last valid target stands and the state can never be poisoned.
       if (!Number.isFinite(target.x) || !Number.isFinite(target.y) || !Number.isFinite(target.z)) {
         return;
+      }
+      // A GENUINE target wakes a sleeping rope (this interface's own
+      // contract): a settled cord whose free end is grabbed and dragged must
+      // follow the hand — `carryEnd` holds at the grab point and `step`
+      // early-returns while asleep, so without this wake the pin never moves
+      // (T-REN-5's e2e caught it: grab a deeply settled cord and drag —
+      // nothing). Bitwise-identical targets do NOT wake (a holding hand
+      // sends the same target every frame; the INT-3 latch discipline).
+      if (tx !== target.x || ty !== target.y || tz !== target.z) {
+        asleep = false;
       }
       tx = target.x;
       ty = target.y;

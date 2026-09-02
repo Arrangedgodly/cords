@@ -3,6 +3,7 @@ import type {
   CordState,
   CordPopInput,
   PinTargetInput,
+  Ray3,
   ReleaseJackInput,
   SeatInput,
   SimInput,
@@ -13,6 +14,8 @@ import type {
 } from './types';
 import { createVerletRope, resolveRopeConfig } from './rope';
 import type { RopeConfig } from './rope';
+import { applyBrushToRope, resolveBrushOptions } from './brush';
+import type { BrushOptions, ResolvedBrushOptions } from './brush';
 import { coilPoints, DEFAULT_COIL } from './coilSpawn';
 import { createCordLifecycle } from './lifecycle';
 import type {
@@ -123,6 +126,19 @@ import type {
  *   (sim time, never wall-clock): a backgrounded-tab spike is clamped by the
  *   fixed-timestep driver, so the ~3s window cannot be burned by clamped
  *   frames. Expiry fires popped→vanishing; a re-seat cancels.
+ * - T-INT-5 — THE PASSIVE CURSOR-BRUSH (`input.brush`, see brush.ts): every
+ *   frame the pointer MOVED, each live cord's FREE points inside the halo
+ *   around the cursor ray take a small additive velocity impulse away from
+ *   the ray (cosine falloff; radius/strength tunable on `CordWorldConfig.
+ *   brush`, defaults in brush.ts). ONE pass per NEW move-counter value — the
+ *   driver's substep replays of one input are idempotent, and an idle
+ *   pointer (no `brush` composed) injects nothing even when a swinging cord
+ *   passes through the ray (Thor's zero-idle-cost rule). PINS WIN — seated,
+ *   carried, and anchored ends are skipped. VANISHING CORDS ARE STILL
+ *   BRUSHABLE (documented call): the sequence is contact/time-driven and its
+ *   completion is guaranteed by the fall-timeout totality guard, so body
+ *   impulses cannot derail it — a dying cord swept on its way out keeps
+ *   dying on schedule while its body reacts.
  *
  * Zero steady-state allocation: entries and point shells are preallocated
  * per cord and mutated in place; only a spawn allocates (a new rope, its
@@ -194,6 +210,14 @@ export interface CordWorldConfig {
    * constructs exactly that world). The production composition opts in.
    */
   vanish?: VanishOptions;
+  /**
+   * T-INT-5 — the passive cursor-brush feel-tunables (see BrushOptions in
+   * brush.ts). UNLIKE overStretch/vanish, ABSENT IS NOT "disabled": the
+   * brush is INPUT-gated, not config-gated — a world whose inputs never
+   * carry `SimInput.brush` is bitwise its pre-INT-5 self (pinned by test),
+   * so the defaults are safe to leave in. Bad values fail fast here.
+   */
+  brush?: BrushOptions;
 }
 
 /**
@@ -240,6 +264,13 @@ export function createCordWorldStep(config: CordWorldConfig = {}): CordWorldStep
   // ENABLES the sequencer; absent, the world is exactly its T-LIFE-1 self.
   const vanishOptions: ResolvedVanishOptions | null =
     config.vanish === undefined ? null : resolveVanishOptions(config.vanish);
+  // T-INT-5 — the passive cursor-brush tunables (fail-fast; defaults when
+  // absent — the feature is input-gated, see CordWorldConfig.brush).
+  const brushOptions: ResolvedBrushOptions = resolveBrushOptions(config.brush);
+  // T-INT-5 — the last consumed pointer-move counter. NaN initially, so the
+  // first finite counter value (0 included) counts as a new move. Scalar
+  // closure state: deterministic, zero allocation.
+  let lastBrushMove = Number.NaN;
   // T-LIFE-2 — one in-flight sequence per vanishing cord, insertion-ordered
   // (deterministic). Runs are created at the → vanishing transition and
   // dropped at completion (or when any despawn removes the cord first).
@@ -705,6 +736,30 @@ export function createCordWorldStep(config: CordWorldConfig = {}): CordWorldStep
     // same-frame latch drop beats this step's seat re-sends. Null when not
     // configured; a no-op when nothing is vanishing.
     vanishAdvance(dt);
+    // T-INT-5 — consume the passive cursor-brush: ONE impulse pass per NEW
+    // pointer-move counter value. The driver replays this same input object
+    // across the frame's substeps — the counter makes every replay after the
+    // first a no-op — and an idle pointer (no `brush` composed, or the same
+    // counter) never brushes, even when a swinging cord passes straight
+    // through the ray (Thor's zero-idle-cost rule: impulses ride MOVE
+    // events, never time). A garbage move counter or non-finite ray consumes
+    // the move and brushes nothing (totality). Vanishing cords are still
+    // brushable — the documented call; their pins win like every cord's.
+    let brushRay: Ray3 | null = null;
+    const brush = input.brush;
+    if (brush !== null && brush !== undefined && Number.isFinite(brush.move)) {
+      if (brush.move !== lastBrushMove) {
+        lastBrushMove = brush.move;
+        const r = brush.ray;
+        if (
+          r !== null && r !== undefined &&
+          Number.isFinite(r.origin.x) && Number.isFinite(r.origin.y) && Number.isFinite(r.origin.z) &&
+          Number.isFinite(r.direction.x) && Number.isFinite(r.direction.y) && Number.isFinite(r.direction.z)
+        ) {
+          brushRay = r;
+        }
+      }
+    }
     for (const entry of entries) {
       const carries = input.pinTargets;
       if (carries !== null && carries !== undefined) {
@@ -720,6 +775,11 @@ export function createCordWorldStep(config: CordWorldConfig = {}): CordWorldStep
           if ((s.cordId ?? 0) === entry.id) applySeat(entry, s);
         }
       }
+      // T-INT-5 — the brush impulse pass LAST, after every intent mutation
+      // and immediately before integration, so the impulse lands in the very
+      // substep the pointer moved (visible same-frame) and no later intent
+      // can zero it. Pins were skipped inside the pass.
+      if (brushRay !== null) applyBrushToRope(entry.rope, brushRay, brushOptions, dt);
       entry.rope.step(dt);
       entry.rope.writePointsTo(entry.points);
     }

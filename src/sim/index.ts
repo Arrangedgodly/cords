@@ -4,6 +4,7 @@
  * reviewable in one place.
  */
 export type {
+  BrushInput,
   CordDespawnInput,
   CordPopInput,
   CordState,
@@ -58,6 +59,19 @@ export type {
 } from './vanish';
 export { coilPoints, DEFAULT_COIL } from './coilSpawn';
 export type { CoilParams } from './coilSpawn';
+export {
+  applyBrushToRope,
+  brushImpulse,
+  brushWeight,
+  resolveBrushOptions,
+  DEFAULT_BRUSH_RADIUS_REST_LENGTHS,
+  DEFAULT_BRUSH_STRENGTH,
+} from './brush';
+export type {
+  BrushOptions,
+  BrushImpulseOut,
+  ResolvedBrushOptions,
+} from './brush';
 export type {
   FixedTimestepConfig,
   FixedTimestepDriver,

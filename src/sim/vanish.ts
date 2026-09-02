@@ -72,10 +72,21 @@ export const DEFAULT_VANISH_PULL_SPEED = 8;
  * Totality guard on the fall, in seconds of sim time: if the failing end has
  * not reached the floor by now (a floorless world, or a pathological
  * high-dangle rest the cord's own length cannot reach past), the shatter
- * fires anyway so the sequence always completes. Every production geometry
- * lands long before this (the 2.4 cord out-reaches every seat height).
+ * fires anyway so the sequence always completes.
+ *
+ * T-REN-5 (the LIFE-2 verifier's carry-forward, resolved): the old 1.2s
+ * budget fired MID-AIR (y≈1.4–1.5) on the extreme y≈3 release class (a
+ * lifted cube's socket + the leash limit). Widened to 1.55s — the MAXIMUM
+ * that keeps the < 2s sequence bound (1.55 + 0.35 = 1.90). Verifier-measured
+ * effect at this budget (headless, production 2.4 cord): the landing class
+ * rises to ≲y1.6, and the y≈3 guard shatter lands lower (mid-air y≈1.0).
+ * A TRUE y≈3 landing cannot fit the bound: the sim's actual descent drag is
+ * ≈2.2× ideal gravity (the earlier "1.55×" figure was a time ratio, not a
+ * distance ratio), so such a fall needs ≈1.95s + the 0.35s pull — the guard
+ * is the sanctioned behavior for that extreme, per the LIFE-2 verifier's
+ * original ruling.
  */
-export const DEFAULT_VANISH_FALL_TIMEOUT_SECONDS = 1.2;
+export const DEFAULT_VANISH_FALL_TIMEOUT_SECONDS = 1.55;
 /**
  * "Floor contact" tolerance above the floor plane, in world units: the plug
  * rests on its GRIP RADIUS (~0.055), so the end's point is "on the ground"

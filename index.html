@@ -13,6 +13,205 @@
         overflow: hidden;
         background: #111114;
       }
+
+      /* ---------------------------------------------------------------------
+       * T-REN-3 — the Drum Machine Panel FACEPLATE STRIP (silkscreen grammar;
+       * structure + wiring live in src/hud/panel.ts, honest counts in
+       * src/hud/model.ts). Machined charcoal, small-caps tracked legends,
+       * segmented readouts whose lit segments ARE the live state (the only
+       * glow on the panel), squared meter slots, real keycaps. Flat surfaces
+       * and 1px machined edges only — no gradients, no glass.
+       *
+       * Contrast (WCAG, on the panel #17191d unless noted): legends #c3c8d1
+       * 10.48:1 · nameplate #e8e3d5 13.73:1 · dim ink #9aa0ab 6.70:1 · amber
+       * LED #f2d43a 11.95:1 · jade LED #58c470 8.00:1 · cap ink #d9dde4 on
+       * #242930 10.74:1 · key chip #b6bcc6 on #2c323b 6.76:1 · focus
+       * bracket amber 11.95:1 (non-text, needs 3:1). All >= 4.5:1.
+       * ------------------------------------------------------------------- */
+      .hud {
+        position: fixed;
+        left: 0;
+        right: 0;
+        bottom: 0;
+        z-index: 10;
+        display: flex;
+        align-items: center;
+        gap: 24px;
+        padding: 13px 28px;
+        background: #17191d;
+        border-top: 1px solid rgba(255, 255, 255, 0.08); /* the machined top bevel */
+        font-family: "Helvetica Neue", Helvetica, Arial, sans-serif;
+        -webkit-user-select: none;
+        user-select: none;
+      }
+      /* Two real fasteners hold the strip on — same furniture as the floor's
+       * corner bolts, not decoration: inset machined heads, both ends. */
+      .hud::before,
+      .hud::after {
+        content: "";
+        flex: none;
+        width: 9px;
+        height: 9px;
+        border-radius: 50%;
+        background: #101215;
+        border: 1px solid #0a0b0d;
+        box-shadow: inset 0 1px 1px rgba(255, 255, 255, 0.07);
+      }
+
+      /* Nameplate — the product's own name, the panel's silkscreen. */
+      .hud-name {
+        display: flex;
+        flex-direction: column;
+        gap: 3px;
+        line-height: 1;
+      }
+      .hud-name-word {
+        font-size: 15px;
+        font-weight: 700;
+        letter-spacing: 0.34em;
+        color: #e8e3d5; /* bone — cube 08's tone, the nameplate's own ink */
+      }
+      .hud-name-sub {
+        font-size: 9px;
+        font-weight: 600;
+        letter-spacing: 0.24em;
+        color: #9aa0ab;
+      }
+
+      /* Segmented readouts — the tempo-readout grammar. */
+      .hud-readout {
+        display: flex;
+        align-items: center;
+        gap: 11px;
+        padding-left: 24px;
+        border-left: 1px solid #0d0f12; /* module seam */
+        line-height: 1;
+      }
+      .hud-label {
+        font-size: 10px;
+        font-weight: 700;
+        letter-spacing: 0.16em;
+        color: #c3c8d1;
+      }
+      .hud-meter {
+        display: inline-flex;
+        gap: 3px;
+      }
+      .hud-seg {
+        width: 9px;
+        height: 16px;
+        background: #232730; /* the unlit slot — recessed, honest */
+        border: 1px solid #0e1013;
+      }
+      /* Lit = live state ONLY. The one sanctioned glow on the panel. */
+      .led-amber .hud-seg.lit {
+        background: #f2d43a; /* sulfur — the CORDS row */
+        border-color: #a98f1d;
+        box-shadow: 0 0 6px rgba(242, 212, 58, 0.45);
+      }
+      .led-jade .hud-seg.lit {
+        background: #58c470; /* jade — the LINKED row */
+        border-color: #2c7f46;
+        box-shadow: 0 0 6px rgba(88, 196, 112, 0.4);
+      }
+      .hud-count {
+        min-width: 2.5ch;
+        text-align: right;
+        font-family: ui-monospace, "SF Mono", Menlo, Consolas, "Liberation Mono", monospace;
+        font-size: 13px;
+        font-weight: 600;
+        font-variant-numeric: tabular-nums;
+      }
+      .led-amber .hud-count {
+        color: #f2d43a;
+      }
+      .led-jade .hud-count {
+        color: #58c470;
+      }
+      .hud-count.is-zero {
+        color: #9aa0ab; /* zero is an unlit state */
+      }
+
+      /* Empty-scene invitation (surface brief): one dim silkscreen line that
+       * names the real state — gone the moment a cord exists. */
+      .hud-hint {
+        flex: 1;
+        margin: 0;
+        text-align: center;
+        font-size: 10px;
+        font-weight: 600;
+        letter-spacing: 0.2em;
+        color: #9aa0ab;
+        visibility: hidden;
+      }
+      .hud.is-empty .hud-hint {
+        visibility: visible;
+      }
+
+      /* Controls — machined keycaps. */
+      .hud-actions {
+        display: flex;
+        gap: 10px;
+        padding-left: 24px;
+        border-left: 1px solid #0d0f12;
+      }
+      .hud-btn {
+        display: inline-flex;
+        align-items: center;
+        gap: 9px;
+        appearance: none;
+        background: #242930;
+        color: #d9dde4;
+        border: 1px solid #0e1013;
+        border-radius: 2px;
+        padding: 9px 12px 9px 14px;
+        font-family: inherit;
+        font-size: 11px;
+        font-weight: 700;
+        letter-spacing: 0.14em;
+        cursor: pointer;
+        box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.07); /* the cap's bevel */
+      }
+      .hud-btn:hover {
+        background: #2b313a;
+      }
+      .hud-btn:active {
+        background: #1f242b;
+        box-shadow: inset 0 1px 3px rgba(0, 0, 0, 0.55); /* pressed cap */
+      }
+      /* Visible focus, hardware-honest: the lit bracket around the cap (the
+       * meter LED's own amber), never the browser's default blue ring. */
+      .hud-btn:focus-visible {
+        outline: 2px solid #f2d43a;
+        outline-offset: 3px;
+      }
+      .hud-key {
+        font-family: ui-monospace, "SF Mono", Menlo, Consolas, "Liberation Mono", monospace;
+        font-size: 10px;
+        font-weight: 600;
+        color: #b6bcc6;
+        background: #2c323b;
+        border: 1px solid #3d444d;
+        border-radius: 2px;
+        padding: 2px 6px;
+        min-width: 10px;
+        text-align: center;
+      }
+
+      /* Scene summary — aria-live polite (A11Y-1's floor, wired at REN-3):
+       * present for assistive tech, invisible on the faceplate (the meters
+       * already show the counts to sighted users). */
+      .hud-summary {
+        position: absolute;
+        width: 1px;
+        height: 1px;
+        margin: -1px;
+        padding: 0;
+        border: 0;
+        overflow: hidden;
+        clip-path: inset(50%);
+        white-space: nowrap;
+      }
     </style>
   </head>
   <body>

@@ -132,6 +132,25 @@ export interface SpawnCordInput {
 }
 
 /**
+ * T-INT-5 — the passive cursor-brush frame signal (plan.md INT-5): the
+ * pointer MOVED since the last consumed move. `move` is the interaction
+ * layer's monotonic pointer-move counter (it advances only on real
+ * pointermove events), and the world applies exactly ONE impulse pass per
+ * NEW counter value — which is what makes the fixed-timestep driver's
+ * replay of one input across a frame's substeps idempotent (one impulse
+ * per pointer-move frame, never one per substep). ABSENT/NULL = the
+ * pointer is still or off-stage: no impulse, zero cost — even when a
+ * swinging cord passes straight through the ray (Thor's rule: brush
+ * impulses ride MOVE events, never time).
+ */
+export interface BrushInput {
+  /** Monotonic pointer-move count; advances only on real move events. */
+  move: number;
+  /** The cursor ray in sim space at the moved position. */
+  ray: Ray3;
+}
+
+/**
  * Per-frame input snapshot the interaction layer hands to the sim. Grows as
  * the INT lane lands (grabbed jack, brush position, ...). Kept plain-data so
  * QA-1 can record/replay input sequences headless.
@@ -139,6 +158,13 @@ export interface SpawnCordInput {
 export interface SimInput {
   /** Pointer ray in sim space, or null when the pointer is off the stage. */
   pointerRay: Ray3 | null;
+  /**
+   * T-INT-5 — the passive cursor-brush signal: present ONLY on frames a
+   * pointer-move event arrived (the interaction layer composes it from its
+   * move counter; see BrushInput). The world brushes every live cord's free
+   * points inside the halo around `brush.ray`, once per new `move` value.
+   */
+  brush?: BrushInput | null;
   /**
    * SIM-2 — carry target for a grabbed cord end, or null/undefined when
    * nothing is carried. While present, the named endpoint is a kinematic pin

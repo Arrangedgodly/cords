@@ -1,0 +1,461 @@
+/**
+ * T-REN-3 — HUD tests (Professor X + Daredevil, REN lane).
+ *
+ * Two layers, the repo's direct-function approach (node, no jsdom):
+ *
+ * 1. THE MODEL THROUGH THE REAL WORLD — every count the faceplate shows is
+ *    driven through the production seams (createCordWorldStep + the
+ *    fixed-timestep driver, spawn/seat/pop/release/despawn intents): spawn,
+ *    seat → linked, pop, grace expiry → vanishing, despawn, and the RESET
+ *    construction (a fresh no-anchor world) reading all zeros.
+ * 2. THE PANEL against a ~60-line structural stub of the DOM seam the
+ *    module declares (HudElementLike/HudDocumentLike): structure, button
+ *    wiring, meter painting, the update gate, the aria-live summary.
+ */
+import { describe, expect, it } from 'vitest';
+import { createCordWorldStep } from '../sim/cordWorld';
+import { createFixedTimestepDriver } from '../sim/fixedTimestep';
+import type { CordWorldStep } from '../sim/cordWorld';
+import type { SimInput, SimState, Vec3 } from '../sim';
+import { createHudPanel } from './panel';
+import type { HudElementLike } from './panel';
+import {
+  HUD_SEGMENTS,
+  createHudCounts,
+  litSegments,
+  readHudCounts,
+  readHudCountsInto,
+  sameHudCounts,
+  sceneSummary,
+} from './model';
+
+// --- Part 1 — the model through the real world --------------------------------
+
+const DT = 1 / 120;
+const FRAME = 1 / 60;
+const SEGMENTS = 8;
+const END = SEGMENTS;
+const PIN: Vec3 = { x: 0, y: 1.6, z: 0 };
+const A: Vec3 = { x: 0.9, y: 0.42, z: 0 };
+const B: Vec3 = { x: 0.35, y: 0.42, z: 0.1 };
+
+interface World {
+  advance(frames: number, input: SimInput): SimState;
+  step: CordWorldStep;
+}
+
+/** The production shape: anchor + spawn template, driver at 120 Hz. */
+function makeWorld(withAnchor = true): World {
+  const step = createCordWorldStep({
+    ...(withAnchor ? { anchor: { pin: PIN, segmentCount: SEGMENTS, floorY: 0 } } : {}),
+    cord: { segmentCount: SEGMENTS, floorY: 0 },
+  });
+  const driver = createFixedTimestepDriver(step, { timestep: DT, maxSubsteps: 2 });
+  let state: SimState = { time: 0, cords: [] };
+  return {
+    step,
+    advance(frames, input) {
+      for (let f = 0; f < frames; f += 1) state = driver.advance(state, FRAME, input).state;
+      return state;
+    },
+  };
+}
+
+/** The HUD's own read: the live cord list + each cord's lifecycle state. */
+const countsOf = (world: World) =>
+  readHudCounts(world.advance(0, { pointerRay: null }).cords, world.step.lifecycle.stateOf);
+
+describe('T-REN-3 — HUD counts through the world seams (the model)', () => {
+  it('names the anchor-only scene: 1 cord, nothing linked', () => {
+    const world = makeWorld();
+    world.advance(10, { pointerRay: null });
+    expect(countsOf(world)).toEqual({ cords: 1, linked: 0, popped: 0, vanishing: 0 });
+    expect(sceneSummary(countsOf(world))).toBe('1 cord.');
+  });
+
+  it('counts spawns (carried cords are cords)', () => {
+    const world = makeWorld();
+    world.advance(1, { pointerRay: null, spawnCord: { cordId: 1, at: { x: 0.5, y: 1, z: 0 } } });
+    world.advance(1, { pointerRay: null, spawnCord: { cordId: 2, at: { x: -0.5, y: 1, z: 0 } } });
+    expect(countsOf(world)).toEqual({ cords: 3, linked: 0, popped: 0, vanishing: 0 });
+    expect(sceneSummary(countsOf(world))).toBe('3 cords.');
+  });
+
+  it('counts LINKED on the second seat (the first seat stays awaiting-plug)', () => {
+    const world = makeWorld();
+    world.advance(1, { pointerRay: null, spawnCord: { cordId: 1, at: { x: 0.5, y: 1, z: 0 } } });
+    world.advance(3, { pointerRay: null, seatTargets: [{ cordId: 1, index: 0, position: A }] });
+    expect(world.step.lifecycle.stateOf(1)).toBe('awaiting-plug');
+    expect(countsOf(world)).toEqual({ cords: 2, linked: 0, popped: 0, vanishing: 0 });
+    world.advance(3, { pointerRay: null,
+      seatTargets: [
+        { cordId: 1, index: 0, position: A },
+        { cordId: 1, index: END, position: B },
+      ],
+    });
+    expect(world.step.lifecycle.stateOf(1)).toBe('linked');
+    expect(countsOf(world)).toEqual({ cords: 2, linked: 1, popped: 0, vanishing: 0 });
+    expect(sceneSummary(countsOf(world))).toBe('2 cords, 1 linked.');
+  });
+
+  it('counts POPPED and follows the grace expiry into VANISHING', () => {
+    const world = makeWorld();
+    world.advance(1, { pointerRay: null, spawnCord: { cordId: 1, at: { x: 0.5, y: 1, z: 0 } } });
+    world.advance(3, { pointerRay: null,
+      seatTargets: [
+        { cordId: 1, index: 0, position: A },
+        { cordId: 1, index: END, position: B },
+      ],
+    });
+    world.advance(1, { pointerRay: null, popCords: [{ cordId: 1, index: 0 }] });
+    expect(countsOf(world)).toEqual({ cords: 2, linked: 0, popped: 1, vanishing: 0 });
+    expect(sceneSummary(countsOf(world))).toBe('2 cords, 1 popped.');
+    world.advance(400, { pointerRay: null }); // ~3.33 s of sim time — past the ~3 s grace
+    expect(countsOf(world)).toEqual({ cords: 2, linked: 0, popped: 0, vanishing: 1 });
+    expect(sceneSummary(countsOf(world))).toBe('2 cords, 1 vanishing.');
+  });
+
+  it('drops the count when the despawn removes the cord (vanish completed)', () => {
+    const world = makeWorld();
+    world.advance(1, { pointerRay: null, spawnCord: { cordId: 1, at: { x: 0.5, y: 1, z: 0 } } });
+    world.advance(3, { pointerRay: null, seatTargets: [{ cordId: 1, index: 0, position: A }] });
+    // The held jack: a carry intent names the blue end (the grab), then the
+    // user-initiated failure — released off-cube.
+    world.advance(2, {
+      pointerRay: null,
+      pinTargets: [{ cordId: 1, index: END, position: { x: 0.5, y: 0.9, z: 0 } }],
+    });
+    world.advance(1, { pointerRay: null, releaseJack: { cordId: 1, index: END } });
+    expect(countsOf(world)).toEqual({ cords: 2, linked: 0, popped: 0, vanishing: 1 });
+    world.advance(1, { pointerRay: null, despawnCords: [{ cordId: 1 }] });
+    expect(countsOf(world)).toEqual({ cords: 1, linked: 0, popped: 0, vanishing: 0 });
+    expect(sceneSummary(countsOf(world))).toBe('1 cord.');
+  });
+
+  it('RESET reads the empty scene: a fresh no-anchor world is all zeros', () => {
+    // main.ts's resetScene rebuilds the world WITHOUT the anchor — the
+    // config's own spawn-only mode. The HUD's read of that world:
+    const world = makeWorld(false);
+    const counts = countsOf(world);
+    expect(counts).toEqual({ cords: 0, linked: 0, popped: 0, vanishing: 0 });
+    expect(sceneSummary(counts)).toBe('No cords on the bench. Press N for a new cord.');
+    // And the ids RESET reuses are legal there: id 0 is an ordinary spawn id
+    // in a no-anchor world (the render layer revives view 0 on reuse).
+    world.advance(1, { pointerRay: null, spawnCord: { cordId: 0, at: { x: 0.2, y: 1, z: 0 } } });
+    expect(countsOf(world)).toEqual({ cords: 1, linked: 0, popped: 0, vanishing: 0 });
+    expect(world.step.lifecycle.stateOf(0)).toBe('carried');
+  });
+
+  it('full reset cycle: a busy scene, then the no-anchor rebuild reads zero', () => {
+    const busy = makeWorld();
+    busy.advance(1, { pointerRay: null, spawnCord: { cordId: 1, at: { x: 0.5, y: 1, z: 0 } } });
+    busy.advance(3, { pointerRay: null,
+      seatTargets: [
+        { cordId: 1, index: 0, position: A },
+        { cordId: 1, index: END, position: B },
+      ],
+    });
+    busy.advance(1, { pointerRay: null, spawnCord: { cordId: 2, at: { x: -0.5, y: 1, z: 0 } } });
+    expect(countsOf(busy)).toEqual({ cords: 3, linked: 1, popped: 0, vanishing: 0 });
+    const afterReset = countsOf(makeWorld(false));
+    expect(afterReset).toEqual({ cords: 0, linked: 0, popped: 0, vanishing: 0 });
+  });
+
+  it('readHudCountsInto reuses the shell (no fresh objects) and stays total over unknown ids', () => {
+    const world = makeWorld();
+    world.advance(1, { pointerRay: null, spawnCord: { cordId: 1, at: { x: 0.5, y: 1, z: 0 } } });
+    const shell = createHudCounts();
+    const a = readHudCountsInto(world.advance(0, { pointerRay: null }).cords, world.step.lifecycle.stateOf, shell);
+    const b = readHudCountsInto(world.advance(0, { pointerRay: null }).cords, world.step.lifecycle.stateOf, shell);
+    expect(a).toBe(b); // same shell, mutated in place
+    expect(a).toEqual({ cords: 2, linked: 0, popped: 0, vanishing: 0 });
+    // Totality: a stateOf that knows nothing still counts the cord on the bench.
+    const mystery = readHudCounts([{ id: 42 }, { id: 43 }], () => undefined);
+    expect(mystery).toEqual({ cords: 2, linked: 0, popped: 0, vanishing: 0 });
+  });
+});
+
+describe('T-REN-3 — the pure meter/summary primitives', () => {
+  it('litSegments fills one segment per cord and PEGS past the row', () => {
+    expect(litSegments(0)).toBe(0);
+    expect(litSegments(1)).toBe(1);
+    expect(litSegments(5)).toBe(5);
+    expect(litSegments(HUD_SEGMENTS)).toBe(HUD_SEGMENTS);
+    expect(litSegments(HUD_SEGMENTS + 4)).toBe(HUD_SEGMENTS); // pegged: the numeral carries 16
+    expect(litSegments(4, 4)).toBe(4);
+    expect(litSegments(9, 4)).toBe(4);
+  });
+
+  it('litSegments is total over garbage', () => {
+    expect(litSegments(Number.NaN)).toBe(0);
+    expect(litSegments(-3)).toBe(0);
+    expect(litSegments(Number.POSITIVE_INFINITY)).toBe(0); // garbage lights nothing (the doc'd law)
+  });
+
+  it('sameHudCounts is structural equality (the update gate)', () => {
+    const a = { cords: 3, linked: 1, popped: 0, vanishing: 0 };
+    expect(sameHudCounts(a, { cords: 3, linked: 1, popped: 0, vanishing: 0 })).toBe(true);
+    expect(sameHudCounts(a, { cords: 3, linked: 2, popped: 0, vanishing: 0 })).toBe(false);
+    expect(sameHudCounts(a, { cords: 2, linked: 1, popped: 0, vanishing: 0 })).toBe(false);
+    expect(sameHudCounts(a, { cords: 3, linked: 1, popped: 1, vanishing: 0 })).toBe(false);
+    expect(sameHudCounts(a, { cords: 3, linked: 1, popped: 0, vanishing: 1 })).toBe(false);
+  });
+
+  it('sceneSummary names only non-zero states and pluralizes honestly', () => {
+    expect(sceneSummary({ cords: 1, linked: 0, popped: 0, vanishing: 0 })).toBe('1 cord.');
+    expect(sceneSummary({ cords: 3, linked: 2, popped: 0, vanishing: 0 })).toBe('3 cords, 2 linked.');
+    expect(sceneSummary({ cords: 3, linked: 2, popped: 1, vanishing: 0 }))
+      .toBe('3 cords, 2 linked, 1 popped.');
+    expect(sceneSummary({ cords: 3, linked: 0, popped: 1, vanishing: 1 }))
+      .toBe('3 cords, 1 popped, 1 vanishing.');
+  });
+});
+
+// --- Part 2 — the panel against the structural DOM stub ------------------------
+
+/** The whole stub DOM seam the panel declares (see panel.ts). */
+class StubElement {
+  readonly tagName: string;
+  className = '';
+  textContent: string | null = null;
+  readonly children: StubElement[] = [];
+  readonly attributes = new Map<string, string>();
+  readonly listeners = new Map<string, Array<(event: { type: string }) => void>>();
+  private readonly classes = new Set<string>();
+  classListWrites = 0;
+  readonly classList = {
+    add: (...tokens: string[]) => {
+      this.classListWrites += 1;
+      for (const t of tokens) this.classes.add(t);
+    },
+    remove: (...tokens: string[]) => {
+      this.classListWrites += 1;
+      for (const t of tokens) this.classes.delete(t);
+    },
+  };
+
+  constructor(tagName: string) {
+    this.tagName = tagName;
+  }
+
+  setAttribute(name: string, value: string): void {
+    this.attributes.set(name, value);
+  }
+
+  appendChild(child: unknown): void {
+    this.children.push(child as StubElement);
+  }
+
+  addEventListener(type: string, listener: (event: { type: string }) => void): void {
+    const list = this.listeners.get(type) ?? [];
+    list.push(listener);
+    this.listeners.set(type, list);
+  }
+
+  hasClass(token: string): boolean {
+    return this.classes.has(token);
+  }
+
+  click(): void {
+    for (const listener of this.listeners.get('click') ?? []) listener({ type: 'click' });
+  }
+}
+
+const stubDoc = { createElement: (tag: string) => new StubElement(tag) };
+
+function findAll(node: StubElement, pred: (el: StubElement) => boolean): StubElement[] {
+  const out: StubElement[] = [];
+  const walk = (el: StubElement): void => {
+    if (pred(el)) out.push(el);
+    for (const child of el.children) walk(child);
+  };
+  walk(node);
+  return out;
+}
+
+const byAttr = (node: StubElement, name: string, value: string): StubElement[] =>
+  findAll(node, (el) => el.attributes.get(name) === value);
+
+const byClass = (node: StubElement, cls: string): StubElement[] =>
+  findAll(node, (el) => el.className.split(/\s+/).includes(cls));
+
+const classListWritesIn = (node: StubElement): number => {
+  let total = node.classListWrites;
+  for (const child of node.children) total += classListWritesIn(child);
+  return total;
+};
+
+interface PanelFixture {
+  root: StubElement;
+  litCords: () => number;
+  litLinked: () => number;
+  countText: (readout: string) => string;
+  summary: StubElement;
+}
+
+function makePanel(options?: { segments?: number }): {
+  panel: ReturnType<typeof createHudPanel>;
+  commands: { newCord: number; reset: number };
+  host: StubElement;
+  fixture(): PanelFixture;
+} {
+  const commands = { newCord: 0, reset: 0 };
+  const host = new StubElement('body');
+  const panel = createHudPanel(host as unknown as HudElementLike, stubDoc, {
+    onNewCord: () => {
+      commands.newCord += 1;
+    },
+    onReset: () => {
+      commands.reset += 1;
+    },
+    ...(options?.segments === undefined ? {} : { segments: options.segments }),
+  });
+  const root = host.children[0];
+  return {
+    panel,
+    commands,
+    host,
+    fixture: () => ({
+      root,
+      litCords: () => byAttr(root, 'data-readout', 'cords')[0]
+        ? byAttr(root, 'data-readout', 'cords')[0].children[1].children
+          .filter((s) => s.hasClass('lit')).length
+        : -1,
+      litLinked: () => byAttr(root, 'data-readout', 'linked')[0].children[1].children
+        .filter((s) => s.hasClass('lit')).length,
+      countText: (readout) => byAttr(root, 'data-readout', readout)[0].children[2].textContent ?? '',
+      summary: byClass(root, 'hud-summary')[0],
+    }),
+  };
+}
+
+describe('T-REN-3 — the panel: structure (labels name real things)', () => {
+  it('builds the strip with nameplate, both readouts, both controls, summary', () => {
+    const { fixture } = makePanel();
+    const f = fixture();
+    expect(f.root.tagName).toBe('div');
+    expect(f.root.className).toBe('hud');
+    // Nameplate — the product's own name.
+    const word = byClass(f.root, 'hud-name-word')[0];
+    expect(word.textContent).toBe('CORDS');
+    // Readouts: labels + HUD_SEGMENTS slots each.
+    for (const name of ['cords', 'linked'] as const) {
+      const block = byAttr(f.root, 'data-readout', name)[0];
+      expect(block.attributes.get('aria-hidden')).toBe('true'); // the summary speaks the counts
+      expect(block.children[0].textContent).toBe(name === 'cords' ? 'CORDS' : 'LINKED');
+      expect(block.children[1].children).toHaveLength(HUD_SEGMENTS);
+    }
+    // Controls: real buttons, honest labels, keycap chips aria-hidden.
+    const newCord = byAttr(f.root, 'data-hud', 'new-cord')[0];
+    const reset = byAttr(f.root, 'data-hud', 'reset')[0];
+    for (const btn of [newCord, reset]) {
+      expect(btn.tagName).toBe('button');
+      expect(btn.attributes.get('type')).toBe('button');
+    }
+    expect(newCord.children[0].textContent).toBe('NEW CORD');
+    expect(newCord.children[1].textContent).toBe('N');
+    expect(newCord.children[1].attributes.get('aria-hidden')).toBe('true');
+    expect(reset.children[0].textContent).toBe('RESET');
+    expect(reset.children[1].textContent).toBe('R');
+    expect(reset.children[1].attributes.get('aria-hidden')).toBe('true');
+    // Summary: the aria-live polite region (A11Y-1's floor, wired now).
+    expect(f.summary.tagName).toBe('p');
+    expect(f.summary.attributes.get('role')).toBe('status');
+    expect(f.summary.attributes.get('aria-live')).toBe('polite');
+    // The empty-scene hint names the one honest action.
+    expect(byClass(f.root, 'hud-hint')[0].textContent).toBe('PRESS N FOR A NEW CORD');
+    expect(byClass(f.root, 'hud-hint')[0].attributes.get('aria-hidden')).toBe('true');
+  });
+
+  it('honors a custom segment count and fails fast on a bad one', () => {
+    const { fixture } = makePanel({ segments: 4 });
+    const f = fixture();
+    expect(f.root ? byAttr(f.root, 'data-readout', 'cords')[0].children[1].children : [])
+      .toHaveLength(4);
+    expect(() => makePanel({ segments: 0 })).toThrow();
+    expect(() => makePanel({ segments: 3.5 })).toThrow();
+  });
+});
+
+describe('T-REN-3 — the panel: wiring (buttons fire the commands)', () => {
+  it('clicking NEW CORD calls onNewCord; clicking RESET calls onReset — nothing else', () => {
+    const { commands, fixture } = makePanel();
+    const f = fixture();
+    byAttr(f.root, 'data-hud', 'new-cord')[0].click();
+    expect(commands).toEqual({ newCord: 1, reset: 0 });
+    byAttr(f.root, 'data-hud', 'reset')[0].click();
+    byAttr(f.root, 'data-hud', 'reset')[0].click();
+    expect(commands).toEqual({ newCord: 1, reset: 2 });
+  });
+});
+
+describe('T-REN-3 — the panel: honest painting + the update gate', () => {
+  it('lights segments to the counts and writes the exact numerals + summary', () => {
+    const { panel, fixture } = makePanel();
+    const f = fixture();
+    panel.update({ cords: 3, linked: 1, popped: 0, vanishing: 0 });
+    expect(f.litCords()).toBe(3);
+    expect(f.litLinked()).toBe(1);
+    expect(f.countText('cords')).toBe('3');
+    expect(f.countText('linked')).toBe('1');
+    expect(f.summary.textContent).toBe('3 cords, 1 linked.');
+    expect(f.root.hasClass('is-empty')).toBe(false); // hint hidden
+  });
+
+  it('an identical update touches NO DOM (the gate) — a new one does', () => {
+    const { panel, fixture } = makePanel();
+    const f = fixture();
+    panel.update({ cords: 2, linked: 1, popped: 0, vanishing: 0 });
+    const writes = classListWritesIn(f.root);
+    const summaryText = f.summary.textContent;
+    panel.update({ cords: 2, linked: 1, popped: 0, vanishing: 0 });
+    expect(classListWritesIn(f.root)).toBe(writes); // nothing repainted
+    expect(f.summary.textContent).toBe(summaryText);
+    panel.update({ cords: 2, linked: 2, popped: 0, vanishing: 0 });
+    expect(classListWritesIn(f.root)).toBeGreaterThan(writes);
+    expect(f.litLinked()).toBe(2);
+  });
+
+  it('the empty scene: zero lit, dim numerals, hint visible, honest summary', () => {
+    const { panel, fixture } = makePanel();
+    const f = fixture();
+    panel.update({ cords: 0, linked: 0, popped: 0, vanishing: 0 });
+    expect(f.litCords()).toBe(0);
+    expect(f.litLinked()).toBe(0);
+    expect(f.countText('cords')).toBe('0');
+    expect(byAttr(f.root, 'data-readout', 'cords')[0].children[2].hasClass('is-zero')).toBe(true);
+    expect(f.root.hasClass('is-empty')).toBe(true); // the silkscreen hint shows
+    expect(f.summary.textContent).toBe('No cords on the bench. Press N for a new cord.');
+  });
+
+  it('pegs the meter past its row while the numeral tells the truth', () => {
+    const { panel, fixture } = makePanel();
+    const f = fixture();
+    panel.update({ cords: HUD_SEGMENTS + 4, linked: 0, popped: 0, vanishing: 0 });
+    expect(f.litCords()).toBe(HUD_SEGMENTS);
+    expect(f.countText('cords')).toBe(String(HUD_SEGMENTS + 4));
+  });
+
+  it('paints counts derived from the REAL world end to end (spawn → link)', () => {
+    const world = makeWorld();
+    world.advance(1, { pointerRay: null, spawnCord: { cordId: 1, at: { x: 0.5, y: 1, z: 0 } } });
+    world.advance(3, { pointerRay: null,
+      seatTargets: [
+        { cordId: 1, index: 0, position: A },
+        { cordId: 1, index: END, position: B },
+      ],
+    });
+    world.advance(1, { pointerRay: null, spawnCord: { cordId: 2, at: { x: -0.5, y: 1, z: 0 } } });
+    const { panel, fixture } = makePanel();
+    const f = fixture();
+    panel.update(readHudCounts(world.advance(0, { pointerRay: null }).cords, world.step.lifecycle.stateOf));
+    expect(f.litCords()).toBe(3); // anchor + linked cord + carried cord
+    expect(f.litLinked()).toBe(1);
+    expect(f.summary.textContent).toBe('3 cords, 1 linked.');
+    // RESET's read: the no-anchor rebuild drives the same panel to empty.
+    const afterReset = makeWorld(false);
+    panel.update(readHudCounts(afterReset.advance(0, { pointerRay: null }).cords, afterReset.step.lifecycle.stateOf));
+    expect(f.litCords()).toBe(0);
+    expect(f.root.hasClass('is-empty')).toBe(true);
+  });
+});

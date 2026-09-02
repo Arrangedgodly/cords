@@ -17,8 +17,8 @@
  *     to #perf-out, console (`CORDS_PERF …`), and window.__PERF_JSON for the
  *     CDP measure script (scripts/measure-perf.mjs).
  */
-import { createVerletRope } from '../sim';
-import type { CordState, Rope, SimState, Vec3 } from '../sim';
+import { createVerletRope, applyBrushToRope, resolveBrushOptions } from '../sim';
+import type { CordState, Ray3, Rope, SimState, Vec3 } from '../sim';
 import { createRenderLayer } from '../render/scene';
 
 declare global {
@@ -146,6 +146,21 @@ sculpt(cords[11], { x: -2.5, y: 1.55, z: -0.2 }, { x: -2.1, y: 0.06, z: 0.1 }, 0
 // never from a collapsed default pose.
 cords[3].rope.seat({ index: LAST, position: { x: 1.25, y: 0.5, z: -1.35 } });
 
+// T-REN-4 (`?pulse=1`): FOUR linked cords — the pulse perf gate's load. The
+// render layer's chase pulse is gated on the caller's linked-id list, so
+// the harness seats three more cords' far ends on cube tops (cords 3–6 all
+// become pin+seat, double-ended — the honest shape of a linked cord) and
+// passes the ids every frame. The breeze keeps every one of them MOVING, so
+// the arc-length recompute (the pulse's only per-frame CPU addition) runs
+// at worst-case load on all four, every frame.
+const pulseOn = new URLSearchParams(window.location.search).get('pulse') === '1';
+const LINKED_IDS = [3, 4, 5, 6];
+if (pulseOn) {
+  cords[4].rope.seat({ index: LAST, position: { x: -1.65, y: 0.5, z: -0.35 } }); // cube 01 top
+  cords[5].rope.seat({ index: LAST, position: { x: 1.7, y: 0.5, z: 0.15 } });    // cube 05 top
+  cords[6].rope.seat({ index: LAST, position: { x: -1.25, y: 0.5, z: -1.55 } }); // cube 03 top
+}
+
 // Plain-data world shells — the render layer reads these, sim-mutation style.
 const world: SimState = {
   time: 0,
@@ -167,8 +182,31 @@ if (new URLSearchParams(window.location.search).get('jacks') === '0') {
 }
 
 /** One fixed slice: scripted carries + a gentle breeze, then solve. */
+// T-INT-5 (perf): ?brush=1 sweeps the PASSIVE CURSOR-BRUSH across the fleet
+// every substep — the production impulse pass (12 cords × 25 points = 300
+// distance checks, the DoD budget) on top of the breeze, so the frame
+// budget can be compared with and without the brush at worst-case load.
+const brushOn = new URLSearchParams(window.location.search).get('brush') === '1';
+const brushOptions = resolveBrushOptions();
+const brushRay: Ray3 = {
+  origin: { x: 0, y: 0.8, z: 6.5 },
+  direction: { x: 0, y: -0.8, z: -6.5 },
+};
 function substep(): void {
   world.time += H;
+  if (brushOn) {
+    // A cursor sweeping side-to-side across the stage, aimed through the
+    // middle of the fleet (non-unit direction is exact — brush.ts projects
+    // by |D|²).
+    const tx = 3.2 * Math.sin(world.time * 1.7);
+    const ty = 0.8 + 0.5 * Math.sin(world.time * 0.9);
+    brushRay.origin.x = tx;
+    brushRay.origin.y = ty;
+    brushRay.origin.z = 6.5;
+    brushRay.direction.x = -tx;
+    brushRay.direction.y = -ty;
+    brushRay.direction.z = -6.5;
+  }
   for (const c of cords) {
     if (c.mode === 'carried') {
       if (c.rope.carriedIndex !== LAST) c.rope.carryEnd(LAST);
@@ -179,6 +217,7 @@ function substep(): void {
         z: c.hold.z + Math.cos(world.time * 0.6 + p) * 0.05,
       });
     }
+    if (brushOn) applyBrushToRope(c.rope, brushRay, brushOptions, H);
     // Breeze: a small impulse near a slowly wandering point keeps EVERY cord
     // moving (worst-case render load; a sleeping scene would gate uploads).
     // Gentle — the fleet sways, it never whips.
@@ -215,7 +254,11 @@ render.start((dtSeconds) => {
     substeps += 1;
   }
   const simEnd = performance.now();
-  render.render(world);
+  render.render(
+    world,
+    undefined,
+    pulseOn ? { linked: LINKED_IDS, reducedMotion: false } : undefined,
+  );
   const renderEnd = performance.now();
   frameCount += 1;
 
@@ -243,6 +286,10 @@ function report(): void {
     cords: cords.length,
     frames: SAMPLE_FRAMES,
     warmupFrames: WARMUP_FRAMES,
+    brush: brushOn, // T-INT-5: the cursor-brush pass ran every substep
+    pulse: pulseOn, // T-REN-4: 4 cords linked + chase-pulsing every frame
+    pulseLinked: pulseOn ? LINKED_IDS.length : 0,
+    programs: render.renderer.info.programs?.length ?? -1, // one pulse program for the fleet
     avgFrameMs: Number((sum / SAMPLE_FRAMES).toFixed(3)),
     p95FrameMs: Number(p95.toFixed(3)),
     maxFrameMs: Number(sorted[SAMPLE_FRAMES - 1].toFixed(3)),

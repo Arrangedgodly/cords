@@ -18,7 +18,14 @@ import process from 'node:process';
 const CHROME =
   process.env.CORDS_CHROME ?? '/Applications/Google Chrome.app/Contents/MacOS/Google Chrome';
 const DEBUG_PORT = 9337;
-const APP_URL = 'http://localhost:5173/perf.html?bench=1';
+// Mode selects the harness's extra load: `brush` sweeps the passive
+// cursor-brush across the fleet every substep (T-INT-5); `pulse` links 4
+// cords and chase-pulses them every frame (T-REN-4); `brush+pulse` stacks
+// both. Default: the REN-2 baseline (12 live moving cords, no extras).
+const mode = process.argv[3] ?? '';
+const EXTRA = mode.includes('brush') ? '&brush=1' : '';
+const PULSE = mode.includes('pulse') ? '&pulse=1' : '';
+const APP_URL = `http://localhost:5173/perf.html?bench=1${EXTRA}${PULSE}`;
 const ROOT = new URL('..', import.meta.url).pathname;
 const TIMEOUT_MS = Number(process.argv[2] ?? 150) * 1000;
 

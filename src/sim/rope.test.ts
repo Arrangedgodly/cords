@@ -304,3 +304,49 @@ describe('ropeStep — SimStep adapter smoke', () => {
     expect(state.time).toBeCloseTo(2 * DT, 12);
   });
 });
+
+describe('rope — setPinTarget wakes a settled carried rope (T-REN-5 e2e regression)', () => {
+  it('a deeply settled cord, grabbed and dragged, follows the hand (the interface contract, pinned)', () => {
+    // T-REN-5's e2e drives caught a latent SIM-2/SIM-3 gap: `step` returns
+    // early while asleep and neither `carryEnd` nor `setPinTarget` woke the
+    // rope, so grabbing a SETTLED cord's free end and dragging moved nothing
+    // (the Rope interface's own docs said setPinTarget wakes — the code did
+    // not). The world routes carries through exactly this call, so the fix
+    // is pinned here at rope level. Sleep needs a seated plug (SIM-3), so:
+    // seat the far end, settle, release the anchor into the hand, re-settle.
+    const rope = createVerletRope({
+      ...DEFAULT_CORD,
+      segmentCount: 8,
+      pin: { x: 0, y: 2, z: 0 },
+    });
+    rope.placeAlong({ x: 0, y: 2, z: 0 }, { x: 0, y: 1.2, z: 0 }); // hangs straight
+    rope.seat({ index: 8, position: { x: 0, y: 1.2, z: 0 } }); // pluggedN → sleepable
+    for (let s = 0; s < 1800 && !rope.isSettled(); s += 1) rope.step(DT);
+    expect(rope.isSettled()).toBe(true); // seated calm, fast asleep
+
+    // The hand grabs the PIN end (the anchor re-grab, INT-4): released and
+    // carried, it holds at the grab point; give the swing a moment to calm.
+    const grab: Vec3 = { x: 0, y: 0, z: 0 };
+    rope.readPoint(0, grab);
+    rope.unseat(0);
+    rope.carryEnd(0);
+    for (let s = 0; s < 1800 && !rope.isSettled(); s += 1) rope.step(DT);
+    expect(rope.isSettled()).toBe(true); // carried-at-rest settles too
+
+    rope.setPinTarget(0, grab); // bitwise-identical target: must NOT wake
+    expect(rope.isSettled()).toBe(true); // the holding-hand latch discipline
+
+    // A genuine drag target wakes the rope and the pin converges to it
+    // (inside the leash: within 0.8 of the seated far plug at (0, 1.2, 0)).
+    const drag = { x: 0.5, y: 1.0, z: 0.2 };
+    rope.setPinTarget(0, drag);
+    expect(rope.isSettled()).toBe(false); // woken by the hand moving
+    for (let s = 0; s < 240; s += 1) rope.step(DT);
+    const after: Vec3 = { x: 0, y: 0, z: 0 };
+    rope.readPoint(0, after);
+    const moved = Math.hypot(after.x - grab.x, after.y - grab.y, after.z - grab.z);
+    expect(moved).toBeGreaterThan(0.1); // it followed the hand
+    expect(Math.hypot(after.x - drag.x, after.y - drag.y, after.z - drag.z))
+      .toBeLessThan(0.02); // and converged to the target (leash allows it)
+  });
+});

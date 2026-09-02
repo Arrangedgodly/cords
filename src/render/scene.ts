@@ -54,6 +54,51 @@
  * - On despawn the view hides, its proxies leave the raycast layers (a dead
  *   proxy must not shadow its host cube's face), and the jack slots zero.
  *
+ * REN-4 — THE LINK CHASE PULSE (the one sanctioned glow): on a LINKED cord a
+ * short bright region — a warm amber LED, the panel's lit-segment ink —
+ * travels the tube from the RED input end to the BLUE output end and
+ * repeats, like signal flowing, like a chase light locked to a tempo clock.
+ * The phase is a PURE function of SimState.time (src/render/pulse.ts —
+ * deterministic, never wall-clock), consumed by ONE shader program shared by
+ * every cord (per-cord uniform gate, no per-cord program):
+ * - GEOMETRY: each tube carries a per-vertex arc-length fraction attribute
+ *   (`aPulseArc`, 0 at the red jack, 1 at the blue jack), recomputed inside
+ *   the existing zero-alloc moved-frame update pass — arc lengths DO change
+ *   as the cord moves, so they ride the same rewrite (a sleeping cord's
+ *   frozen geometry keeps its frozen arc lengths; the pulse animates only
+ *   through the uniform).
+ * - SHADER: the shared MeshStandardMaterial (each cord's fade clone) gains a
+ *   gaussian LED term added to `totalEmissiveRadiance` — no additive
+ *   blending, no bloom, no halo pass; the tube's own PBR surface simply
+ *   emits where the light is. The brightness envelope ramps in as the light
+ *   leaves the red jack and out as it sinks into the blue one (no hard pop
+ *   at either end or at the wrap).
+ * - GATING: the pulse exists ONLY on `linked` cords (the caller passes the
+ *   linked ids per frame; awaiting-plug / popped / vanishing / carried cords
+ *   carry gain 0 — nothing decorative glows). Seated jacks of a linked cord
+ *   carry a faint lit accent: their color-coded sleeve band brightens within
+ *   its own hue (an albedo lift in the panel's lit-ink grammar — no halo, so
+ *   it can never read as decoration), reverting the frame the link is gone.
+ *
+ * REN-5 — STATE PAINT (ticks, grace, shatter refinement; the pure laws live
+ * in states.ts): every non-linked lifecycle state now carries its own honest
+ * visual, all still gated by the caller's per-frame lifecycle truth:
+ * - STRETCH TICKS: a taut carried/awaiting-plug cord (span ≥ 90% of its rest
+ *   length — the leash moment, "learning its length") carries thin silkscreen
+ *   registration marks along the tube, one every rest-length, painted INTO
+ *   the tube's albedo (a mix toward neutral ink — measurement furniture, not
+ *   glow, never red). They spread with the measured arc, appear with taut
+ *   stretch and vanish at rest, linked/popped/vanishing cords carry none.
+ * - POPPED GRACE: the cord dims linearly toward states.ts's floor through
+ *   the ~3s window (the visible countdown), and the popped jack's color band
+ *   blinks like a low-battery LED in the final second — reduced motion holds
+ *   the band steady (the A11Y seam). The dim composes multiplicatively with
+ *   LIFE-2's vanish fade, so the expiry hand-off never flashes back to full.
+ * - SHATTER (LIFE-2's first pass, refined): small dark METAL shards plus one
+ *   red/blue BAND shard (the failure reads as THAT end dying), two floor
+ *   bounces then a friction slide, resting briefly and scaling out with the
+ *   cord. Still one pooled InstancedMesh — per-instance color, zero glow.
+ *
  * Frame budget (Thor): floor + 8 cubes + N cord tubes + 3 instanced jack
  * meshes; the per-cord moved-gate means a sleeping scene costs only draws.
  * All textures and the PMREM environment (for the plugs' chrome) are baked
@@ -63,6 +108,8 @@ import * as THREE from 'three';
 import { mergeGeometries } from 'three/examples/jsm/utils/BufferGeometryUtils.js';
 import { RoomEnvironment } from 'three/examples/jsm/environments/RoomEnvironment.js';
 import type { CordState, SimState, Vec3 } from '../sim';
+import { pulsePhase } from './pulse';
+import { graceBlinkOn, graceDimming, stretchTickGain } from './states';
 
 /** The single sanctioned conversion point from sim data to three.js types. */
 export function toThreeVector(v: Vec3): THREE.Vector3 {
@@ -92,14 +139,72 @@ export interface SeatPose {
   axis: Vec3;
 }
 
+/**
+ * REN-5 — one cord's live grace countdown, composed per frame by the caller
+ * (plain data, safe to reuse): `end` names the POPPED/failing jack (its band
+ * is the low-battery LED), `remaining` the machine's grace seconds left,
+ * `window` the cord's grace window. A VANISHING cord stays in the list at
+ * `remaining` 0 so the dim holds its floor through LIFE-2's fade (no flash
+ * back to full at expiry).
+ */
+export interface CordGraceInfo {
+  id: number;
+  end: 'first' | 'last';
+  /** Seconds of grace left; 0 = at/past expiry (vanishing cords ride here). */
+  remaining: number;
+  /** The cord's grace window in seconds (the dimming ramp's denominator). */
+  window: number;
+}
+
+/**
+ * REN-4/REN-5 — the per-frame pulse + state-paint info (what the composition
+ * tells the render layer about LIVE state; read-only, plain data, safe to
+ * reuse). Absent = no cord pulses and no grace countdowns (the pre-REN-4
+ * behavior).
+ */
+export interface RenderFrameInfo {
+  /**
+   * Cord ids currently in the `linked` lifecycle state — the ONLY state that
+   * pulses. Ids not in the list render gain 0 (nothing decorative glows).
+   */
+  linked?: readonly number[];
+  /**
+   * REN-5 — popped (and expiry-riding vanishing) cords mid-countdown: the
+   * dimming ramp + the final-second band blink. Absent/empty = no countdown.
+   */
+  grace?: readonly CordGraceInfo[];
+  /**
+   * The A11Y-1 seam (wired from prefers-reduced-motion by the composition;
+   * A11Y-1 formalizes the policy): slows the chase cadence by
+   * REDUCED_PULSE_SPEED_FACTOR instead of removing the pulse, and holds the
+   * grace band STEADY (no blink; the dimming stays — it is state, not motion).
+   */
+  reducedMotion?: boolean;
+}
+
+/**
+ * REN-5 — the per-cord paint truth one sync consumes (filled into ONE reused
+ * object by the layer per frame; plain data, never retained).
+ */
+export interface CordPaintFrame {
+  /** The sim's own clock (the blink's only time base — never wall time). */
+  simTime: number;
+  reduced: boolean;
+  /** This cord's grace entry, or null when it is not counting down. */
+  grace: CordGraceInfo | null;
+}
+
 export interface RenderLayer {
   /**
    * Draws one frame from a sim snapshot. Read-only over the state. The
    * optional `dtSeconds` (the frame's real delta) advances the T-LIFE-2
    * shatter fragments; without it the layer falls back to its own clamped
-   * wall-clock delta (visual-only — the sim never sees it).
+   * wall-clock delta (visual-only — the sim never sees it). The optional
+   * `frame` is the REN-4/REN-5 pulse + state-paint frame info (which cords
+   * are `linked`, which are mid-grace, + the reduced-motion seam); absent =
+   * no cord pulses and no grace countdowns.
    */
-  render(state: SimState, dtSeconds?: number): void;
+  render(state: SimState, dtSeconds?: number, frame?: RenderFrameInfo): void;
   /** Starts the animation loop, invoking `frame(dtSeconds)` every tick. */
   start(frame: (dtSeconds: number) => void): void;
   dispose(): void;
@@ -126,13 +231,14 @@ export interface RenderLayer {
    */
   setCordFade(cordId: number, t: number): void;
   /**
-   * T-LIFE-2 — the shatter's first-pass effect: a small burst of dark
-   * fragment particles at the impact point, brief, pooled. `reduced` is the
-   * A11Y-1 seam (prefers-reduced-motion skips the particles; the SEQUENCE —
-   * jack despawn, pull-out, fade — is unchanged). NO glow, no additive
-   * blending — hardware honesty.
+   * T-LIFE-2 (REN-5-refined) — the shatter effect: a small burst of dark
+   * METAL shards plus the failing jack's color-band fragment at the impact
+   * point, brief, pooled — `band` names the failing end's polarity ('red' |
+   * 'blue') so the failure reads as THAT end dying. `reduced` is the A11Y-1
+   * seam (prefers-reduced-motion skips the particles; the SEQUENCE — jack
+   * despawn, pull-out, fade — is unchanged). NO glow, no additive blending.
    */
-  shatter(at: Vec3, options?: { reduced?: boolean }): void;
+  shatter(at: Vec3, options?: { reduced?: boolean; band?: 'red' | 'blue' }): void;
   /**
    * INT-2 — the soft-cap deny cue: a flat red ring laid onto cube
    * `cubeIndex`'s face at world point `at`, oriented along `normal` (the
@@ -162,6 +268,14 @@ export interface RenderLayer {
   readonly scene: THREE.Scene;
   /** REN-1/REN-2: what the composition root registers as pickable. */
   readonly pickables: StagePickables;
+  /** REN-4 — the render layer's live pulse read (verification seam). */
+  readonly pulseProbe: PulseProbe;
+  /**
+   * REN-5 — the render layer's live state-paint read (verification seam):
+   * every view's tautness, tick gain/spacing, grace dim factor, and band
+   * state — the drives assert the RENDERER's truth, not a re-computation.
+   */
+  readonly stateProbe: StateProbe;
 }
 
 /** Per-cord render spec the world hands the stage at construction time. */
@@ -175,12 +289,53 @@ export interface CordRenderSpec {
    * default) or 'last'. The other end is the BLUE output plug.
    */
   redEnd?: 'first' | 'last';
+  /**
+   * REN-5 — one segment's rest length (world units); `(pointCount − 1) ×
+   * segmentLength` is the cord's total rest length, the tautness denominator
+   * and the tick ruler's unit. Default 0.1 = the sim's DEFAULT_ROPE_CONFIG.
+   */
+  segmentLength?: number;
 }
 
 export interface StageWorldOptions {
   /** Cords to pre-allocate views for (more may appear lazily at render). */
   cords?: CordRenderSpec[];
 }
+
+/**
+ * REN-4 — the render layer's own pulse read (the verification seam, the
+ * render-side twin of `window.cords.pulse()`'s clock math): the LIVE phase
+ * uniform this layer will draw the next frame with, plus every cord view's
+ * gain gate. Read-only; drives/e2e assert against it, nothing writes it.
+ */
+export type PulseProbe = () => {
+  phase: number;
+  cords: Array<{ id: number; gain: number }>;
+};
+
+/**
+ * REN-5 — the render layer's own state-paint read (the verification seam for
+ * ticks + grace): per cord view, the tautness the ticks key on, the tick
+ * gain/spacing uniforms as drawn, the grace dim factor applied to the tube,
+ * and whether the failing jack's band is blinked OFF this frame — plus the
+ * shatter pool's live shard count (the burst is observable without pixels).
+ * Read-only.
+ */
+export type StateProbe = () => {
+  /** Live shatter shards in the pooled fragment mesh (0 = none in flight). */
+  fragments: number;
+  cords: Array<{
+    id: number;
+    /** End-to-end span over rest length (1 = leash-taut). */
+    stretch: number;
+    tickGain: number;
+    tickSpacing: number;
+    /** Tube opacity factor from the grace countdown (1 = not counting down). */
+    graceFactor: number;
+    /** True while the popped/failing jack's band is in its blinked-off phase. */
+    bandOff: boolean;
+  }>;
+};
 
 // ---------------------------------------------------------------------------
 // Procedural textures — small canvases painted once at startup. The Drum
@@ -358,19 +513,37 @@ export class CordTube {
   // the buffers themselves are written in place every update.
   private positions: THREE.BufferAttribute;
   private normals: THREE.BufferAttribute;
+  /**
+   * REN-4 — per-vertex arc-length fraction along the rendered centerline,
+   * oriented RED end → BLUE end (0 at the red jack, 1 at the blue one).
+   * Recomputed inside the same moved-frame pass as the positions: arc
+   * lengths change as the cord moves, so they ride the identical rewrite.
+   */
+  private pulseArc: THREE.BufferAttribute;
   private pointCount = 0;
   private rings = 0;
   private centers: Float64Array = new Float64Array(0);
   private tangents: Float64Array = new Float64Array(0);
   private ringNormals: Float64Array = new Float64Array(0);
   private binormals: Float64Array = new Float64Array(0);
+  /** REN-4 — cumulative centerline arc length per ring (scratch). */
+  private ringArc: Float64Array = new Float64Array(0);
+  /**
+   * REN-5 — the last update's measured total arc (world units): the tick
+   * ruler's denominator (spacing = segmentLength / arc) and, divided by the
+   * rest total, the stretch read the tick gain keys on. Frozen with the tube
+   * when the rope sleeps.
+   */
+  measuredArc = 0;
 
   constructor(material: THREE.Material) {
     this.geometry = new THREE.BufferGeometry();
     this.positions = new THREE.BufferAttribute(new Float32Array(0), 3);
     this.normals = new THREE.BufferAttribute(new Float32Array(0), 3);
+    this.pulseArc = new THREE.BufferAttribute(new Float32Array(0), 1);
     this.geometry.setAttribute('position', this.positions);
     this.geometry.setAttribute('normal', this.normals);
+    this.geometry.setAttribute('aPulseArc', this.pulseArc);
     this.mesh = new THREE.Mesh(this.geometry, material);
     this.mesh.frustumCulled = false; // buffers mutate in place every frame
     this.mesh.visible = false;
@@ -387,8 +560,10 @@ export class CordTube {
 
     this.positions = new THREE.BufferAttribute(new Float32Array(vertexCount * 3), 3);
     this.normals = new THREE.BufferAttribute(new Float32Array(vertexCount * 3), 3);
+    this.pulseArc = new THREE.BufferAttribute(new Float32Array(vertexCount), 1);
     this.geometry.setAttribute('position', this.positions);
     this.geometry.setAttribute('normal', this.normals);
+    this.geometry.setAttribute('aPulseArc', this.pulseArc);
 
     const indices: number[] = [];
     for (let j = 0; j < this.rings - 1; j += 1) {
@@ -418,13 +593,16 @@ export class CordTube {
     this.tangents = new Float64Array(this.rings * 3);
     this.ringNormals = new Float64Array(this.rings * 3);
     this.binormals = new Float64Array(this.rings * 3);
+    this.ringArc = new Float64Array(this.rings);
   }
 
   /**
    * Rewrites the tube along the sim polyline. Zero per-frame allocation:
    * every buffer here is preallocated and only ever mutated.
+   * `redEnd` orients the REN-4 pulse arc (0 at the red input jack, 1 at the
+   * blue output jack — the chase light's travel direction).
    */
-  update(points: ReadonlyArray<Vec3>): void {
+  update(points: ReadonlyArray<Vec3>, redEnd: 'first' | 'last' = 'first'): void {
     this.ensureCapacity(points.length);
     const n = points.length;
     const rings = this.rings;
@@ -460,6 +638,43 @@ export class CordTube {
             (2 * v0 - 5 * v1 + 4 * v2 - v3) * f2 +
             (-v0 + 3 * v1 - 3 * v2 + v3) * f3);
       }
+    }
+
+    // REN-4 — the chase light's road: cumulative arc length over the
+    // RENDERED ring centers (the exact centerline the pulse travels — a
+    // segment-index fraction would misplace the LED wherever the cord
+    // stretches taut or pools slack, so the arc is measured, not assumed).
+    // Written into the per-vertex aPulseArc attribute, oriented red → blue.
+    {
+      const arc = this.ringArc;
+      arc[0] = 0;
+      let total = 0;
+      for (let j = 1; j < rings; j += 1) {
+        const k = j * 3;
+        const kp = k - 3;
+        const dx = centers[k] - centers[kp];
+        const dy = centers[k + 1] - centers[kp + 1];
+        const dz = centers[k + 2] - centers[kp + 2];
+        // sqrt of the sum, not Math.hypot: measured ~0.2 ms/frame cheaper on
+        // the 12-cord worst case (hypot's 3-arg path is slow in V8) for the
+        // same IEEE-754-quality result at these magnitudes.
+        total += Math.sqrt(dx * dx + dy * dy + dz * dz);
+        arc[j] = total;
+      }
+      const arcArr = this.pulseArc.array as Float32Array;
+      const inv = total > 1e-12 ? 1 / total : 0;
+      const flip = redEnd === 'last'; // 0 at the RED jack, 1 at the BLUE one
+      for (let j = 0; j < rings; j += 1) {
+        const s = flip ? 1 - arc[j] * inv : arc[j] * inv;
+        const base = j * CORD_RADIAL_SEGMENTS;
+        for (let r = 0; r < CORD_RADIAL_SEGMENTS; r += 1) arcArr[base + r] = s;
+      }
+      // Cap centers sit exactly on ring 0 / the last ring — same arc value.
+      arcArr[rings * CORD_RADIAL_SEGMENTS] = arcArr[0];
+      arcArr[rings * CORD_RADIAL_SEGMENTS + 1] =
+        arcArr[(rings - 1) * CORD_RADIAL_SEGMENTS];
+      // REN-5 — publish the measured total for this frame's tick paint.
+      this.measuredArc = total;
     }
 
     // Tangents (central differences, one-sided at the ends), normalized.
@@ -603,8 +818,142 @@ export class CordTube {
 
     this.positions.needsUpdate = true;
     this.normals.needsUpdate = true;
+    this.pulseArc.needsUpdate = true;
     this.mesh.visible = true;
   }
+}
+
+// ---------------------------------------------------------------------------
+// REN-4 — THE LINK CHASE PULSE's shader side. ONE program for the whole
+// fleet: every cord tube's material (the per-cord fade clone) carries the
+// identical onBeforeCompile injection, and `customProgramCacheKey` pins the
+// cache entry, so 12 cords = 12 draw calls (unchanged) sharing one compiled
+// program. The uniforms split by ownership:
+//   - SHARED (one object, referenced by every material): uPulsePhase (the
+//     sim-clock phase, written once per frame) + uPulseColor (the amber).
+//   - PER CORD: uPulseGain — 0 for every non-linked cord (the gate), the
+//     emissive gain for a linked one. Same object reference flows into every
+//   clone's shader.uniforms, so updating .value updates the whole fleet.
+//
+// The light itself: a gaussian LED term added to totalEmissiveRadiance —
+// the tube's own PBR surface emits where the light is (no additive blend,
+// no bloom, no halo pass; fog still owns distance). The brightness envelope
+// ramps in as the light leaves the red jack and out as it sinks into the
+// blue one, so neither end nor the wrap ever pops.
+// ---------------------------------------------------------------------------
+
+/** The panel's lit-segment amber (index-html silkscreen LED, #f2d43a). */
+const PULSE_AMBER_HEX = 0xf2d43a;
+/** Emissive gain at the LED's core (reads as a lit LED through ACES 1.45). */
+export const PULSE_EMISSIVE_GAIN = 2.4;
+/**
+ * Gaussian sharpness 1/(2σ²) in arc fraction: σ ≈ 0.05 ≈ 0.12 u of a 2.4 u
+ * cord — a chunky chase-light segment (probe-measured ~25–30 px on a draped
+ * bench cord at the fixed camera; wide enough to read mid-travel in a still,
+ * narrow enough to travel like a chase light, nothing like a lit tube).
+ */
+const PULSE_SHARPNESS = 200.0;
+/** The LED ramps in over the first / out over the last 15% of the traverse. */
+const PULSE_EDGE = 0.15;
+
+/**
+ * REN-5 — the stretch ticks' ink: the panel's key-chip neutral (#b6bcc6, the
+ * measured 6.76:1 legend ink), NOT red — silkscreen registration furniture,
+ * measurement rather than damage. Mixed into the tube's ALBEDO (a painted
+ * mark on the rubber, like silkscreen on a cable) — no emissive term, so the
+ * furniture can never read as glow.
+ */
+const TICK_INK_HEX = 0xb6bcc6;
+
+/** The per-fleet shared chase-pulse + tick uniforms (phase/amber/ink), one object. */
+export interface ChasePulseState {
+  readonly phase: { value: number };
+  readonly color: { value: THREE.Color };
+  /** REN-5 — the shared tick ink (every cord's marks print in the same ink). */
+  readonly tickInk: { value: THREE.Color };
+}
+
+export function createChasePulseState(): ChasePulseState {
+  return {
+    phase: { value: 0 },
+    color: { value: new THREE.Color(PULSE_AMBER_HEX) },
+    tickInk: { value: new THREE.Color(TICK_INK_HEX) },
+  };
+}
+
+/** REN-5 — one cord's own tick uniforms (gain gate + ruler spacing). */
+export interface TickState {
+  /** 0 = no furniture (rest / linked / counting-down cords); 1 = full ink. */
+  readonly gain: { value: number };
+  /** Arc FRACTION per tick (segmentLength / measured arc). */
+  readonly spacing: { value: number };
+}
+
+/**
+ * Attaches the chase-pulse + tick injection to ONE cord tube material (the
+ * fade clone). `gain` is that cord's own pulse uniform (0 = not linked);
+ * `tick` its own tick pair. The injected source is byte-identical for every
+ * cord, so three.js compiles ONE program for the fleet.
+ */
+export function attachChasePulse(
+  material: THREE.MeshStandardMaterial,
+  pulse: ChasePulseState,
+  gain: { value: number },
+  tick: TickState = { gain: { value: 0 }, spacing: { value: 0.25 } },
+): void {
+  material.onBeforeCompile = (shader) => {
+    shader.uniforms.uPulsePhase = pulse.phase;
+    shader.uniforms.uPulseColor = pulse.color;
+    shader.uniforms.uPulseGain = gain;
+    shader.uniforms.uTickGain = tick.gain;
+    shader.uniforms.uTickSpacing = tick.spacing;
+    shader.uniforms.uTickInk = pulse.tickInk;
+    shader.vertexShader = shader.vertexShader
+      .replace(
+        '#include <common>',
+        '#include <common>\nattribute float aPulseArc;\nvarying float vPulseArc;',
+      )
+      .replace(
+        '#include <begin_vertex>',
+        '#include <begin_vertex>\nvPulseArc = aPulseArc;',
+      );
+    shader.fragmentShader = shader.fragmentShader
+      .replace(
+        '#include <common>',
+        '#include <common>\nvarying float vPulseArc;\nuniform float uPulsePhase;\nuniform vec3 uPulseColor;\nuniform float uPulseGain;\nuniform float uTickGain;\nuniform float uTickSpacing;\nuniform vec3 uTickInk;',
+      )
+      .replace(
+        '#include <color_fragment>',
+        `#include <color_fragment>
+{
+  // REN-5 — the stretch ticks: silkscreen registration marks painted into
+  // the tube's albedo, one per rest length of MEASURED arc (the spacing
+  // uniform is a fraction of the arc, so the ruler spreads as the cord
+  // straightens and reads as measured, not assumed). A thin band across the
+  // tube: full ink within ±0.07 of the spacing, eased to nothing by ±0.15
+  // (≈4–7 px at bench depth — a graduation mark, not a stripe).
+  float tickPhase = fract(vPulseArc / max(uTickSpacing, 1e-5));
+  float tickD = min(tickPhase, 1.0 - tickPhase);
+  float tick = 1.0 - smoothstep(0.07, 0.15, tickD);
+  diffuseColor.rgb = mix(diffuseColor.rgb, uTickInk, tick * uTickGain);
+}`,
+      )
+      .replace(
+        '#include <emissivemap_fragment>',
+        `#include <emissivemap_fragment>
+{
+  // REN-4 — the chase LED: gaussian core at the phase, envelope ramped in
+  // leaving the red jack and out arriving at the blue one (no hard pop).
+  float pulseEnv = smoothstep(0.0, ${PULSE_EDGE.toFixed(2)}, uPulsePhase)
+    * (1.0 - smoothstep(${(1 - PULSE_EDGE).toFixed(2)}, 1.0, uPulsePhase));
+  float pulseD = vPulseArc - uPulsePhase;
+  float pulseCore = exp(-pulseD * pulseD * ${PULSE_SHARPNESS.toFixed(1)});
+  totalEmissiveRadiance += uPulseColor * (pulseCore * pulseEnv * uPulseGain);
+}`,
+      );
+  };
+  // Identical injection source for every cord → ONE program in the cache.
+  material.customProgramCacheKey = () => 'cords-chase-pulse';
 }
 
 // ---------------------------------------------------------------------------
@@ -636,6 +985,22 @@ const PLUG_RADIAL_SEGMENTS = 16;
 const PLUG_RED = 0xc22e26;
 /** Blue output coding — the palette's cobalt, readable against charcoal. */
 const PLUG_BLUE = 0x4a7df2;
+/**
+ * REN-4 — the seated-jack LIT ACCENT (the approved reading: "the pulse +
+ * seated jacks may read lit"): a linked cord's seated plugs brighten their
+ * color-coded band WITHIN ITS OWN HUE (a ×1.5 albedo lift — lit ink in the
+ * panel's grammar, not a glow; no halo, no bloom, so it can never read as
+ * decoration). The accent exists only while the cord is linked and reverts
+ * the frame the link is gone. Computed once at module scope.
+ */
+const PLUG_RED_LIT = new THREE.Color(PLUG_RED).multiplyScalar(1.5);
+const PLUG_BLUE_LIT = new THREE.Color(PLUG_BLUE).multiplyScalar(1.5);
+/**
+ * REN-5 — the popped jack's band in its BLINKED-OFF phase: the grip rubber's
+ * own dark (a low-battery LED's dark half reads as unlit plastic, not as a
+ * new color — the band paints dark, exactly like the grip beside it).
+ */
+const PLUG_BAND_OFF = new THREE.Color(0x17181c);
 
 function latheFrom(profile: ReadonlyArray<readonly [number, number]>): THREE.LatheGeometry {
   const points = profile.map(([r, y]) => new THREE.Vector2(r, y));
@@ -802,14 +1167,19 @@ export class JackInstances {
   /**
    * Writes the plug at instance slot `slot`: anchored at (x,y,z), tip along
    * the (already outward) tangent (tx,ty,tz), color red or blue, scaled by
-   * the slot's vanish fade (T-LIFE-2). Zero allocation — matrices go
-   * straight into the instance buffers.
+   * the slot's vanish fade (T-LIFE-2). `lit` (REN-4) brightens the
+   * color-coded band — the seated-jack accent of a LINKED cord. `bandOff`
+   * (REN-5) paints the band DARK — the popped jack's low-battery blink's
+   * off-phase; the stamp space (1/2 red/blue, 3/4 lit, 5/6 band-off) keeps
+   * rewrites to actual state flips only. Zero allocation.
    */
   writeJack(
     slot: number,
     x: number, y: number, z: number,
     tx: number, ty: number, tz: number,
     red: boolean,
+    lit = false,
+    bandOff = false,
   ): void {
     this.scratchDir.set(tx, ty, tz);
     const len = this.scratchDir.length();
@@ -827,10 +1197,19 @@ export class JackInstances {
       ;(mesh.instanceMatrix.array as Float32Array).set(elements, slot * 16);
     }
     if (slot + 1 > this.span) this.span = slot + 1;
-    const stamp = red ? 1 : 2;
+    // Stamp: 1/2 = red/blue at rest; 3/4 = red/blue LIT (the linked accent);
+    // 5/6 = red/blue BAND-OFF (the grace blink's dark phase).
+    const stamp = (red ? 1 : 2) + (lit ? 2 : 0) + (bandOff ? 4 : 0);
     if (this.polarity[slot] !== stamp) {
       this.polarity[slot] = stamp;
-      this.coded.setColorAt(slot, this.scratchColor.setHex(red ? PLUG_RED : PLUG_BLUE));
+      if (bandOff) {
+        this.scratchColor.copy(PLUG_BAND_OFF);
+      } else if (lit) {
+        this.scratchColor.copy(red ? PLUG_RED_LIT : PLUG_BLUE_LIT);
+      } else {
+        this.scratchColor.setHex(red ? PLUG_RED : PLUG_BLUE);
+      }
+      this.coded.setColorAt(slot, this.scratchColor);
       this.colorDirty = true;
     }
   }
@@ -885,20 +1264,32 @@ export class JackInstances {
 }
 
 // ---------------------------------------------------------------------------
-// T-LIFE-2 — the shatter fragments: the jack's own material as small dark
-// debris. A first-pass effect in the Drum Machine Panel grammar (REN-5
-// refines the visuals later): matte dark shards, ballistic scatter, one
-// floor bounce, brief life, scale-out. NO glow, no additive blending, no
-// bloom — hardware honesty. Pooled and allocation-free after construction
-// (one InstancedMesh, flat state arrays); deterministic per construction (a
+// T-LIFE-2/REN-5 — the shatter fragments, refined to the panel grammar: the
+// jack breaks into small dark METAL shards plus its color-coded BAND fragment
+// (the failure reads as THAT end dying — a red band shard or a blue one). Two
+// floor bounces, then a short friction slide; the shards rest briefly and
+// scale out with the cord. NO glow, no additive blending, no bloom — hardware
+// honesty. Pooled and allocation-free after construction (ONE InstancedMesh,
+// flat state arrays, per-instance colors); deterministic per construction (a
 // seeded LCG, no wall-clock, no Math.random).
 // ---------------------------------------------------------------------------
 
 const FRAGMENT_CAPACITY = 64;
-const FRAGMENT_LIFETIME = 0.55; // seconds — brief
+const FRAGMENT_LIFETIME = 0.55; // seconds — brief, resting, gone with the cord
 const FRAGMENT_GRAVITY = 9.81;
-const FRAGMENT_RESTITUTION = 0.35; // one small bounce, hardware-honest
-const FRAGMENT_BASE_SIZE = 0.02; // a shard of the plug's dark grip rubber
+/** Two bounces (a couple, per the contract), the second deader than the first. */
+const FRAGMENT_RESTITUTIONS = [0.4, 0.22] as const;
+/** Rest-slide friction, per second (exponential decay — dt-honest). */
+const FRAGMENT_SLIDE_FRICTION = 9;
+const FRAGMENT_BASE_SIZE = 0.02; // a shard of the plug's own scale
+/**
+ * The dark-steel shard ink, PER CHANNEL (a numeric hex RANGE would carry
+ * bytes across channels): the base byte varies 0x23..0x3a (slight LCG
+ * variation, never pure black), green a touch under, blue a touch over —
+ * a dark cool steel that still catches the env's chrome glint.
+ */
+const FRAGMENT_STEEL_MIN_BYTE = 0x23;
+const FRAGMENT_STEEL_RANGE_BYTE = 0x18;
 
 export class FragmentPool {
   readonly mesh: THREE.InstancedMesh;
@@ -915,10 +1306,12 @@ export class FragmentPool {
   private readonly yaw: Float64Array;
   private readonly pitch: Float64Array;
   private readonly spin: Float64Array;
+  /** Bounces spent (0..2 — then the shard rests and slides. */
   private readonly bounced: Uint8Array;
   private cursor = 0;
   private active = 0;
   private cleared = true;
+  private colorDirty = false;
   /** Seeded LCG — two pools produce identical bursts (no Math.random). */
   private rngState = 0x2f6e2b1;
   // Scratch — the per-frame path allocates nothing.
@@ -927,6 +1320,7 @@ export class FragmentPool {
   private readonly scratchEuler = new THREE.Euler();
   private readonly scratchPos = new THREE.Vector3();
   private readonly scratchScale = new THREE.Vector3();
+  private readonly scratchColor = new THREE.Color();
   private readonly zeroMatrix = new Float32Array(16);
 
   constructor(material: THREE.Material, capacity: number = FRAGMENT_CAPACITY) {
@@ -951,6 +1345,10 @@ export class FragmentPool {
     this.pitch = new Float64Array(capacity);
     this.spin = new Float64Array(capacity);
     this.bounced = new Uint8Array(capacity);
+    // Preallocate the instance color buffer (startup, not per burst) — every
+    // shard's color is per-instance; the material stays white-based.
+    for (let i = 0; i < capacity; i += 1) this.mesh.setColorAt(i, this.scratchColor.setHex(0xffffff));
+    this.mesh.instanceColor!.needsUpdate = true;
     // Every slot starts as a zero matrix so nothing draws at the origin.
     const zeros = this.zeroMatrix;
     for (let i = 0; i < capacity; i += 1) {
@@ -969,14 +1367,20 @@ export class FragmentPool {
   }
 
   /**
-   * Scatters `count` shards from the impact point `at`. `reduced: true` is
-   * the A11Y-1 seam (prefers-reduced-motion): the burst no-ops entirely —
-   * the SEQUENCE is unchanged (the jack still despawns; only the particles
-   * simplify away) until A11Y-1 wires its own policy here.
+   * Scatters `count` shards from the impact point `at` — dark metal, plus
+   * (when `band` names the failing end's polarity) two shards in that end's
+   * RED/BLUE band ink, one of them the burst's largest piece: the failure
+   * reads as THAT end dying. `reduced: true` is the A11Y-1 seam
+   * (prefers-reduced-motion): the burst no-ops entirely — the SEQUENCE is
+   * unchanged (the jack still despawns; only the particles simplify away).
    */
-  burst(at: Vec3, options: { count?: number; reduced?: boolean } = {}): number {
+  burst(
+    at: Vec3,
+    options: { count?: number; reduced?: boolean; band?: 'red' | 'blue' } = {},
+  ): number {
     if (options.reduced === true) return 0;
     const count = Math.max(0, Math.min(options.count ?? 14, this.capacity));
+    const bandHex = options.band === 'red' ? PLUG_RED : options.band === 'blue' ? PLUG_BLUE : null;
     for (let k = 0; k < count; k += 1) {
       const slot = this.cursor;
       this.cursor = (this.cursor + 1) % this.capacity;
@@ -998,6 +1402,22 @@ export class FragmentPool {
       this.pitch[slot] = this.nextRandom() * Math.PI;
       this.spin[slot] = (this.nextRandom() > 0.5 ? 1 : -1) * (2 + this.nextRandom() * 4);
       this.bounced[slot] = 0;
+      // The paint: dark cool steel with slight LCG variation, or the band
+      // ink for the two band shards (slot k=0 — the burst's first and
+      // largest piece — and one more a little into the scatter, so both
+      // read at a glance).
+      const isBand = bandHex !== null && (k === 0 || k === Math.min(3, count - 1));
+      if (isBand) {
+        this.scratchColor.setHex(bandHex);
+        if (k === 0) this.size[slot] = Math.max(this.size[slot], 1.45); // the big one
+      } else {
+        const base =
+          FRAGMENT_STEEL_MIN_BYTE + Math.floor(this.nextRandom() * FRAGMENT_STEEL_RANGE_BYTE);
+        const hex = (base << 16) | (Math.max(0, base - 3) << 8) | Math.min(0xff, base + 8);
+        this.scratchColor.setHex(hex);
+      }
+      this.mesh.setColorAt(slot, this.scratchColor);
+      this.colorDirty = true;
     }
     this.cleared = false;
     return count;
@@ -1006,13 +1426,14 @@ export class FragmentPool {
   /**
    * Advances every live shard by `dt` (clamped — a backgrounded tab's spike
    * cannot fling debris) and rewrites the instance matrices: ballistic
-   * flight, gravity, ONE floor bounce, then rest; the last 35% of each life
-   * eases the scale to zero (the vanish takes its debris with it). Zero
-   * allocation; dead slots above the live set are zeroed so the pool's tail
-   * never flashes stale shards.
+   * flight, gravity, TWO floor bounces (restitution 0.4 then 0.22, tangential
+   * loss at each impact), then a friction slide to rest; the last 35% of
+   * each life eases the scale to zero (the vanish takes its debris with it).
+   * Zero allocation; dead slots above the live set are zeroed so the pool's
+   * tail never flashes stale shards.
    */
   update(dtSeconds: number): void {
-    if (this.active === 0 && this.cleared) return;
+    if (this.active === 0 && this.cleared && !this.colorDirty) return;
     const dt = Number.isFinite(dtSeconds) && dtSeconds > 0 ? Math.min(dtSeconds, 0.05) : 0;
     const array = this.mesh.instanceMatrix.array as Float32Array;
     let live = 0;
@@ -1039,15 +1460,21 @@ export class FragmentPool {
         const rest = FRAGMENT_BASE_SIZE * this.size[slot];
         if (this.py[slot] < rest) {
           this.py[slot] = rest;
-          if (this.bounced[slot] === 0 && this.vy[slot] < 0) {
-            this.vy[slot] = -this.vy[slot] * FRAGMENT_RESTITUTION;
-            this.vx[slot] *= 0.6;
-            this.vz[slot] *= 0.6;
-            this.bounced[slot] = 1;
+          if (this.bounced[slot] < FRAGMENT_RESTITUTIONS.length && this.vy[slot] < -0.05) {
+            // A bounce: give back a fraction of the impact, lose tangential.
+            const restitution = FRAGMENT_RESTITUTIONS[this.bounced[slot]];
+            this.vy[slot] = -this.vy[slot] * restitution;
+            this.vx[slot] *= 0.65;
+            this.vz[slot] *= 0.65;
+            this.bounced[slot] += 1;
           } else {
-            this.vy[slot] = 0; // rest on the bench
-            this.vx[slot] *= 0.9;
-            this.vz[slot] *= 0.9;
+            // Resting: the short slide — friction eats the horizontal run and
+            // the spin settles with it (dt-honest exponential decay).
+            this.vy[slot] = 0;
+            const f = Math.max(0, 1 - FRAGMENT_SLIDE_FRICTION * dt);
+            this.vx[slot] *= f;
+            this.vz[slot] *= f;
+            this.spin[slot] *= f;
           }
         }
       }
@@ -1066,6 +1493,10 @@ export class FragmentPool {
     }
     if (live === 0) this.cleared = true;
     this.mesh.instanceMatrix.needsUpdate = true;
+    if (this.colorDirty && this.mesh.instanceColor !== null) {
+      this.mesh.instanceColor.needsUpdate = true;
+      this.colorDirty = false;
+    }
   }
 }
 
@@ -1074,7 +1505,7 @@ export class FragmentPool {
 // with the per-frame moved-gate (sim sleep = frozen points = no GPU work).
 // ---------------------------------------------------------------------------
 
-class CordView {
+export class CordView {
   readonly tube: CordTube;
   /** Invisible-but-raycastable proxies: [first end, last end]. */
   readonly proxies: [THREE.Mesh, THREE.Mesh];
@@ -1100,8 +1531,48 @@ class CordView {
    * id revives the view in place.
    */
   despawned = false;
+  /**
+   * REN-4 — the chase-pulse gate: true only while the cord is `linked` (the
+   * caller's per-frame truth). Drives this view's OWN uPulseGain uniform and
+   * the seated jacks' lit accent; a change forces a jack rewrite even on a
+   * FROZEN (sleeping) cord, where sync's moved-gate would otherwise skip it.
+   */
+  linked = false;
+  /**
+   * REN-4 — this cord's own pulse gain uniform (0 = nothing glows;
+   * PULSE_EMISSIVE_GAIN while linked). Public read for the tests/e2e probe.
+   */
+  readonly pulseGain: { value: number };
+  /**
+   * REN-5 — this cord's own tick uniforms: the furniture's gain gate (0 on
+   * rest/linked/counting-down cords) and the ruler's arc-fraction spacing.
+   * Public reads for the state probe.
+   */
+  readonly tickGain: { value: number };
+  readonly tickSpacing: { value: number };
+  /**
+   * REN-5 — the tautness the ticks key on (end-to-end span over rest total;
+   * 1 = leash-taut). Updated every sync from the live points, frozen with
+   * them when the rope sleeps. Public read for the state probe.
+   */
+  stretch = 0;
+  /**
+   * REN-5 — the grace countdown's tube opacity factor (1 = not counting
+   * down; states.ts's floor at expiry). Composes MULTIPLICATIVELY with the
+   * vanish fade so the expiry hand-off never flashes back to full.
+   */
+  graceFactor = 1;
+  /**
+   * REN-5 — true while this cord's popped/failing jack band is in its
+   * blinked-OFF phase (the low-battery LED's dark half).
+   */
+  bandOff = false;
+  /** REN-5 — one segment's rest length (the ruler unit; from the spec). */
+  private readonly segmentLength: number;
   /** T-LIFE-2 — the cord's OWN material clone (a fade must not dim the fleet). */
   private readonly fadeMaterial: THREE.MeshStandardMaterial;
+  /** T-LIFE-2/REN-5 — the vanish fade 0..1 (composes with graceFactor). */
+  private fadeT = 0;
   /** Bitwise copy of the last synced sim points — the moved-gate. */
   private lastPoints: Float64Array;
   /** Frame id of the last render this view was seen in (vanish detection). */
@@ -1113,8 +1584,20 @@ class CordView {
     material: THREE.Material,
     proxyGeometry: THREE.BufferGeometry,
     proxyMaterial: THREE.Material,
+    pulse: ChasePulseState = createChasePulseState(),
   ) {
     this.fadeMaterial = material.clone() as THREE.MeshStandardMaterial;
+    this.pulseGain = { value: 0 };
+    this.tickGain = { value: 0 };
+    this.tickSpacing = { value: 0.25 };
+    this.segmentLength = spec.segmentLength ?? 0.1; // the sim's rope default
+    // REN-4/REN-5 — the clone carries the shared one-program injection with
+    // this cord's OWN gates (pulse gain + the tick pair; clone() does not
+    // carry onBeforeCompile, so the attachment is explicit per clone).
+    attachChasePulse(this.fadeMaterial, pulse, this.pulseGain, {
+      gain: this.tickGain,
+      spacing: this.tickSpacing,
+    });
     this.tube = new CordTube(this.fadeMaterial);
     this.proxies = [
       new THREE.Mesh(proxyGeometry, proxyMaterial),
@@ -1128,9 +1611,15 @@ class CordView {
 
   /**
    * Syncs one sim cord into the GPU buffers + jack instances. Returns true
-   * when anything moved (and therefore buffers were rewritten).
+   * when anything moved (and therefore buffers were rewritten). `linked`
+   * (REN-4) is the caller's per-frame lifecycle truth: it gates the chase
+   * pulse (this view's uPulseGain) and the seated jacks' lit accent, and a
+   * CHANGE forces the jack rewrite even for a frozen cord. `paint` (REN-5)
+   * is the per-cord state paint: the grace countdown (tube dim + the failing
+   * jack's band blink) and the sim clock the blink keys on; its band flips
+   * also force the jack rewrite on a frozen (settled, sleeping) popped cord.
    */
-  sync(cord: CordState, jacks: JackInstances): boolean {
+  sync(cord: CordState, jacks: JackInstances, linked = false, paint?: CordPaintFrame): boolean {
     const points = cord.points;
     const n = points.length;
     if (n * 3 !== this.lastPoints.length) {
@@ -1147,6 +1636,14 @@ class CordView {
         break;
       }
     }
+    // REN-4 — the pulse gate. Gain is the LED's own brightness: 0 for every
+    // non-linked state (awaiting-plug, popped, vanishing, carried — nothing
+    // decorative glows), full for the one live state that does.
+    const linkFlipped = linked !== this.linked;
+    if (linkFlipped) {
+      this.linked = linked;
+      this.pulseGain.value = linked ? PULSE_EMISSIVE_GAIN : 0;
+    }
     if (moved) {
       for (let i = 0; i < n; i += 1) {
         const p = points[i];
@@ -1155,19 +1652,55 @@ class CordView {
         last[k + 1] = p.y;
         last[k + 2] = p.z;
       }
-      this.tube.update(points);
-
+      this.tube.update(points, this.redEnd);
+    }
+    // REN-5 — STATE PAINT (computed every sync, frozen-cords included; two
+    // uniform writes + a material property, no buffer work).
+    const a = points[0];
+    const b = points[n - 1];
+    const span = Math.sqrt(
+      (b.x - a.x) * (b.x - a.x) + (b.y - a.y) * (b.y - a.y) + (b.z - a.z) * (b.z - a.z),
+    );
+    const restTotal = Math.max(1e-9, (n - 1) * this.segmentLength);
+    this.stretch = span / restTotal;
+    const inGrace = paint !== undefined && paint.grace !== null;
+    // Ticks: only the stretching states (carried / awaiting-plug) — linked
+    // belongs to the pulse, and a counting-down (popped/vanishing) cord
+    // belongs to the grace dim. Furniture appears with tautness, not motion.
+    this.tickGain.value = linked || inGrace ? 0 : stretchTickGain(this.stretch);
+    const arc = this.tube.measuredArc;
+    this.tickSpacing.value = arc > 1e-9 ? this.segmentLength / arc : 0.25;
+    // Grace: the tube dims toward the floor, and the failing jack's band
+    // blinks in the final second (steady under reduced motion — A11Y-1).
+    let bandOff = false;
+    if (inGrace && paint !== undefined) {
+      const g = paint.grace as CordGraceInfo;
+      this.graceFactor = graceDimming(g.remaining, g.window);
+      bandOff = !graceBlinkOn(g.remaining, paint.simTime, { reduced: paint.reduced });
+    } else {
+      this.graceFactor = 1;
+    }
+    const bandFlipped = bandOff !== this.bandOff;
+    this.bandOff = bandOff;
+    this.applyOpacity();
+    if (moved || linkFlipped || bandFlipped) {
       // Jacks: anchored at the exact sim end points, tipped along the
       // OUTWARD tangent of the last cord segment (the sim's state — seated,
       // carried, or dangling — alone drives plug placement) — UNLESS the end
       // is seated (INT-2): a plugged jack snaps to its socket pose so it
-      // stays perpendicular to the cube face while the cord settles.
+      // stays perpendicular to the cube face while the cord settles. A
+      // SEATED jack of a LINKED cord carries the faint lit accent (REN-4);
+      // a counting-down cord's FAILING end carries the band blink (REN-5).
       const first = points[0];
       const second = points[1];
       const penult = points[n - 2];
       const endLast = points[n - 1];
       const seatFirst = this.seats[0];
       const seatLast = this.seats[1];
+      const offFirst = bandOff && paint !== undefined && paint.grace !== null
+        && (paint.grace as CordGraceInfo).end === 'first';
+      const offLast = bandOff && paint !== undefined && paint.grace !== null
+        && (paint.grace as CordGraceInfo).end === 'last';
       // T-LIFE-2 — a hidden end (the shattered jack) writes nothing: its
       // zero matrix stands until the whole cord despawns or the id revives.
       if (!this.hiddenEnds[0]) {
@@ -1177,6 +1710,7 @@ class CordView {
             seatFirst.position.x, seatFirst.position.y, seatFirst.position.z,
             seatFirst.axis.x, seatFirst.axis.y, seatFirst.axis.z,
             this.redEnd === 'first',
+            linked,
           );
         } else {
           jacks.writeJack(
@@ -1184,6 +1718,8 @@ class CordView {
             first.x, first.y, first.z,
             first.x - second.x, first.y - second.y, first.z - second.z,
             this.redEnd === 'first',
+            false,
+            offFirst,
           );
         }
       }
@@ -1194,6 +1730,7 @@ class CordView {
             seatLast.position.x, seatLast.position.y, seatLast.position.z,
             seatLast.axis.x, seatLast.axis.y, seatLast.axis.z,
             this.redEnd === 'last',
+            linked,
           );
         } else {
           jacks.writeJack(
@@ -1201,6 +1738,8 @@ class CordView {
             endLast.x, endLast.y, endLast.z,
             endLast.x - penult.x, endLast.y - penult.y, endLast.z - penult.z,
             this.redEnd === 'last',
+            false,
+            offLast,
           );
         }
       }
@@ -1213,7 +1752,8 @@ class CordView {
   /**
    * INT-2 — writes a seated end's jack slot straight from its pose (used at
    * override time, so the snap is visible even on a frozen/sleeping frame
-   * where sync's moved-gate would skip the rewrite).
+   * where sync's moved-gate would skip the rewrite). REN-4: a LINKED cord's
+   * seated plug carries the faint lit accent.
    */
   writeSeatedJack(jacks: JackInstances, end: 'first' | 'last'): void {
     const seat = end === 'first' ? this.seats[0] : this.seats[1];
@@ -1224,25 +1764,40 @@ class CordView {
       seat.position.x, seat.position.y, seat.position.z,
       seat.axis.x, seat.axis.y, seat.axis.z,
       this.redEnd === end,
+      this.linked,
     );
   }
 
   /**
    * T-LIFE-2 — the vanish fade: `t` runs 0→1 through the pull window. The
-   * tube's own material clone drops opacity; t ≥ 1 hides it entirely (the
-   * despawn/revive path owns the final state). The riding jacks shrink
-   * through the pool's per-slot scale (set by the layer, same t).
+   * tube's own material clone drops opacity — COMPOSED with the grace dim
+   * (REN-5: `(1 − t) × graceFactor`, so a grace-expiry hand-off continues
+   * from the dimmed level instead of flashing back to full). t ≥ 1 hides it
+   * entirely (the despawn/revive path owns the final state); t ≤ 0 restores
+   * full opacity. The riding jacks shrink through the pool's per-slot scale
+   * (set by the layer, same t).
    */
   setFade(t: number): void {
-    if (!Number.isFinite(t) || t <= 0) {
+    this.fadeT = !Number.isFinite(t) || t <= 0 ? 0 : t > 1 ? 1 : t;
+    this.applyOpacity();
+  }
+
+  /**
+   * REN-5 — the tube's effective opacity in one place: the vanish fade times
+   * the grace dim. Full opacity stays OPAQUE (no transparency render-order
+   * cost on a healthy cord); anything less turns transparency on.
+   */
+  private applyOpacity(): void {
+    const o = Math.max(0, 1 - this.fadeT) * this.graceFactor;
+    if (o >= 1 - 1e-9) {
       this.fadeMaterial.transparent = false;
       this.fadeMaterial.opacity = 1;
-      this.tube.mesh.visible = true;
-      return;
+    } else {
+      this.fadeMaterial.transparent = true;
+      this.fadeMaterial.opacity = o;
     }
-    this.fadeMaterial.transparent = true;
-    this.fadeMaterial.opacity = Math.max(0, 1 - t);
-    if (t >= 1) this.tube.mesh.visible = false;
+    if (this.fadeT >= 1) this.tube.mesh.visible = false;
+    else this.tube.mesh.visible = true; // setFade(0) is revive()'s visibility reset
   }
 
   hide(): void {
@@ -1256,10 +1811,22 @@ class CordView {
    * priority; the LIFE-1 verifier's hazard, closed here).
    */
   despawn(): void {
-    this.hide();
+    // T-REN-3 fix (latent LIFE-2 defect): reset the fade material FIRST,
+    // hide LAST — setFade(0) RESTORES tube visibility (it is revive()'s
+    // reset), so the previous order left a despawned view's frozen tube
+    // mesh visible forever: a ghost cord frozen at its pulled pose after
+    // every vanish. REN-3's RESET empties the whole scene through this
+    // exact path, so the order is now pinned by test (scene.test.ts).
     this.seats[0] = null;
     this.seats[1] = null;
+    this.linked = false; // REN-4 — a dead cord never glows
+    this.pulseGain.value = 0;
+    this.tickGain.value = 0; // REN-5 — and carries no furniture
+    this.stretch = 0;
+    this.graceFactor = 1; // REN-5 — no countdown outlives the cord
+    this.bandOff = false;
     this.setFade(0);
+    this.hide();
     this.hiddenEnds[0] = true;
     this.hiddenEnds[1] = true;
     for (const proxy of this.proxies) proxy.layers.disableAll();
@@ -1272,6 +1839,12 @@ class CordView {
     this.hiddenEnds[1] = false;
     jacks.setSlotScale(this.slotFirst, 1);
     jacks.setSlotScale(this.slotLast, 1);
+    this.linked = false; // REN-4 — a fresh spawn is not linked; nothing glows
+    this.pulseGain.value = 0;
+    this.tickGain.value = 0; // REN-5 — fresh cord, no inherited paint
+    this.stretch = 0;
+    this.graceFactor = 1;
+    this.bandOff = false;
     this.setFade(0);
     for (const proxy of this.proxies) proxy.layers.enable(0);
     this.despawned = false;
@@ -1393,15 +1966,17 @@ export function createRenderLayer(
   const denyNormal = new THREE.Vector3();
   const denyPlusZ = new THREE.Vector3(0, 0, 1);
 
-  // T-LIFE-2 — the shatter fragments: the plug's own dark grip rubber as
-  // small matte shards (one pooled InstancedMesh; NO glow/additive blend).
+  // T-LIFE-2/REN-5 — the shatter fragments: the jack breaks into small dark
+  // METAL shards (per-instance dark-steel inks over a white-based material,
+  // the baked env for the chrome glint) plus the failing end's color-BAND
+  // shard — one pooled InstancedMesh, NO glow/additive blend.
   const fragments = new FragmentPool(
     new THREE.MeshStandardMaterial({
-      color: 0x17181c, // the jack's grip rubber — the jack shatters into itself
-      roughness: 0.9,
-      metalness: 0.05,
+      color: 0xffffff, // instanceColor carries each shard's ink
+      roughness: 0.45,
+      metalness: 0.8,
       envMap: envTexture,
-      envMapIntensity: 0.2,
+      envMapIntensity: 0.5,
     }),
   );
   scene.add(fragments.mesh);
@@ -1411,6 +1986,16 @@ export function createRenderLayer(
   let nextSlot = 0;
   let frameId = 0;
   let layoutDirty = false;
+
+  // REN-4 — the fleet's ONE chase-pulse clock: the shared phase + amber
+  // color uniforms every cord's tube material references. Written once per
+  // frame from the SIM clock (never wall time — the light is locked to it).
+  const pulseState = createChasePulseState();
+
+  // REN-5 — the ONE reused per-cord paint frame (grace entry + sim clock +
+  // the reduced-motion seam), refilled per cord inside render(). Plain data,
+  // never retained past the frame; zero steady-state allocation.
+  const paint: CordPaintFrame = { simTime: 0, reduced: false, grace: null };
 
   function ensureView(spec: CordRenderSpec): CordView {
     let view = views.get(spec.id);
@@ -1424,6 +2009,7 @@ export function createRenderLayer(
       cordMaterial,
       proxyGeometry,
       proxyMaterial,
+      pulseState,
     );
     nextSlot += 2;
     views.set(spec.id, view);
@@ -1454,6 +2040,21 @@ export function createRenderLayer(
         return endIndex === 0 ? view.proxies[0] : view.proxies[1];
       },
     },
+    pulseProbe: () => ({
+      phase: pulseState.phase.value,
+      cords: Array.from(views, ([id, view]) => ({ id, gain: view.pulseGain.value })),
+    }),
+    stateProbe: () => ({
+      fragments: fragments.activeCount,
+      cords: Array.from(views, ([id, view]) => ({
+        id,
+        stretch: view.stretch,
+        tickGain: view.tickGain.value,
+        tickSpacing: view.tickSpacing.value,
+        graceFactor: view.graceFactor,
+        bandOff: view.bandOff,
+      })),
+    }),
     setSeatOverride(cordId, end, pose) {
       const view = views.get(cordId);
       if (view === undefined) return;
@@ -1487,7 +2088,10 @@ export function createRenderLayer(
     },
 
     shatter(at, options) {
-      fragments.burst(at, { reduced: options?.reduced === true });
+      fragments.burst(at, {
+        reduced: options?.reduced === true,
+        band: options?.band,
+      });
     },
 
     flashDeny(cubeIndex, at, normal) {
@@ -1508,7 +2112,7 @@ export function createRenderLayer(
       denyStartMs = performance.now();
     },
 
-    render(state, dtSeconds) {
+    render(state, dtSeconds, frame) {
       frameId += 1;
       // INT-2 deny cue: fade the ring, then hide it — a mark, not a lamp.
       if (denyRing.visible) {
@@ -1529,6 +2133,20 @@ export function createRenderLayer(
       }
       let anyMoved = false;
       let seen = 0;
+      // REN-4 — the chase clock ticks with the SIM clock: same sim instant,
+      // same phase, always (deterministic; a frozen sim holds the light; a
+      // backgrounded tab's discarded backlog cannot make it skip). The
+      // reduced-motion seam slows the cadence rather than removing the
+      // pulse (A11Y-1 owns the policy). One multiply + floor per frame.
+      const linkedFrame = frame?.linked;
+      // REN-5 — the state paint's per-frame inputs: the grace list (a tiny
+      // caller-composed array; a linear scan per cord is the honest cost —
+      // ≤ 12 entries) + the sim clock + the reduced-motion seam.
+      const graceFrame = frame?.grace;
+      const reduced = frame?.reducedMotion === true;
+      paint.simTime = state.time;
+      paint.reduced = reduced;
+      pulseState.phase.value = pulsePhase(state.time, { reduced });
       jacks.beginFrame();
       for (const cord of state.cords) {
         let view = views.get(cord.id);
@@ -1539,7 +2157,18 @@ export function createRenderLayer(
         if (view.despawned) view.revive(jacks); // T-LIFE-2: the id lives again
         view.lastSeenFrame = frameId;
         seen += 1;
-        if (view.sync(cord, jacks)) anyMoved = true;
+        const linked =
+          linkedFrame !== undefined && linkedFrame.includes(cord.id);
+        paint.grace = null;
+        if (graceFrame !== undefined) {
+          for (let i = 0; i < graceFrame.length; i += 1) {
+            if (graceFrame[i].id === cord.id) {
+              paint.grace = graceFrame[i];
+              break;
+            }
+          }
+        }
+        if (view.sync(cord, jacks, linked, paint)) anyMoved = true;
       }
       // Vanished cords (LIFE-2 despawn): hide, take their proxies off the
       // raycast layers, drop their seat overrides, and re-upload the pool.

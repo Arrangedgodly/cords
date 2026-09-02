@@ -118,9 +118,53 @@
  *   Per cord, at most one controller may emit targets: grabbing one end
  *   cancels the other end's controller (a mid-drop other end simply falls —
  *   the rope re-frees it when the carry switches).
+ * - INT-5 — THE PASSIVE CURSOR-BRUSH (src/sim/brush.ts): moving the mouse —
+ *   hover, NO button — sweeps a halo through the scene and every cord's free
+ *   segments inside it get a small velocity impulse away from the cursor ray
+ *   ("running your mouse against the cord triggers a little bit of physics
+ *   collision animation so you see the dangle"). The pointer mapper composes
+ *   `SimInput.brush` ONLY on frames a real pointermove arrived (an idle
+ *   cursor costs nothing and never injects energy, even when a cord swings
+ *   through the ray); the world applies one impulse pass per new move.
+ *   Seated/carried/anchored ends are pins and never impulse; vanishing cords
+ *   stay brushable to their last frame (documented in brush.ts). The
+ *   tunables below (BRUSH) are the feel knobs: halo reach in rest lengths
+ *   and peak impulse speed.
+ * - REN-3 — THE FACEPLATE HUD (src/hud/): the Drum Machine Panel strip
+ *   along the bottom edge — segmented CORDS / LINKED readouts (lit segments
+ *   = the sim's real counts, read from the lifecycle every frame), the NEW
+ *   CORD and RESET keycaps (real buttons: keyboard-reachable, lit-bracket
+ *   focus), and the aria-live scene summary. The buttons route through the
+ *   same functions the N and R keys use. RESET clears the CORDS only —
+ *   cubes keep their positions (repositioning them is not approved scope)
+ *   — by rebuilding the world without the anchor cord: no confirmation
+ *   dialog (toy scale; the action is visual and instantly re-performable).
+ * - REN-4 — THE LINK CHASE PULSE (src/render/pulse.ts + the render layer):
+ *   on a LINKED cord a warm amber LED travels the tube red end → blue end
+ *   and repeats, like signal flowing, like a chase light locked to a tempo
+ *   clock — and the phase IS locked to the sim clock (a pure function of
+ *   SimState.time, never wall time or frame deltas). This layer's whole job
+ *   is the gate: per frame it hands the renderer the ids whose lifecycle
+ *   state is exactly `linked` (the only pulsing state — awaiting-plug,
+ *   popped, vanishing, carried cords carry no glow), plus the
+ *   prefers-reduced-motion flag (the cadence slows by half; the live-state
+ *   reading survives). The `window.cords.pulse()` seam exposes the clock
+ *   for the e2e drives: time, phase, speeds, linked ids.
+ * - REN-5 — STATE PAINT (src/render/states.ts + the render layer), the
+ *   composition again only composes TRUTH: per frame it hands the renderer
+ *   the grace list (each popped cord's failing end + its machine-read grace
+ *   seconds; vanishing cords ride the list at 0 so the dim holds its floor
+ *   through LIFE-2's fade with no flash at expiry). The renderer derives
+ *   everything else: stretch ticks on taut carried/awaiting-plug cords
+ *   (silkscreen furniture), the cord's countdown dimming, and the popped
+ *   jack's low-battery band blink in the final second (steady under reduced
+ *   motion). The shatter event also names the failing end's POLARITY (index
+ *   0 is the red input end for every production cord — INT-4's spawn law),
+ *   so the burst carries a red or blue BAND shard: THAT end dying.
  */
 import * as THREE from 'three';
 import {
+  DEFAULT_GRACE_SECONDS,
   DEFAULT_ROPE_CONFIG,
   DEFAULT_OVERSTRETCH_THRESHOLD,
   createCordWorldStep,
@@ -137,7 +181,13 @@ import type {
   Vec3,
 } from './sim';
 import { createRenderLayer, CUBE_SIZE } from './render/scene';
-import type { SeatPose } from './render/scene';
+import type { CordGraceInfo, RenderFrameInfo, SeatPose } from './render/scene';
+import {
+  DEFAULT_PULSE_SPEED,
+  pulsePhase,
+  resolvePulseSpeed,
+} from './render/pulse';
+import { graceBlinkOn, graceDimming } from './render/states';
 import { createPointerMapper } from './interaction/pointer';
 import { createThreeRaycastProvider } from './interaction/threeRaycastProvider';
 import type { PickableHandle } from './interaction/threeRaycastProvider';
@@ -146,6 +196,8 @@ import { createCarryController } from './interaction/carry';
 import type { CarryController } from './interaction/carry';
 import { createCubeDragController } from './interaction/cubeDrag';
 import { createSocketRegistry, pickSeatTarget, planSeat } from './interaction/socket';
+import { createHudPanel } from './hud/panel';
+import { createHudCounts, readHudCountsInto } from './hud/model';
 
 const app = document.querySelector<HTMLDivElement>('#app');
 if (!app) {
@@ -183,8 +235,23 @@ const MAX_CORDS = 16;
 // point itself — the default stage spot, above the bench mid-scene.
 const SPAWN_REFERENCE: { x: number; y: number; z: number } = { x: 0, y: 0.9, z: 0 };
 
+// INT-5 — the passive cursor-brush feel-tunables, stated explicitly (the
+// values ARE the brush.ts defaults): the halo reaches 1.5 rest lengths
+// (≈25 px of halo at the bench's depth — about a jack's visual width) and
+// pushes at ≤1 u/s with the cosine falloff, an order below gravity-driven
+// speeds: a swept cord sways visibly and calms in the ordinary settle window.
+const BRUSH = { radiusRestLengths: 1.5, strength: 1.0 } as const;
+
 const render = createRenderLayer(app, {
-  cords: [{ id: 0, pointCount: CORD_SEGMENTS + 1, redEnd: 'first' }],
+  cords: [
+    {
+      id: 0,
+      pointCount: CORD_SEGMENTS + 1,
+      redEnd: 'first',
+      // REN-5 — the tick ruler's unit (the sim's own rope default).
+      segmentLength: DEFAULT_ROPE_CONFIG.segmentLength,
+    },
+  ],
 });
 
 // INT-1 picking: real ray conversion injected; the REN-2 world registers its
@@ -249,6 +316,13 @@ interface CordRuntime {
   readonly handles: readonly [PickableHandle, PickableHandle];
   readonly carries: readonly [CarryController, CarryController];
   readonly seats: [SeatRecord | null, SeatRecord | null];
+  /**
+   * REN-5 — the FAILING end's slot once LIFE-2's sequence starts (the vanish
+   * `start` event names it): the grace list keeps naming it through the
+   * vanish so the band blink + dim hold the right end without re-deriving
+   * it. Null when the cord is not vanishing.
+   */
+  failingSlot: 0 | 1 | null;
 }
 
 const cordRuntimes = new Map<number, CordRuntime>();
@@ -281,6 +355,7 @@ function registerCordRuntime(cordId: number): CordRuntime {
       createCarryController({ freeEndIndex: CORD_SEGMENTS, floorRestY: FLOOR_REST_Y, cordId }),
     ],
     seats: [null, null],
+    failingSlot: null,
   };
   cordRuntimes.set(cordId, runtime);
   return runtime;
@@ -341,10 +416,19 @@ let simState: SimState = { time: 0, cords: [] };
 // lifecycle rejection (the machine's lock holds, but the warning channel
 // would scream and the caller contract would be broken).
 
-/** A11Y-1 seam (documented, wired early): reduced motion skips the particles. */
+/**
+ * A11Y-1 seam (documented, wired early): reduced motion skips the particles
+ * and SLOWS the REN-4 chase pulse (the link's live-state reading survives —
+ * the pulse IS the "linked" signal; A11Y-1 formalizes the policy). The media
+ * query list is cached: this is read once per frame.
+ */
+const reducedMotionQuery: MediaQueryList | null =
+  typeof window.matchMedia === 'function'
+    ? window.matchMedia('(prefers-reduced-motion: reduce)')
+    : null;
+
 function prefersReducedMotion(): boolean {
-  return typeof window.matchMedia === 'function'
-    && window.matchMedia('(prefers-reduced-motion: reduce)').matches;
+  return reducedMotionQuery !== null && reducedMotionQuery.matches;
 }
 
 /**
@@ -379,6 +463,7 @@ function handleVanishEvent(event: VanishEvent): void {
       // side stops COMPOSING them), and its proxy stops shadowing whatever
       // its fall passes over — nothing on a vanishing cord is grabbable.
       if (runtime === undefined || slot === null) return;
+      runtime.failingSlot = slot; // REN-5 — the grace list keeps naming it
       if (activeCarry !== null && activeCarry.cordId === event.cordId) activeCarry = null;
       for (const s of [0, 1] as const) runtime.carries[s].cancel();
       unregisterEndProxy(runtime, slot);
@@ -386,9 +471,15 @@ function handleVanishEvent(event: VanishEvent): void {
     }
     case 'shatter': {
       // Instant on first floor contact: the fragments burst at the impact
-      // point and the end jack's mesh despawns with them.
+      // point and the end jack's mesh despawns with them. REN-5 — the burst
+      // names the failing end's POLARITY (sim index 0 is the RED input end
+      // for every production cord: INT-4's spawn law + the anchor's spec),
+      // so the debris carries a red or blue BAND shard — THAT end dying.
       if (runtime === undefined || slot === null || event.at === null) return;
-      render.shatter(event.at, { reduced: prefersReducedMotion() });
+      render.shatter(event.at, {
+        reduced: prefersReducedMotion(),
+        band: event.end === 0 ? 'red' : 'blue',
+      });
       render.hideJack(runtime.id, slot === 0 ? 'first' : 'last');
       return;
     }
@@ -417,36 +508,49 @@ function handleVanishEvent(event: VanishEvent): void {
 // count, seat override, latch — is released here in the same event. Rejections
 // (illegal transitions, production's "no-op-with-warning") surface as console
 // warnings; a strict world would throw instead (tests).
-const world = createCordWorldStep({
-  anchor: { pin: CORD_PIN, segmentCount: CORD_SEGMENTS, floorY: FLOOR_Y },
-  cord: { segmentCount: CORD_SEGMENTS, floorY: FLOOR_Y },
-  maxCords: MAX_CORDS,
-  // T-INT-6 — the over-stretch auto-unplug, ON in the production world: a
-  // LINKED cord dragged past 104% of its total rest length pops its FAR jack
-  // (the seat that moved less — the stationary socket; the dragged cube
-  // keeps its plug). The pop fires INSIDE the world step (the sim owns the
-  // detection; threshold tunable, approved ~2–5%).
-  overStretch: { threshold: DEFAULT_OVERSTRETCH_THRESHOLD },
-  // T-LIFE-2 — the vanish choreography, ON in the production world: fall →
-  // shatter → pull-out → fade → despawn, per vanishing cord, with tunable
-  // timings (pull window 0.35s; the fall is physics-speed). ABSENT config
-  // keeps LIFE-1's locked-forever behavior — tests construct that world.
-  vanish: { onEvent: handleVanishEvent },
-  lifecycle: {
-    onTransition: (event) => {
-      if (event.to === 'popped' && event.end !== null) {
-        const runtime = cordRuntimes.get(event.cordId);
-        if (runtime !== undefined) releaseSeat(runtime, event.end === 0 ? 0 : 1);
-      }
+//
+// T-REN-3 — the world is built by a FACTORY because RESET rebuilds it: the
+// empty scene is the same world minus the anchor cord (the config's own
+// spawn-only mode), so every subscription below is re-armed identically and
+// the old machine's records die with the old world. `world`/`driver` are
+// therefore `let` bindings every closure reads live.
+function buildWorld(withAnchor: boolean) {
+  return createCordWorldStep({
+    ...(withAnchor
+      ? { anchor: { pin: CORD_PIN, segmentCount: CORD_SEGMENTS, floorY: FLOOR_Y } }
+      : {}),
+    cord: { segmentCount: CORD_SEGMENTS, floorY: FLOOR_Y },
+    maxCords: MAX_CORDS,
+    // T-INT-6 — the over-stretch auto-unplug, ON in the production world: a
+    // LINKED cord dragged past 104% of its total rest length pops its FAR jack
+    // (the seat that moved less — the stationary socket; the dragged cube
+    // keeps its plug). The pop fires INSIDE the world step (the sim owns the
+    // detection; threshold tunable, approved ~2–5%).
+    overStretch: { threshold: DEFAULT_OVERSTRETCH_THRESHOLD },
+    // T-LIFE-2 — the vanish choreography, ON in the production world: fall →
+    // shatter → pull-out → fade → despawn, per vanishing cord, with tunable
+    // timings (pull window 0.35s; the fall is physics-speed). ABSENT config
+    // keeps LIFE-1's locked-forever behavior — tests construct that world.
+    vanish: { onEvent: handleVanishEvent },
+    // T-INT-5 — the passive cursor-brush tunables (feel; see BRUSH above).
+    brush: BRUSH,
+    lifecycle: {
+      onTransition: (event) => {
+        if (event.to === 'popped' && event.end !== null) {
+          const runtime = cordRuntimes.get(event.cordId);
+          if (runtime !== undefined) releaseSeat(runtime, event.end === 0 ? 0 : 1);
+        }
+      },
+      onRejected: (rejection) => {
+        console.warn(
+          `cords: lifecycle rejected ${rejection.action} on cord ${rejection.cordId} (${rejection.from}): ${rejection.detail}`,
+        );
+      },
     },
-    onRejected: (rejection) => {
-      console.warn(
-        `cords: lifecycle rejected ${rejection.action} on cord ${rejection.cordId} (${rejection.from}): ${rejection.detail}`,
-      );
-    },
-  },
-});
-const driver = createFixedTimestepDriver(world, {
+  });
+}
+let world = buildWorld(true);
+let driver = createFixedTimestepDriver(world, {
   timestep: SIM_TIMESTEP,
   maxSubsteps: MAX_SUBSTEPS_PER_FRAME,
 });
@@ -598,8 +702,12 @@ function spawnCordRequest(): void {
 }
 
 window.addEventListener('keydown', (event: KeyboardEvent) => {
-  if (event.repeat) return; // one press, one cord
+  if (event.repeat) return; // one press, one cord / one reset
+  // Modifier chords stay the browser's (Cmd+R must still reload, Cmd+N is
+  // the browser's own) — the page's keys are bare N and R only.
+  if (event.metaKey || event.ctrlKey || event.altKey) return;
   if (event.key === 'n' || event.key === 'N') spawnCordRequest();
+  else if (event.key === 'r' || event.key === 'R') resetScene();
 });
 
 // The future HUD's entry point (REN-3's NEW CORD button; also handy in dev),
@@ -608,6 +716,156 @@ window.addEventListener('keydown', (event: KeyboardEvent) => {
 // progress (the seam REN-3's "labels name real state only" rule, REN-5's
 // grace readout and shatter/fade timing, A11Y-1's scene summary, and the
 // e2e/verifier drives all read; never write).
+//
+// T-INT-5 — plus the MOTION PROBE, the verification seam for the passive
+// cursor-brush: `setMotionProbe(true)` starts a per-frame sampler that
+// tracks, per cord, the MAX point speed (world units per second of SIM
+// time — frame-rate independent) observed since the (re)enable; the e2e
+// drive proves in numbers that a pointer sweep perturbs the cord and that
+// an idle pointer never does (Thor's rule, in pixels). OFF by default and
+// free when off — the same law as the brush itself.
+let motionProbeEnabled = false;
+const motionProbeMax = new Map<number, number>();
+const motionProbePrev = new Map<number, number[]>();
+let motionProbePrevTime = 0;
+
+function setMotionProbe(enabled: boolean): void {
+  motionProbeEnabled = enabled;
+  motionProbeMax.clear();
+  motionProbePrev.clear();
+  motionProbePrevTime = simState.time;
+}
+
+function readMotionProbe(): Array<{ id: number; maxSpeed: number }> {
+  return Array.from(simState.cords, (cord) => ({
+    id: cord.id,
+    maxSpeed: motionProbeMax.get(cord.id) ?? 0,
+  }));
+}
+
+/** One probe sample: max |Δpoint| / Δ(sim time) per cord since the last. */
+function sampleMotion(state: SimState): void {
+  const dtSim = state.time - motionProbePrevTime;
+  if (dtSim > 0 && Number.isFinite(dtSim)) {
+    for (const cord of state.cords) {
+      const prev = motionProbePrev.get(cord.id);
+      if (prev === undefined || prev.length !== cord.points.length * 3) continue;
+      let maxSpeed = motionProbeMax.get(cord.id) ?? 0;
+      for (let i = 0; i < cord.points.length; i += 1) {
+        const p = cord.points[i];
+        const k = i * 3;
+        const dx = p.x - prev[k];
+        const dy = p.y - prev[k + 1];
+        const dz = p.z - prev[k + 2];
+        const speed = Math.sqrt(dx * dx + dy * dy + dz * dz) / dtSim;
+        if (speed > maxSpeed) maxSpeed = speed;
+      }
+      motionProbeMax.set(cord.id, maxSpeed);
+    }
+  }
+  // Refresh the baseline copies for the next sample (allocation only while
+  // the probe is enabled — a debug mode, never the hot path).
+  for (const cord of state.cords) {
+    let prev = motionProbePrev.get(cord.id);
+    if (prev === undefined || prev.length !== cord.points.length * 3) {
+      prev = new Array<number>(cord.points.length * 3);
+      motionProbePrev.set(cord.id, prev);
+    }
+    for (let i = 0; i < cord.points.length; i += 1) {
+      const p = cord.points[i];
+      const k = i * 3;
+      prev[k] = p.x;
+      prev[k + 1] = p.y;
+      prev[k + 2] = p.z;
+    }
+  }
+  motionProbePrevTime = state.time;
+}
+
+// T-REN-4 — the chase-pulse READ seam (the e2e/verifier drives' clock
+// probe): `window.cords.pulse()` reports the last rendered frame's sim time,
+// the phase the renderer computed for it (the same pure pulsePhase call —
+// bitwise identical by construction), the base/effective speeds, the
+// reduced-motion flag, and the linked ids the gate handed the renderer.
+// Read-only, like lifecycle().
+let lastLinkedIds: number[] = [];
+let lastReducedMotion = false;
+
+function readPulse(): {
+  time: number;
+  phase: number;
+  baseSpeed: number;
+  speed: number;
+  reduced: boolean;
+  linked: number[];
+  /** The RENDER layer's own live read (verification seam — must agree). */
+  renderPhase: number;
+  renderGains: Array<{ id: number; gain: number }>;
+} {
+  const reduced = lastReducedMotion;
+  const probe = render.pulseProbe();
+  return {
+    time: simState.time,
+    phase: pulsePhase(simState.time, { reduced }),
+    baseSpeed: DEFAULT_PULSE_SPEED,
+    speed: resolvePulseSpeed({ reduced }),
+    reduced,
+    linked: lastLinkedIds.slice(),
+    renderPhase: probe.phase,
+    renderGains: probe.cords,
+  };
+}
+
+// T-REN-5 — the STATE PAINT read seam (the e2e/verifier drives' probe):
+// `window.cords.statePaint()` reports, per cord, the lifecycle state, the
+// RENDER layer's own live paint (tautness, tick gain/spacing, grace dim,
+// band blink — `render.stateProbe()`, not a re-computation of main's), and
+// the composed grace entry driving it (null when not counting down), plus
+// the reduced-motion flag. Read-only, like lifecycle().
+let lastGraceCords: CordGraceInfo[] = [];
+
+function readStatePaint(): {
+  reduced: boolean;
+  fragments: number;
+  cords: Array<{
+    id: number;
+    state: string;
+    stretch: number;
+    tickGain: number;
+    tickSpacing: number;
+    graceFactor: number;
+    bandOff: boolean;
+    grace: { remaining: number; dim: number; bandLit: boolean } | null;
+  }>;
+} {
+  const probe = render.stateProbe();
+  const out = probe.cords.map((entry) => {
+    const grace = lastGraceCords.find((g) => g.id === entry.id) ?? null;
+    return {
+      id: entry.id,
+      state: world.lifecycle.stateOf(entry.id) ?? 'gone',
+      stretch: entry.stretch,
+      tickGain: entry.tickGain,
+      tickSpacing: entry.tickSpacing,
+      /** The RENDER's actually-applied dim factor (the tube's opacity law). */
+      graceFactor: entry.graceFactor,
+      /** True while the failing jack's band is in its blinked-OFF phase. */
+      bandOff: entry.bandOff,
+      grace:
+        grace === null
+          ? null
+          : {
+              remaining: grace.remaining,
+              dim: graceDimming(grace.remaining, grace.window),
+              bandLit: graceBlinkOn(grace.remaining, simState.time, {
+                reduced: prefersReducedMotion(),
+              }),
+            },
+    };
+  });
+  return { reduced: prefersReducedMotion(), fragments: probe.fragments, cords: out };
+}
+
 (window as unknown as {
   cords?: {
     spawnCord(): void;
@@ -617,6 +875,19 @@ window.addEventListener('keydown', (event: KeyboardEvent) => {
       grace: number | null;
       vanish: { phase: string; progress: number } | null;
     }>;
+    setMotionProbe(enabled: boolean): void;
+    readMotionProbe(): Array<{ id: number; maxSpeed: number }>;
+    pulse(): {
+      time: number;
+      phase: number;
+      baseSpeed: number;
+      speed: number;
+      reduced: boolean;
+      linked: number[];
+      renderPhase: number;
+      renderGains: Array<{ id: number; gain: number }>;
+    };
+    statePaint(): ReturnType<typeof readStatePaint>;
   };
 }).cords = {
   spawnCord: spawnCordRequest,
@@ -627,7 +898,64 @@ window.addEventListener('keydown', (event: KeyboardEvent) => {
       grace: world.lifecycle.graceRemaining(id),
       vanish: world.lifecycle.vanishInfo(id),
     })),
+  setMotionProbe,
+  readMotionProbe,
+  pulse: readPulse,
+  statePaint: readStatePaint,
 };
+
+// --- T-REN-3 — the faceplate HUD (Drum Machine Panel strip) -------------------
+
+/**
+ * RESET — clears every cord to the EMPTY SCENE. Cubes are deliberately
+ * untouched: repositioning them is not approved scope, and the strip's
+ * RESET names cords only. Semantics, documented:
+ *
+ * - The world is REBUILT without the anchor cord (the config's own
+ *   spawn-only mode — "omit to start with an empty world"), so the
+ *   lifecycle machine's records, grace clocks, and in-flight vanish runs
+ *   die with the old world instead of being cherry-picked out of it. The
+ *   despawnCords intent would not do: it is only accepted while `vanishing`
+ *   (LIFE-1's exit contract), so it is not a general clear.
+ * - Everything the composition holds for a cord is released through the
+ *   one despawn cleanup (pick proxies, carry controllers, seat records —
+ *   socket cap counts included, so post-reset seats get the registry back).
+ * - Cord ids RESTART at 0: the render layer's views are keyed by id and
+ *   REVIVED on reuse (its pool is finite), so ids must not grow forever.
+ *   In a no-anchor world id 0 is an ordinary spawn id.
+ * - The motion probe's per-id baselines are dropped with the world they
+ *   measured (a reused id would otherwise read one bogus speed sample).
+ * - No confirmation dialog — toy scale: the action is visible, total, and
+ *   instantly re-performable (press N and the bench refills). Deliberate.
+ */
+function resetScene(): void {
+  for (const id of Array.from(cordRuntimes.keys())) cleanupCordRuntime(id);
+  pendingSpawn = null;
+  pendingCarry = null;
+  pendingRelease = null;
+  activeCarry = null;
+  if (cubeDrag.phase === 'dragging') cubeDrag.endDrag(); // dropping is stopping
+  frameIndex = INTRO_FRAMES; // the intro pose belonged to the anchor cord
+  setMotionProbe(motionProbeEnabled);
+  nextCordId = 0;
+  world = buildWorld(false);
+  driver = createFixedTimestepDriver(world, {
+    timestep: SIM_TIMESTEP,
+    maxSubsteps: MAX_SUBSTEPS_PER_FRAME,
+  });
+  simState = { time: 0, cords: [] };
+  hud.update(readHudCountsInto(simState.cords, world.lifecycle.stateOf, hudCounts));
+}
+
+/** The faceplate's own counts shell — reused every frame, never reallocated. */
+const hudCounts = createHudCounts();
+
+const hud = createHudPanel(document.body, document, {
+  // Both controls route through the SAME functions their keys use: one law
+  // for pointer and keyboard, pixels and sim never diverge.
+  onNewCord: spawnCordRequest,
+  onReset: resetScene,
+});
 
 /**
  * LIFE-1/LIFE-2 — the release policy shared by pointer-up and the
@@ -768,6 +1096,19 @@ const setCursor = (cursor: string): void => {
   }
 };
 
+// REN-4 — the chase-pulse gate's reused id list (see the frame loop).
+const linkedCordIds: number[] = [];
+// REN-5 — the grace list's reused entries: one plain object per cord,
+// preallocated and refilled in place every frame (the render layer reads
+// them during render() only) — zero steady-state allocation.
+const graceEntries: CordGraceInfo[] = Array.from({ length: MAX_CORDS }, () => ({
+  id: -1,
+  end: 'first' as 'first' | 'last',
+  remaining: 0,
+  window: DEFAULT_GRACE_SECONDS,
+}));
+const graceCords: CordGraceInfo[] = [];
+
 // M1 opening pose: the sim spawns cord 0 hanging STRAIGHT down from its pin,
 // which reads as a rigid pole. The composition poses the anchor cord's free
 // end beside the anchor through the carry seam for ~2 s, then stops, so the
@@ -861,6 +1202,12 @@ render.start((dtSeconds) => {
 
   const frame = driver.advance(simState, dtSeconds, input);
   simState = frame.state;
+  if (motionProbeEnabled) sampleMotion(simState); // T-INT-5 e2e seam (off = free)
+
+  // T-REN-3 — the faceplate reads the SIM's truth once per frame: the live
+  // cord list plus each cord's lifecycle state. The panel gates on equality
+  // (model.ts), so an unchanged scene touches no DOM.
+  hud.update(readHudCountsInto(simState.cords, world.lifecycle.stateOf, hudCounts));
 
   // LIFE-2 — the vanish fade: the choreography's pull-window progress drives
   // the render (tube opacity + riding-jack scale). One map probe per live
@@ -869,7 +1216,53 @@ render.start((dtSeconds) => {
     const info = world.lifecycle.vanishInfo(runtime.id);
     if (info !== null) render.setCordFade(runtime.id, info.progress);
   }
-  render.render(simState, dtSeconds);
+
+  // REN-4 — the chase-pulse gate: the ids whose lifecycle state is EXACTLY
+  // 'linked' (both ends seated, nothing popping, nothing vanishing). The
+  // only state that pulses; everything else carries gain 0 (no decorative
+  // glow). One reused array — the per-frame path allocates nothing.
+  linkedCordIds.length = 0;
+  // REN-5 — the state-paint gate: every cord mid-countdown (popped, plus
+  // VANISHING cords riding at remaining 0 so the dim holds its floor through
+  // LIFE-2's fade instead of flashing back to full at expiry). The popped
+  // end is the machine's own read (the end whose mode is not 'seated' — the
+  // survivor holds the socket); a vanishing cord's is the `start` event's
+  // named failing end. Entries refill in place — no allocation.
+  graceCords.length = 0;
+  let graceCount = 0;
+  for (const cord of simState.cords) {
+    const state = world.lifecycle.stateOf(cord.id);
+    if (state === 'linked') {
+      linkedCordIds.push(cord.id);
+      continue;
+    }
+    if (state !== 'popped' && state !== 'vanishing') continue;
+    let end: 'first' | 'last';
+    if (state === 'popped') {
+      end = world.lifecycle.endMode(cord.id, 0) !== 'seated' ? 'first' : 'last';
+    } else {
+      const failing = cordRuntimes.get(cord.id)?.failingSlot;
+      if (failing === null || failing === undefined) continue;
+      end = failing === 0 ? 'first' : 'last';
+    }
+    const entry = graceEntries[graceCount];
+    graceCount += 1;
+    entry.id = cord.id;
+    entry.end = end;
+    entry.remaining =
+      state === 'popped' ? (world.lifecycle.graceRemaining(cord.id) ?? 0) : 0;
+    entry.window = DEFAULT_GRACE_SECONDS;
+    graceCords.push(entry);
+  }
+  lastLinkedIds = linkedCordIds;
+  lastGraceCords = graceCords;
+  lastReducedMotion = prefersReducedMotion();
+  const renderFrame: RenderFrameInfo = {
+    linked: linkedCordIds,
+    reducedMotion: lastReducedMotion,
+    grace: graceCords,
+  };
+  render.render(simState, dtSeconds, renderFrame);
 
   // INT-4 — lazily register the runtime side of cords the world spawned
   // (after their first render, so the proxies exist and sit on the ends).
