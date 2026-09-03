@@ -11,11 +11,7 @@
     "fuzz": "CORDS_FUZZ_FULL=1 vitest run src/sim/fuzz.test.ts",
     "check:sim": "node scripts/check-sim-purity.mjs"
   },
-  "dependencies": {
-    "three": "^0.185.1"
-  },
   "devDependencies": {
-    "@types/three": "^0.185.4",
     "typescript": "^7.0.2",
     "vite": "^8.2.2",
     "vitest": "^4.1.11"

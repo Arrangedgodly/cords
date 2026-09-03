@@ -1,9 +1,11 @@
 import { describe, expect, it } from 'vitest';
 import { coilPoints, DEFAULT_COIL } from './coilSpawn';
-import type { Vec3 } from './types';
+import type { Vec2 } from './types';
 
 /**
- * INT-4 — the coiled spawn geometry. The coil is the START STATE of a
+ * INT-4 — the coiled spawn geometry (2D pivot: the spiral lives in the
+ * WORLD PLANE — the v1 horizontal-plane coil became the planar coil the
+ * player actually sees). The coil is the START STATE of a
  * grabbed-from-midair cord (the uncoil itself is the sim's), so the tests
  * pin the start state's validity: point 0 exactly at the spawn point (the
  * carried red end is in hand on the spawn frame), every point in a sane
@@ -15,31 +17,29 @@ import type { Vec3 } from './types';
 
 const SEGMENTS = 24;
 const SEG_LEN = 0.1;
-const AT: Vec3 = { x: 0.35, y: 1.05, z: -0.4 };
+const AT: Vec2 = { x: 0.35, y: 1.05 };
 
-function makeShells(n: number): Vec3[] {
-  return Array.from({ length: n }, () => ({ x: 0, y: 0, z: 0 }));
+function makeShells(n: number): Vec2[] {
+  return Array.from({ length: n }, () => ({ x: 0, y: 0 }));
 }
 
-function chord(a: Vec3, b: Vec3): number {
-  return Math.hypot(b.x - a.x, b.y - a.y, b.z - a.z);
+function chord(a: Vec2, b: Vec2): number {
+  return Math.hypot(b.x - a.x, b.y - a.y);
 }
 
 describe('INT-4 — coiled spawn geometry', () => {
-  it('point 0 is exactly the spawn point; the coil lies in its horizontal plane, within sane bounds', () => {
+  it('point 0 is exactly the spawn point; the coil stays within sane bounds of it', () => {
     const pts = makeShells(SEGMENTS + 1);
     coilPoints(AT, SEGMENTS, SEG_LEN, DEFAULT_COIL, pts);
     expect(pts[0].x).toBe(AT.x);
     expect(pts[0].y).toBe(AT.y);
-    expect(pts[0].z).toBe(AT.z);
     // Sane bounds: every point within one arc-step of the spiral's outer
     // radius (the arc-length walk may land the last point a step past it) —
     // a coil, not a mess.
     const ds = (DEFAULT_COIL.compression * SEGMENTS * SEG_LEN) / SEGMENTS;
     const bound = DEFAULT_COIL.radiusOuter + ds + 1e-9;
     for (const p of pts) {
-      expect(Math.hypot(p.x - AT.x, p.z - AT.z)).toBeLessThanOrEqual(bound);
-      expect(p.y).toBe(AT.y); // flat coil in the horizontal plane through `at`
+      expect(Math.hypot(p.x - AT.x, p.y - AT.y)).toBeLessThanOrEqual(bound);
     }
   });
 
@@ -49,7 +49,6 @@ describe('INT-4 — coiled spawn geometry', () => {
     for (const p of pts) {
       expect(Number.isFinite(p.x)).toBe(true);
       expect(Number.isFinite(p.y)).toBe(true);
-      expect(Number.isFinite(p.z)).toBe(true);
     }
     let maxChord = 0;
     for (let i = 0; i < SEGMENTS; i += 1) {
@@ -66,8 +65,7 @@ describe('INT-4 — coiled spawn geometry', () => {
       coilPoints(AT, segments, SEG_LEN, DEFAULT_COIL, pts);
       const bound = DEFAULT_COIL.radiusOuter + DEFAULT_COIL.compression * SEG_LEN + 1e-9;
       for (const p of pts) {
-        expect(Math.hypot(p.x - AT.x, p.z - AT.z)).toBeLessThanOrEqual(bound);
-        expect(p.y).toBe(AT.y);
+        expect(Math.hypot(p.x - AT.x, p.y - AT.y)).toBeLessThanOrEqual(bound);
       }
       for (let i = 0; i < segments; i += 1) {
         expect(chord(pts[i], pts[i + 1])).toBeLessThanOrEqual(SEG_LEN + 1e-12);
@@ -83,11 +81,10 @@ describe('INT-4 — coiled spawn geometry', () => {
     for (let i = 0; i <= SEGMENTS; i += 1) {
       expect(a[i].x).toBe(b[i].x);
       expect(a[i].y).toBe(b[i].y);
-      expect(a[i].z).toBe(b[i].z);
     }
     // Shell reuse: refilling the same shells overwrites in place (same objects).
     const sameShells = a;
-    coilPoints({ x: 1, y: 1, z: 1 }, SEGMENTS, SEG_LEN, DEFAULT_COIL, sameShells);
+    coilPoints({ x: 1, y: 1 }, SEGMENTS, SEG_LEN, DEFAULT_COIL, sameShells);
     expect(sameShells[0]).toBe(a[0]);
     expect(sameShells[0].x).toBe(1);
   });

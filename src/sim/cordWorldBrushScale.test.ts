@@ -1,7 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import { createCordWorldStep } from './cordWorld';
 import { createFixedTimestepDriver } from './fixedTimestep';
-import type { Ray3, SimInput, SimState, Vec3 } from './types';
+import type { SimInput, SimState, Vec2 } from './types';
 
 /**
  * A11Y-1 — the reduced-motion BRUSH DAMPENING at the world boundary: the
@@ -25,7 +25,7 @@ import type { Ray3, SimInput, SimState, Vec3 } from './types';
 const DT = 1 / 120;
 const FRAME = 1 / 60; // two substeps per frame, like the production driver
 const SEGMENTS = 24;
-const PIN: Vec3 = { x: 0, y: 1.6, z: 0 };
+const PIN: Vec2 = { x: 0, y: 1.6};
 
 interface World {
   frame: (extra?: Partial<SimInput>) => SimState;
@@ -41,18 +41,15 @@ function makeWorld(): World {
   let state: SimState = { time: 0, cords: [] };
   return {
     frame: (extra) => {
-      state = driver.advance(state, FRAME, { pointerRay: null, ...(extra ?? {}) }).state;
+      state = driver.advance(state, FRAME, { pointerPoint: null, ...(extra ?? {}) }).state;
       return state;
     },
     state: () => state,
   };
 }
 
-/** A ray parallel to -Z through the drape's mid-hang (same shape as the brush suite). */
-const RAY: Ray3 = {
-  origin: { x: 0.02, y: 0.8, z: 5 },
-  direction: { x: 0, y: 0, z: -1 },
-};
+/** A cursor point through the drape's mid-hang (same aim as the brush suite). */
+const CURSOR: Vec2 = { x: 0.02, y: 0.8 };
 
 function settle(w: World, frames = 600): void {
   for (let i = 0; i < frames; i += 1) w.frame();
@@ -66,8 +63,7 @@ function maxDisplacement(a: SimState, b: SimState): number {
   for (let i = 0; i < ca.points.length; i += 1) {
     const dx = ca.points[i].x - cb.points[i].x;
     const dy = ca.points[i].y - cb.points[i].y;
-    const dz = ca.points[i].z - cb.points[i].z;
-    const d = Math.sqrt(dx * dx + dy * dy + dz * dz);
+    const d = Math.sqrt(dx * dx + dy * dy);
     if (d > max) max = d;
   }
   return max;
@@ -81,7 +77,7 @@ function bitwiseEqual(a: SimState, b: SimState): boolean {
     if (pa.length !== pb.length) return false;
     for (let i = 0; i < pa.length; i += 1) {
       if (
-        !Object.is(pa[i].x, pb[i].x) || !Object.is(pa[i].y, pb[i].y) || !Object.is(pa[i].z, pb[i].z)
+        !Object.is(pa[i].x, pb[i].x) || !Object.is(pa[i].y, pb[i].y)
       ) {
         return false;
       }
@@ -99,7 +95,7 @@ function snapshot(state: SimState): SimState {
     time: state.time,
     cords: state.cords.map((cord) => ({
       id: cord.id,
-      points: cord.points.map((p) => ({ x: p.x, y: p.y, z: p.z })),
+      points: cord.points.map((p) => ({ x: p.x, y: p.y})),
     })),
   };
 }
@@ -109,7 +105,7 @@ function brushFrame(w: World, move: number, scale?: number): SimState {
   return w.frame({
     brush: {
       move,
-      ray: { origin: { ...RAY.origin }, direction: { ...RAY.direction } },
+      point: { ...CURSOR },
       ...(scale === undefined ? {} : { strengthScale: scale }),
     },
   });

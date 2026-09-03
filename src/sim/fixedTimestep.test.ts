@@ -23,7 +23,7 @@ describe('fixedTimestep driver — deltaT clamp (ARC-3)', () => {
       maxSubsteps: MAX_SUBSTEPS,
     });
 
-    const result = driver.advance(freshState(), 5, { pointerRay: null });
+    const result = driver.advance(freshState(), 5, { pointerPoint: null });
 
     expect(result.substeps).toBe(MAX_SUBSTEPS);
     expect(result.clamped).toBe(true);
@@ -36,7 +36,7 @@ describe('fixedTimestep driver — deltaT clamp (ARC-3)', () => {
 
     // The remainder was discarded, not banked: an immediate next frame
     // (here 0s delta) must not burst through a backlog.
-    const next = driver.advance(state, 0, { pointerRay: null });
+    const next = driver.advance(state, 0, { pointerPoint: null });
     expect(next.substeps).toBe(0);
     expect(next.clamped).toBe(false);
   });
@@ -50,7 +50,7 @@ describe('fixedTimestep driver — deltaT clamp (ARC-3)', () => {
     let state = freshState();
     const frame = 1 / 60; // 60fps display, 120Hz sim
     for (let i = 0; i < 600; i += 1) {
-      const r = driver.advance(state, frame, { pointerRay: null });
+      const r = driver.advance(state, frame, { pointerPoint: null });
       state = r.state;
       expect(r.clamped).toBe(false);
       expect(r.substeps).toBe(2);
@@ -67,7 +67,7 @@ describe('fixedTimestep driver — deltaT clamp (ARC-3)', () => {
     });
 
     for (const bad of [-1, Number.NaN, Number.POSITIVE_INFINITY]) {
-      const r = driver.advance(freshState(), bad, { pointerRay: null });
+      const r = driver.advance(freshState(), bad, { pointerPoint: null });
       expect(r.substeps).toBe(0);
       expect(r.clamped).toBe(false);
       expect(r.state.time).toBe(0);

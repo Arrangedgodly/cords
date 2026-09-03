@@ -1,11 +1,15 @@
-import type { SeatInput, Vec3 } from './types';
+import type { SeatInput, Vec2 } from './types';
 
 /**
  * SIM-1 — the Verlet rope core: N segments, N+1 points, distance constraints,
  * gravity, one pinned endpoint. This is the product-feel engine (plan.md SIM
  * lane: "the cord IS the product feel") kept liftable: pure TypeScript, no
- * three.js, no DOM, no wall-clock, no RNG inside the core — the same (config,
+ * renderer, no DOM, no wall-clock, no RNG inside the core — the same (config,
  * initial pose, call sequence) always produces bitwise-identical positions.
+ *
+ * 2D PIVOT (town-hall Revision 2): the world is the plane — flat [x,y] pairs
+ * (the v1 vec3 triplets with z dropped). Every behavioral law carries over
+ * verbatim; only the dimension changed.
  *
  * Integration is position-based Verlet: implicit per-point velocity
  * (pos - prev), gravity as an acceleration term, then `iterations` rounds of
@@ -23,7 +27,7 @@ import type { SeatInput, Vec3 } from './types';
  * per step — so a violent cursor teleport drags the cord instead of ripping
  * it (the pin is Lipschitz in time; it never teleports). On top of that sits
  * the STRETCH LEASH: the carried pin's distance from the seated pin is
- * projected back onto the sphere of radius `segmentCount * segmentLength`
+ * projected back onto the CIRCLE of radius `segmentCount * segmentLength`
  * whenever the drag would exceed it, so the carried cord hard-stops at the
  * rope's total length — it stretches and dangles, never extends. Both pins
  * are re-exacted after every solver pass; the leash is checked before the
@@ -70,9 +74,9 @@ import type { SeatInput, Vec3 } from './types';
  * (`isEndSeated` false on both ends) on every branch — arithmetically
  * identical to the pre-seat solver (the SIM-1/SIM-2 suites, including bitwise
  * driver-vs-direct equivalence, pass untouched). Seating beyond the leash
- * radius is allowed (totality: INT-3 cube drags can pull linked pins past
- * total length before INT-6's auto-unplug fires); the state stays finite and
- * damped throughout.
+ * radius is allowed (totality: INT-3 rectangle drags can pull linked pins
+ * past total length before INT-6's auto-unplug fires); the state stays finite
+ * and damped throughout.
  *
  * INT-4 — UN-SEAT. A seat is a seat, whoever made it: `unseat(index)` releases
  * a seated end so it can be carried (re-grabbed) or re-seated elsewhere. Three
@@ -84,8 +88,8 @@ import type { SeatInput, Vec3 } from './types';
  * seatable like any other (the `carryEnd` / `seat` anchor guards only protect
  * an anchor that still pins). Because the seats are PER-END, both ends can be
  * seated simultaneously — THE LINKED STATE for a spawned cord, including both
- * ends on the same cube (self-link) — and seating one end can never silently
- * free the other: there is no shared slot left to overwrite.
+ * ends on the same rectangle (self-link) — and seating one end can never
+ * silently free the other: there is no shared slot left to overwrite.
  * The released point re-enters integration AT REST (zero velocity — a pulled
  * plug keeps its position; the cord keeps hanging from its other seated end,
  * or falls gently under damping when nothing else pins). While the anchor is
@@ -104,7 +108,7 @@ export interface RopeConfig {
   segmentCount: number;
   /** Rest length of one segment, in world units. */
   segmentLength: number;
-  /** Gravitational acceleration magnitude, applied along -Y (three.js up). */
+  /** Gravitational acceleration magnitude, applied along -Y (screen-down). */
   gravity: number;
   /** Distance-constraint projection passes per step (Gauss-Seidel). */
   iterations: number;
@@ -116,7 +120,7 @@ export interface RopeConfig {
   /** Which end is seated (hard-pinned): 0 (the first point, default) or segmentCount. */
   pinIndex: number;
   /** World position of the seated pin. */
-  pin: Vec3;
+  pin: Vec2;
   /**
    * Carry speed cap in world units per second: the most ground a carried pin
    * can cover in one step is `maxPinSpeed * dt`. Bounds the kinematic pin's
@@ -131,7 +135,7 @@ export interface RopeConfig {
   seatDamping: number;
   /**
    * SIM-3 — max per-segment rest-length change per second while the seated
-   * rope's rest state adapts from its seat-time ("stretched to reach")
+   * rope's rest state adapts from its seat-time("stretched to reach")
    * geometry back to natural. Bounds the redistribution: no step ever
    * demands a discontinuous segment length, so no popping wave runs down the
    * cord. World units per second, applied to every segment in lockstep.
@@ -147,19 +151,19 @@ export interface RopeConfig {
    */
   settleEnergy: number;
   /**
-   * REN-1 — ground collision plane: free points are projected to stay at or
+   * REN-1 — ground collision line: free points are projected to stay at or
    * above this world Y every solver pass (a bench floor at y=0). Contact is
    * frictionless with ZERO restitution: clamping also raises the stored
    * previous position to the floor, so the implicit normal velocity reads
-   * exactly zero and the cord rests on the plane instead of bouncing.
+   * exactly zero and the cord rests on the line instead of bouncing.
    *
    * `null` (the default) means NO floor — execution is bit-identical to the
    * pre-floor solver, which is why every earlier sim suite passes untouched.
    * Pins (seated, original, carried) are exempt: they are re-exacted after
    * every pass and win over the clamp — the interaction layer is responsible
    * for keeping its own pin targets above the floor. A resting rope shows no
-   * jitter: the per-step gravity dip below the plane is clamped away inside
-   * the same step, so stored positions sit exactly on the plane, and a SEATED
+   * jitter: the per-step gravity dip below the line is clamped away inside
+   * the same step, so stored positions sit exactly on the line, and a SEATED
    * rope still falls asleep on the floor (bitwise stillness, as everywhere).
    */
   floorY: number | null;
@@ -172,26 +176,29 @@ export const DEFAULT_ROPE_CONFIG: Readonly<RopeConfig> = {
   iterations: 4,
   damping: 0.985,
   pinIndex: 0,
-  pin: { x: 0, y: 0, z: 0 },
+  pin: { x: 0, y: 0 },
   // At the 120 Hz slice this caps the carried pin at 0.1 units/step — one
   // rest length — fast enough to track a hand, slow enough that the constraint
   // solve absorbs the motion without transiently exceeding 2x rest length.
   maxPinSpeed: 12,
   // SIM-3 tuning (measured, see seat.test.ts): swept against four plug
-  // scenarios (two violent mid-swing plugs, a near-taut plug, a mild plug) —
-  // 0.94 lands every one inside the approved window, measured range
-  // 1.08–1.83 s, mid-window on both edges.
-  seatDamping: 0.94,
+  // scenarios (two violent mid-swing plugs, a near-taut plug, a mild plug)
+  // AND the INT-3 re-settle bound (a dragged seated cord re-sleeps inside
+  // the window). 2D re-sweep (the planar cord carries no z-oscillation, so
+  // the v1 0.94 settled scenarios BELOW the window at 0.71–1.29 s): 0.968
+  // lands every scenario inside the approved window with margin on both
+  // edges.
+  seatDamping: 0.968,
   // 0.6 u/s = 6% of a rest length per 120 Hz step: even a violent 40%
   // transient stretch relaxes inside ~0.1 s, smoothly and in lockstep.
   seatRelaxRate: 0.6,
   // Settle threshold (kinetic energy of the free points) tuned with
-  // seatDamping 0.94: every measured plug scenario crosses in 1.08–1.83 s.
+  // seatDamping 0.968: every measured plug scenario crosses inside the window.
   // Free-point speed at this level is ~0.03 u/s (< 3 cm/s at product scale,
   // invisible), and the measured never-sleep micro-oscillation floor is
   // ~1e-16 — twelve orders of margin, so sleep engages reliably.
   settleEnergy: 5e-3,
-  // No ground plane unless the world asks for one (the M1 bench sets 0).
+  // No ground line unless the world asks for one (the M1 bench sets 0).
   floorY: null,
 };
 
@@ -233,7 +240,7 @@ export function resolveRopeConfig(overrides: Partial<RopeConfig> = {}): RopeConf
   if (c.pinIndex !== 0 && c.pinIndex !== c.segmentCount) {
     throw new Error(`rope: pinIndex must be 0 or ${c.segmentCount}, got ${c.pinIndex}`);
   }
-  if (!Number.isFinite(c.pin.x) || !Number.isFinite(c.pin.y) || !Number.isFinite(c.pin.z)) {
+  if (!Number.isFinite(c.pin.x) || !Number.isFinite(c.pin.y)) {
     throw new Error(`rope: pin must be finite, got ${JSON.stringify(c.pin)}`);
   }
   if (!Number.isFinite(c.maxPinSpeed) || c.maxPinSpeed <= 0) {
@@ -271,7 +278,7 @@ export interface Rope {
    * SIM-3/INT-4 — true while END `index` (0 or segmentCount) holds a plug
    * seat installed by `seat()`. The seats are PER-END: both ends can read
    * true at once — that IS the linked state (both jacks seated), including
-   * both on the same cube. A still-pinned original anchor is NOT a plug
+   * both on the same rectangle. A still-pinned original anchor is NOT a plug
    * seat: it reads through `pinnedIndex`/`anchorReleased` instead. A
    * non-endpoint index returns false (the query is total — it guards
    * upstream intent routing, it does not throw).
@@ -318,16 +325,16 @@ export interface Rope {
    * with zero velocity, moves the seated pin to `from`, and disengages any
    * carry. The spawn primitive.
    */
-  placeAlong(from: Vec3, to: Vec3): void;
+  placeAlong(from: Vec2, to: Vec2): void;
 
   /** Teleports point `index` (velocity unchanged). Bounds-checked. */
-  setPoint(index: number, x: number, y: number, z: number): void;
+  setPoint(index: number, x: number, y: number): void;
 
   /** Sets the implicit velocity of point `index` for steps of size `dt`. */
-  setVelocity(index: number, x: number, y: number, z: number, dt: number): void;
+  setVelocity(index: number, x: number, y: number, dt: number): void;
 
   /**
-   * T-INT-5 — ADDS velocity `(x, y, z)` (world units per second) to point
+   * T-INT-5 — ADDS velocity `(x, y)` (world units per second) to point
    * `index` on top of its current implicit velocity: the passive cursor-brush
    * impulse. External forces act through their own mutation, and a brush
    * must not erase the motion it lands on — a swaying cord keeps its sway
@@ -338,10 +345,10 @@ export interface Rope {
    * protected here — the caller skips them (the brush pass does; the pins
    * would re-exact over any velocity next step anyway). Zero allocation.
    */
-  addImpulse(index: number, x: number, y: number, z: number, dt: number): void;
+  addImpulse(index: number, x: number, y: number, dt: number): void;
 
   /** Teleports the seated pin (pinned point snaps there on the next step). */
-  setPin(x: number, y: number, z: number): void;
+  setPin(x: number, y: number): void;
 
   /**
    * SIM-2 — engages the carry: endpoint `index` (the end that is NOT the
@@ -374,9 +381,9 @@ export interface Rope {
 
   /**
    * SIM-3 — moves the plugged pin of END `index` (the jack rides its socket,
-   * e.g. when the socket's cube is dragged). Per-end: with both ends seated
-   * (linked), each seat transports independently — a dragged cube moves
-   * exactly the plugs seated on it, bitwise. Non-finite input is IGNORED
+   * e.g. when the socket's rectangle is dragged). Per-end: with both ends
+   * seated (linked), each seat transports independently — a dragged rectangle
+   * moves exactly the plugs seated on it, bitwise. Non-finite input is IGNORED
    * (the last valid position stands — same discipline as setPinTarget). A
    * bitwise-identical position is a NO-OP that does not wake the rope
    * (INT-3: the per-frame re-sent seat transform must never restart the
@@ -384,7 +391,7 @@ export interface Rope {
    * starting at the last genuine change). A genuine move wakes a sleeping
    * rope. Throws when the named end holds no plug seat.
    */
-  setSeatPosition(index: number, x: number, y: number, z: number): void;
+  setSeatPosition(index: number, x: number, y: number): void;
 
   /**
    * SIM-3 — rouses a sleeping (settled) rope: integration resumes from zero
@@ -413,7 +420,7 @@ export interface Rope {
    * target stands): garbage from upstream math can never poison the state.
    * Throws unless `index` is the currently carried end.
    */
-  setPinTarget(index: number, target: Vec3): void;
+  setPinTarget(index: number, target: Vec2): void;
 
   /**
    * T-LIFE-2 — disengages the carried pin: the end stops being kinematic and
@@ -428,17 +435,17 @@ export interface Rope {
   releaseCarry(index: number): void;
 
   /** Copies point `index` into `out` (caller-owned — no allocation). */
-  readPoint(index: number, out: Vec3): Vec3;
+  readPoint(index: number, out: Vec2): Vec2;
 
   /** Copies the seated pin position into `out`. */
-  readPin(out: Vec3): Vec3;
+  readPin(out: Vec2): Vec2;
 
   /**
-   * Copies every point into `points`, creating shell Vec3s only for slots
+   * Copies every point into `points`, creating shell Vec2s only for slots
    * that are still undefined. Called once per step by consumers, it mutates
    * the existing shells thereafter — zero steady-state allocation.
    */
-  writePointsTo(points: Vec3[]): void;
+  writePointsTo(points: Vec2[]): void;
 
   /** max over segments of |length - restLength| / restLength. 0 = perfect. */
   maxConstraintViolation(): number;
@@ -474,14 +481,13 @@ export function createVerletRope(overrides: Partial<RopeConfig> = {}): Rope {
   const pointCount = segmentCount + 1;
   const pinnedIndex = config.pinIndex;
 
-  // Flat [x0,y0,z0,x1,y1,z1,...] storage — the solve loops are typed-array
+  // Flat [x0,y0,x1,y1,...] storage — the solve loops are typed-array
   // arithmetic only. Float64 so in-engine determinism is plain JS number math.
-  const pos = new Float64Array(pointCount * 3);
-  const prev = new Float64Array(pointCount * 3);
+  const pos = new Float64Array(pointCount * 2);
+  const prev = new Float64Array(pointCount * 2);
 
   let pinX = config.pin.x;
   let pinY = config.pin.y;
-  let pinZ = config.pin.z;
   // INT-4 — the anchor seat: false while the original pin hard-pins (every
   // pre-INT-4 world), true once unseat(pinnedIndex) releases it.
   let anchorReleased = false;
@@ -491,10 +497,8 @@ export function createVerletRope(overrides: Partial<RopeConfig> = {}): Rope {
   let carriedIndex: number | null = null;
   let cx = 0;
   let cy = 0;
-  let cz = 0;
   let tx = 0;
   let ty = 0;
-  let tz = 0;
   let hasTarget = false;
 
   // SIM-3/INT-4 seat state: each END owns its own plug seat (a hard pin at
@@ -507,10 +511,8 @@ export function createVerletRope(overrides: Partial<RopeConfig> = {}): Rope {
   let pluggedN = false; // end segmentCount holds a plug seat
   let seat0X = 0;
   let seat0Y = 0;
-  let seat0Z = 0;
   let seatNX = 0;
   let seatNY = 0;
-  let seatNZ = 0;
   let seatAdapting = false;
   let asleep = false;
   const rest = new Float64Array(segmentCount);
@@ -521,11 +523,11 @@ export function createVerletRope(overrides: Partial<RopeConfig> = {}): Rope {
   const maxLen2 = maxLen * maxLen;
 
   // REN-1 ground contact: project every FREE point back onto/above the floor
-  // plane. Frictionless, zero restitution — raising the stored previous Y too
+  // line. Frictionless, zero restitution — raising the stored previous Y too
   // means the implicit normal velocity reads exactly zero at contact, so a
-  // dropped cord settles onto the plane and stays (no bounce, no sink). The
-  // per-step gravity dip below the plane is clamped away inside the same
-  // step, so STORED positions rest exactly on the plane: nothing penetrates,
+  // dropped cord settles onto the line and stays (no bounce, no sink). The
+  // per-step gravity dip below the line is clamped away inside the same
+  // step, so STORED positions rest exactly on the line: nothing penetrates,
   // nothing jitters. Pins are exempt (they are re-exacted after this and win);
   // a null floorY skips the pass entirely — bit-identical to the pre-floor
   // solver that every earlier suite verified.
@@ -535,7 +537,7 @@ export function createVerletRope(overrides: Partial<RopeConfig> = {}): Rope {
       // Exactly the active hard pins are exempt; a RELEASED anchor is an
       // ordinary free point and clamps like one (INT-4).
       if (isPinned(i)) continue;
-      const k = i * 3 + 1;
+      const k = i * 2 + 1;
       if (pos[k] < floorY) {
         pos[k] = floorY;
         if (prev[k] < floorY) prev[k] = floorY;
@@ -548,40 +550,32 @@ export function createVerletRope(overrides: Partial<RopeConfig> = {}): Rope {
 
   const enforcePins = (): void => {
     if (!anchorReleased) {
-      const k = pinnedIndex * 3;
+      const k = pinnedIndex * 2;
       pos[k] = pinX;
       pos[k + 1] = pinY;
-      pos[k + 2] = pinZ;
       prev[k] = pinX;
       prev[k + 1] = pinY;
-      prev[k + 2] = pinZ;
     }
     if (carriedIndex !== null) {
-      const c = carriedIndex * 3;
+      const c = carriedIndex * 2;
       pos[c] = cx;
       pos[c + 1] = cy;
-      pos[c + 2] = cz;
       prev[c] = cx;
       prev[c + 1] = cy;
-      prev[c + 2] = cz;
     }
     if (plugged0) {
       const p = 0;
       pos[p] = seat0X;
       pos[p + 1] = seat0Y;
-      pos[p + 2] = seat0Z;
       prev[p] = seat0X;
       prev[p + 1] = seat0Y;
-      prev[p + 2] = seat0Z;
     }
     if (pluggedN) {
-      const p = segmentCount * 3;
+      const p = segmentCount * 2;
       pos[p] = seatNX;
       pos[p + 1] = seatNY;
-      pos[p + 2] = seatNZ;
       prev[p] = seatNX;
       prev[p + 1] = seatNY;
-      prev[p + 2] = seatNZ;
     }
   };
   enforcePins();
@@ -593,11 +587,10 @@ export function createVerletRope(overrides: Partial<RopeConfig> = {}): Rope {
     let sum = 0;
     for (let i = 0; i < pointCount; i += 1) {
       if (isPinned(i)) continue;
-      const k = i * 3;
+      const k = i * 2;
       const vx = (pos[k] - prev[k]) / dt;
       const vy = (pos[k + 1] - prev[k + 1]) / dt;
-      const vz = (pos[k + 2] - prev[k + 2]) / dt;
-      sum += vx * vx + vy * vy + vz * vz;
+      sum += vx * vx + vy * vy;
     }
     return 0.5 * sum;
   };
@@ -609,7 +602,7 @@ export function createVerletRope(overrides: Partial<RopeConfig> = {}): Rope {
     // SIM-2 carry: converge the kinematic pin toward its target with bounded
     // velocity — at most maxPinSpeed * dt of travel per step, so a violent
     // cursor jump is a drag, never a rip. Then the stretch leash: project the
-    // carried pin back onto the max-length sphere around the OTHER end's
+    // carried pin back onto the max-length CIRCLE around the OTHER end's
     // hard pin — the original anchor while it sits, else that end's plug
     // seat (INT-4: carrying one end of a cord whose OTHER end is plugged
     // leashes against the socket; per-end seats make "the other end's seat"
@@ -620,20 +613,17 @@ export function createVerletRope(overrides: Partial<RopeConfig> = {}): Rope {
     if (carriedIndex !== null && hasTarget) {
       const dx = tx - cx;
       const dy = ty - cy;
-      const dz = tz - cz;
-      const d2 = dx * dx + dy * dy + dz * dz;
+      const d2 = dx * dx + dy * dy;
       if (d2 > 0) {
         const cap = maxPinSpeed * dt;
         const d = Math.sqrt(d2);
         if (d <= cap) {
           cx = tx;
           cy = ty;
-          cz = tz;
         } else {
           const s = cap / d;
           cx += dx * s;
           cy += dy * s;
-          cz += dz * s;
         }
       }
       // The leash center: the OTHER end's hard pin, if one exists. The
@@ -643,28 +633,23 @@ export function createVerletRope(overrides: Partial<RopeConfig> = {}): Rope {
       let hasCenter = false;
       let lx0 = 0;
       let ly0 = 0;
-      let lz0 = 0;
       if (other === pinnedIndex && !anchorReleased) {
         lx0 = pinX;
         ly0 = pinY;
-        lz0 = pinZ;
         hasCenter = true;
       } else if (other === 0 ? plugged0 : pluggedN) {
         lx0 = other === 0 ? seat0X : seatNX;
         ly0 = other === 0 ? seat0Y : seatNY;
-        lz0 = other === 0 ? seat0Z : seatNZ;
         hasCenter = true;
       }
       if (hasCenter) {
         const lx = cx - lx0;
         const ly = cy - ly0;
-        const lz = cz - lz0;
-        const l2 = lx * lx + ly * ly + lz * lz;
+        const l2 = lx * lx + ly * ly;
         if (l2 > maxLen2) {
           const s = maxLen / Math.sqrt(l2);
           cx = lx0 + lx * s;
           cy = ly0 + ly * s;
-          cz = lz0 + lz * s;
         }
       }
     }
@@ -701,16 +686,13 @@ export function createVerletRope(overrides: Partial<RopeConfig> = {}): Rope {
     const activeDamping = seated ? seatDamping : damping;
     for (let i = 0; i < pointCount; i += 1) {
       if (isPinned(i)) continue;
-      const k = i * 3;
+      const k = i * 2;
       const vx = (pos[k] - prev[k]) * activeDamping;
       const vy = (pos[k + 1] - prev[k + 1]) * activeDamping;
-      const vz = (pos[k + 2] - prev[k + 2]) * activeDamping;
       prev[k] = pos[k];
       prev[k + 1] = pos[k + 1];
-      prev[k + 2] = pos[k + 2];
       pos[k] += vx;
       pos[k + 1] += vy + gy;
-      pos[k + 2] += vz;
     }
     enforcePins();
 
@@ -719,12 +701,11 @@ export function createVerletRope(overrides: Partial<RopeConfig> = {}): Rope {
       for (let s = 0; s < segmentCount; s += 1) {
         const a = s;
         const b = s + 1;
-        const ak = a * 3;
-        const bk = b * 3;
+        const ak = a * 2;
+        const bk = b * 2;
         const dx = pos[bk] - pos[ak];
         const dy = pos[bk + 1] - pos[ak + 1];
-        const dz = pos[bk + 2] - pos[ak + 2];
-        const len2 = dx * dx + dy * dy + dz * dz;
+        const len2 = dx * dx + dy * dy;
 
         if (len2 < DEGENERATE_LEN2) {
           // Coincident endpoints: 0/0 has no direction. Separate along a
@@ -732,7 +713,7 @@ export function createVerletRope(overrides: Partial<RopeConfig> = {}): Rope {
           // (a, b), so every run picks the same nudge. Skipping instead would
           // fuse a collapsed rope permanently.
           const push = 0.05 * segmentLength;
-          const axis = (a + b) % 3;
+          const axis = (a + b) % 2;
           const sign = ((a ^ b) & 1) === 0 ? 1 : -1;
           const d = push * sign;
           if (!isPinned(a)) pos[ak + axis] -= d;
@@ -753,19 +734,15 @@ export function createVerletRope(overrides: Partial<RopeConfig> = {}): Rope {
           // The free point takes the full correction against a hard pin.
           pos[bk] -= dx * diff;
           pos[bk + 1] -= dy * diff;
-          pos[bk + 2] -= dz * diff;
         } else if (bPinned) {
           pos[ak] += dx * diff;
           pos[ak + 1] += dy * diff;
-          pos[ak + 2] += dz * diff;
         } else {
           const w = 0.5 * diff;
           pos[ak] += dx * w;
           pos[ak + 1] += dy * w;
-          pos[ak + 2] += dz * w;
           pos[bk] -= dx * w;
           pos[bk + 1] -= dy * w;
-          pos[bk + 2] -= dz * w;
         }
       }
       projectFloor();
@@ -781,10 +758,9 @@ export function createVerletRope(overrides: Partial<RopeConfig> = {}): Rope {
       asleep = true;
       for (let i = 0; i < pointCount; i += 1) {
         if (isPinned(i)) continue;
-        const k = i * 3;
+        const k = i * 2;
         prev[k] = pos[k];
         prev[k + 1] = pos[k + 1];
-        prev[k + 2] = pos[k + 2];
       }
     }
   };
@@ -831,65 +807,58 @@ export function createVerletRope(overrides: Partial<RopeConfig> = {}): Rope {
       rest.fill(segmentLength);
       pinX = from.x;
       pinY = from.y;
-      pinZ = from.z;
       for (let i = 0; i < pointCount; i += 1) {
         const t = i / segmentCount;
-        const k = i * 3;
+        const k = i * 2;
         pos[k] = from.x + (to.x - from.x) * t;
         pos[k + 1] = from.y + (to.y - from.y) * t;
-        pos[k + 2] = from.z + (to.z - from.z) * t;
         prev[k] = pos[k];
         prev[k + 1] = pos[k + 1];
-        prev[k + 2] = pos[k + 2];
       }
       enforcePins();
     },
 
-    setPoint(index, x, y, z) {
+    setPoint(index, x, y) {
       checkIndex(index, 'setPoint');
-      const k = index * 3;
+      const k = index * 2;
       pos[k] = x;
       pos[k + 1] = y;
-      pos[k + 2] = z;
       asleep = false; // an externally moved point cannot be bitwise still
     },
 
-    setVelocity(index, x, y, z, dt) {
+    setVelocity(index, x, y, dt) {
       checkIndex(index, 'setVelocity');
       if (!(dt > 0) || !Number.isFinite(dt)) {
         throw new Error(`rope: setVelocity needs a positive finite dt, got ${dt}`);
       }
-      const k = index * 3;
+      const k = index * 2;
       prev[k] = pos[k] - x * dt;
       prev[k + 1] = pos[k + 1] - y * dt;
-      prev[k + 2] = pos[k + 2] - z * dt;
       asleep = false; // an impulse (e.g. INT-5 brush) must move the cord
     },
 
-    addImpulse(index, x, y, z, dt) {
+    addImpulse(index, x, y, dt) {
       checkIndex(index, 'addImpulse');
       if (!(dt > 0) || !Number.isFinite(dt)) {
         throw new Error(`rope: addImpulse needs a positive finite dt, got ${dt}`);
       }
-      if (!Number.isFinite(x) || !Number.isFinite(y) || !Number.isFinite(z)) {
+      if (!Number.isFinite(x) || !Number.isFinite(y)) {
         // Garbage must never reach `prev` — one NaN would poison the rope.
         throw new Error(
-          `rope: addImpulse velocity must be finite, got (${x}, ${y}, ${z})`,
+          `rope: addImpulse velocity must be finite, got (${x}, ${y})`,
         );
       }
-      if (x === 0 && y === 0 && z === 0) return; // nothing to add, nothing to wake
-      const k = index * 3;
+      if (x === 0 && y === 0) return; // nothing to add, nothing to wake
+      const k = index * 2;
       prev[k] -= x * dt;
       prev[k + 1] -= y * dt;
-      prev[k + 2] -= z * dt;
       asleep = false; // a real impulse must move even a settled cord
     },
 
-    setPin(x, y, z) {
+    setPin(x, y) {
       pinX = x;
       pinY = y;
-      pinZ = z;
-      asleep = false; // the anchor moved (e.g. its cube): re-settle
+      asleep = false; // the anchor moved (e.g. its rectangle): re-settle
     },
 
     carryEnd(index) {
@@ -907,14 +876,12 @@ export function createVerletRope(overrides: Partial<RopeConfig> = {}): Rope {
           `rope: carryEnd cannot carry the plugged end (index ${index}) — a jack in a socket is not a hand-held end`,
         );
       }
-      const k = index * 3;
+      const k = index * 2;
       carriedIndex = index;
       cx = pos[k];
       cy = pos[k + 1];
-      cz = pos[k + 2];
       tx = cx;
       ty = cy;
-      tz = cz;
       hasTarget = false; // grabbed where it hangs; holds until a target arrives
       enforcePins();
     },
@@ -929,7 +896,7 @@ export function createVerletRope(overrides: Partial<RopeConfig> = {}): Rope {
       }
       // Violent/garbage targets (NaN/Inf from upstream math) are ignored —
       // the last valid target stands and the state can never be poisoned.
-      if (!Number.isFinite(target.x) || !Number.isFinite(target.y) || !Number.isFinite(target.z)) {
+      if (!Number.isFinite(target.x) || !Number.isFinite(target.y)) {
         return;
       }
       // A GENUINE target wakes a sleeping rope (this interface's own
@@ -939,12 +906,11 @@ export function createVerletRope(overrides: Partial<RopeConfig> = {}): Rope {
       // (T-REN-5's e2e caught it: grab a deeply settled cord and drag —
       // nothing). Bitwise-identical targets do NOT wake (a holding hand
       // sends the same target every frame; the INT-3 latch discipline).
-      if (tx !== target.x || ty !== target.y || tz !== target.z) {
+      if (tx !== target.x || ty !== target.y) {
         asleep = false;
       }
       tx = target.x;
       ty = target.y;
-      tz = target.z;
       hasTarget = true;
     },
 
@@ -962,10 +928,9 @@ export function createVerletRope(overrides: Partial<RopeConfig> = {}): Rope {
       // the floor clamp catches it, the same machinery as every dropped cord.
       carriedIndex = null;
       hasTarget = false;
-      const k = index * 3;
+      const k = index * 2;
       prev[k] = pos[k];
       prev[k + 1] = pos[k + 1];
-      prev[k + 2] = pos[k + 2];
       asleep = false; // a released end must fall, even from a settled rope
     },
 
@@ -985,8 +950,7 @@ export function createVerletRope(overrides: Partial<RopeConfig> = {}): Rope {
       }
       if (
         !Number.isFinite(position.x) ||
-        !Number.isFinite(position.y) ||
-        !Number.isFinite(position.z)
+        !Number.isFinite(position.y)
       ) {
         throw new Error(`rope: seat position must be finite, got ${JSON.stringify(position)}`);
       }
@@ -1003,24 +967,21 @@ export function createVerletRope(overrides: Partial<RopeConfig> = {}): Rope {
         plugged0 = true;
         seat0X = position.x;
         seat0Y = position.y;
-        seat0Z = position.z;
       } else {
         pluggedN = true;
         seatNX = position.x;
         seatNY = position.y;
-        seatNZ = position.z;
       }
       // Adopt the current geometry as the rest-length state — the "stretched
       // to reach" moment. Constraint demand at the plug instant is therefore
       // ~zero: the cord keeps its shape, then relaxes to natural rest at the
       // bounded rate (never a snapping wave down the segments).
       for (let s = 0; s < segmentCount; s += 1) {
-        const a = s * 3;
-        const b = a + 3;
+        const a = s * 2;
+        const b = a + 2;
         const dx = pos[b] - pos[a];
         const dy = pos[b + 1] - pos[a + 1];
-        const dz = pos[b + 2] - pos[a + 2];
-        rest[s] = Math.sqrt(dx * dx + dy * dy + dz * dz);
+        rest[s] = Math.sqrt(dx * dx + dy * dy);
         if (rest[s] !== segmentLength) seatAdapting = true;
       }
       asleep = false; // a fresh plug always begins a new settle
@@ -1051,14 +1012,13 @@ export function createVerletRope(overrides: Partial<RopeConfig> = {}): Rope {
       // gentle (the cord keeps hanging from its other seated end, or falls
       // under damping when nothing else pins). A released end cannot stay
       // bitwise still.
-      const k = index * 3;
+      const k = index * 2;
       prev[k] = pos[k];
       prev[k + 1] = pos[k + 1];
-      prev[k + 2] = pos[k + 2];
       asleep = false;
     },
 
-    setSeatPosition(index, x, y, z) {
+    setSeatPosition(index, x, y) {
       if (index === 0 ? !plugged0 : !(index === segmentCount && pluggedN)) {
         throw new Error(
           `rope: setSeatPosition on end ${index} with no plug seated there — call seat first`,
@@ -1066,28 +1026,26 @@ export function createVerletRope(overrides: Partial<RopeConfig> = {}): Rope {
       }
       // Per-frame mutator, same tolerance as setPinTarget: garbage from
       // upstream math is ignored, the last valid position stands.
-      if (!Number.isFinite(x) || !Number.isFinite(y) || !Number.isFinite(z)) return;
+      if (!Number.isFinite(x) || !Number.isFinite(y)) return;
       // INT-3 (closes the SIM-3 verifier's "setSeatPosition re-settle not
       // window-bounded" carry-over): a bitwise-identical position is a NO-OP
       // — it must not wake a settled rope. The composition re-sends the seat
-      // transform every frame (the latched seatTarget), so after a cube drag
-      // ends the same transform keeps arriving; without this guard every
+      // transform every frame (the latched seatTarget), so after a rectangle
+      // drag ends the same transform keeps arriving; without this guard every
       // re-send would restart the settle forever and a plugged cord could
       // never reach bitwise stillness (the "endless re-settle"). With it, the
       // settle window bounds the post-drag calm-down: it starts at the LAST
       // genuine position change and runs the standard SIM-3 damped decay.
       if (index === 0) {
-        if (x === seat0X && y === seat0Y && z === seat0Z) return;
+        if (x === seat0X && y === seat0Y) return;
         seat0X = x;
         seat0Y = y;
-        seat0Z = z;
       } else {
-        if (x === seatNX && y === seatNY && z === seatNZ) return;
+        if (x === seatNX && y === seatNY) return;
         seatNX = x;
         seatNY = y;
-        seatNZ = z;
       }
-      asleep = false; // the socket moved (its cube was dragged): re-settle
+      asleep = false; // the socket moved (its rectangle was dragged): re-settle
     },
 
     wake() {
@@ -1107,17 +1065,15 @@ export function createVerletRope(overrides: Partial<RopeConfig> = {}): Rope {
 
     readPoint(index, out) {
       checkIndex(index, 'readPoint');
-      const k = index * 3;
+      const k = index * 2;
       out.x = pos[k];
       out.y = pos[k + 1];
-      out.z = pos[k + 2];
       return out;
     },
 
     readPin(out) {
       out.x = pinX;
       out.y = pinY;
-      out.z = pinZ;
       return out;
     },
 
@@ -1125,23 +1081,21 @@ export function createVerletRope(overrides: Partial<RopeConfig> = {}): Rope {
       for (let i = 0; i < pointCount; i += 1) {
         // Shells are created once, on the first sync; every later call
         // mutates them in place — the steady state allocates nothing.
-        const p = points[i] ?? (points[i] = { x: 0, y: 0, z: 0 });
-        const k = i * 3;
+        const p = points[i] ?? (points[i] = { x: 0, y: 0 });
+        const k = i * 2;
         p.x = pos[k];
         p.y = pos[k + 1];
-        p.z = pos[k + 2];
       }
     },
 
     maxConstraintViolation() {
       let worst = 0;
       for (let s = 0; s < segmentCount; s += 1) {
-        const ak = s * 3;
-        const bk = ak + 3;
+        const ak = s * 2;
+        const bk = ak + 2;
         const dx = pos[bk] - pos[ak];
         const dy = pos[bk + 1] - pos[ak + 1];
-        const dz = pos[bk + 2] - pos[ak + 2];
-        const len = Math.sqrt(dx * dx + dy * dy + dz * dz);
+        const len = Math.sqrt(dx * dx + dy * dy);
         // Measured against the CURRENT rest state — during seat adaptation
         // the target itself is relaxing, so the demand (not the geometry)
         // is what stays fair. Rest equals the natural length outside a seat.

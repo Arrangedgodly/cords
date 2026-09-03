@@ -1,14 +1,14 @@
-import type { Vec3 } from './types';
+import type { Vec2 } from './types';
 
 /**
  * T-LIFE-2 — the VANISH SEQUENCE CHOREOGRAPHY, phase half (Hulk, LIFE lane).
  * The approved behavior, in the user's own words (the toy's signature
- * moment): when a cord fails — a carried end released off-cube, or the popped
- * grace expiring — the end FALLS to the ground, the jack SHATTERS, the cord
- * PULLS OUT of the seated cube, and the whole cord VANISHES.
+ * moment): when a cord fails — a carried end released off-rectangle, or the
+ * popped grace expiring — the end FALLS to the ground, the jack SHATTERS,
+ * the cord PULLS OUT of the seated rectangle, and the whole cord VANISHES.
  *
  * This module is the PURE PHASE MACHINE: plain data in, plain decisions out,
- * no three.js, no DOM, no wall-clock, no RNG (check:sim scans it). The WORLD
+ * no renderer, no DOM, no wall-clock, no RNG (check:sim scans it). The WORLD
  * STEP (cordWorld.ts) owns the application — it observes the failing end,
  * feeds the observation here, and executes the returned actions against the
  * rope/lifecycle through the same primitives everything else uses:
@@ -24,7 +24,7 @@ import type { Vec3 } from './types';
  *   SHATTER  instant on contact (one action, exactly once per sequence —
  *          `shattered` latches): the impact point is captured and the
  *          shatter/pull window opens. The RENDER reacts (dark fragment
- *          particles at the impact point; the end jack's mesh despawns with
+ *          particles at the impact point; the end jack's view despawns with
  *          them) — this module only decides WHEN and WHERE.
  *   PULL-OUT the same step the shatter fires: the cord's OTHER end unseats
  *          (the world pairs the machine's vanishing-locked unseat with
@@ -49,6 +49,10 @@ import type { Vec3 } from './types';
  * it already dangles ON the floor (it had the whole ~3 s grace to fall), so
  * its first observation reads contact and the shatter is immediate.
  *
+ * 2D PIVOT (town-hall Revision 2): the impact point and the failing-end
+ * observation are Vec2 — the plane's own coordinates. The phases, clocks,
+ * and constants are untouched.
+ *
  * DETERMINISM: the phase machine is a pure function of (run, args) and the
  * run mutates only plain scalars — identical inputs produce identical
  * actions, and the world's application of them is deterministic (insertion
@@ -56,7 +60,7 @@ import type { Vec3 } from './types';
  * branch (the phases are physics observations), but the timings are options
  * and the FRAGMENT effect is the render's — the composition passes a
  * `reduced` flag to the render's shatter (skip/simplify particles) and may
- * shorten pullSeconds; both seams are documented in main.ts.
+ * shorten pullSeconds; both seams are documented in the composition root.
  */
 
 /** The pull-out + fade window, in seconds of sim time. Default 0.35. */
@@ -76,19 +80,19 @@ export const DEFAULT_VANISH_PULL_SPEED = 8;
  *
  * T-REN-5 (the LIFE-2 verifier's carry-forward, resolved): the old 1.2s
  * budget fired MID-AIR (y≈1.4–1.5) on the extreme y≈3 release class (a
- * lifted cube's socket + the leash limit). Widened to 1.55s — the MAXIMUM
- * that keeps the < 2s sequence bound (1.55 + 0.35 = 1.90). Verifier-measured
- * effect at this budget (headless, production 2.4 cord): the landing class
- * rises to ≲y1.6, and the y≈3 guard shatter lands lower (mid-air y≈1.0).
- * A TRUE y≈3 landing cannot fit the bound: the sim's actual descent drag is
- * ≈2.2× ideal gravity (the earlier "1.55×" figure was a time ratio, not a
- * distance ratio), so such a fall needs ≈1.95s + the 0.35s pull — the guard
- * is the sanctioned behavior for that extreme, per the LIFE-2 verifier's
- * original ruling.
+ * lifted rectangle's socket + the leash limit). Widened to 1.55s — the
+ * MAXIMUM that keeps the < 2s sequence bound (1.55 + 0.35 = 1.90).
+ * Verifier-measured effect at this budget (headless, production 2.4 cord):
+ * the landing class rises to ≲y1.6, and the y≈3 guard shatter lands lower
+ * (mid-air y≈1.0). A TRUE y≈3 landing cannot fit the bound: the sim's
+ * actual descent drag is ≈2.2× ideal gravity (the earlier "1.55×" figure
+ * was a time ratio, not a distance ratio), so such a fall needs ≈1.95s +
+ * the 0.35s pull — the guard is the sanctioned behavior for that extreme,
+ * per the LIFE-2 verifier's original ruling.
  */
 export const DEFAULT_VANISH_FALL_TIMEOUT_SECONDS = 1.55;
 /**
- * "Floor contact" tolerance above the floor plane, in world units: the plug
+ * "Floor contact" tolerance above the floor line, in world units: the plug
  * rests on its GRIP RADIUS (~0.055), so the end's point is "on the ground"
  * when it is within a grip of the bench. Grace-expiry rests read contact on
  * the first observation; a falling jack shatters the frame it visually
@@ -110,7 +114,7 @@ export interface VanishEvent {
    */
   readonly end: number | null;
   /** The impact point (shatter/pull: the collapse target); null otherwise. */
-  readonly at: Vec3 | null;
+  readonly at: Vec2 | null;
   /** The lifecycle machine's sim clock at the event (advanced by advance()). */
   readonly time: number;
 }
@@ -183,7 +187,7 @@ export interface VanishRun {
   /** Latched at the shatter — the sequence shatters EXACTLY once. */
   shattered: boolean;
   /** The impact point, captured at the shatter (the collapse target). */
-  readonly at: Vec3;
+  readonly at: Vec2;
 }
 
 export function beginVanishRun(cordId: number, failEnd: number): VanishRun {
@@ -194,14 +198,14 @@ export function beginVanishRun(cordId: number, failEnd: number): VanishRun {
     phaseElapsed: 0,
     fallElapsed: 0,
     shattered: false,
-    at: { x: 0, y: 0, z: 0 },
+    at: { x: 0, y: 0 },
   };
 }
 
 /** What the world must DO this step (consumed in order, then discarded). */
 export type VanishAction =
   /** Fire the shatter at `at` (exactly once per run): fragments + jack despawn. */
-  | { readonly kind: 'shatter'; readonly at: Vec3 }
+  | { readonly kind: 'shatter'; readonly at: Vec2 }
   /** Unseat the other end + collapse-impulse the rope toward the shatter point. */
   | { readonly kind: 'pull-out' }
   /** Report completion → completeVanish → the cord leaves the world. */
@@ -213,8 +217,7 @@ export interface VanishStepArgs {
   /** The failing end's CURRENT point (observed by the world from the rope). */
   readonly endX: number;
   readonly endY: number;
-  readonly endZ: number;
-  /** The cord's floor plane, or null in a floorless world (timeout carries it). */
+  /** The cord's floor line, or null in a floorless world (timeout carries it). */
   readonly floorY: number | null;
   readonly options: ResolvedVanishOptions;
 }
@@ -240,8 +243,7 @@ export function stepVanishRun(run: VanishRun, args: VanishStepArgs): VanishActio
       run.shattered = true;
       run.at.x = args.endX;
       run.at.y = args.endY;
-      run.at.z = args.endZ;
-      actions.push({ kind: 'shatter', at: { x: args.endX, y: args.endY, z: args.endZ } });
+      actions.push({ kind: 'shatter', at: { x: args.endX, y: args.endY } });
       actions.push({ kind: 'pull-out' });
     }
     return actions;

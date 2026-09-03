@@ -1,26 +1,25 @@
 /**
  * Cords sim core — the liftable, headless domain.
  *
- * PRODUCT.md "Positioning": a liftable, headless cord-physics core with
- * Three.js as a disposable render layer. THIS directory is the durable asset;
- * the renderer is not. Everything here is pure TypeScript plain data.
+ * PRODUCT.md "Positioning": a liftable, headless cord-physics core with the
+ * renderer as a disposable layer (2D pivot, town-hall Revision 2: Canvas 2D,
+ * three.js dropped). THIS directory is the durable asset; the renderer is
+ * not. Everything here is pure TypeScript plain data.
  *
- * HOUSE RULE: zero three.js imports, zero DOM, zero wall-clock reads inside
- * src/sim/. Enforced by `npm run check:sim` (scripts/check-sim-purity.mjs),
- * which runs as part of `npm run build` and `npm test`.
+ * HOUSE RULE: zero renderer imports (no three.js), zero DOM/canvas, zero
+ * wall-clock reads inside src/sim/. Enforced by `npm run check:sim`
+ * (scripts/check-sim-purity.mjs), which runs as part of `npm run build`
+ * and `npm test`.
  */
 
-/** Plain 3-vector in world units. Data, not a class, so the core lifts anywhere. */
-export interface Vec3 {
+/**
+ * Plain 2-vector in world units (the 2D pivot: the world IS the plane —
+ * gravity −Y, the floor a horizontal line y = floorY). Data, not a class,
+ * so the core lifts anywhere.
+ */
+export interface Vec2 {
   x: number;
   y: number;
-  z: number;
-}
-
-/** Position + direction ray in sim space (pointer probes; later other probes). */
-export interface Ray3 {
-  origin: Vec3;
-  direction: Vec3;
 }
 
 /**
@@ -29,7 +28,7 @@ export interface Ray3 {
  */
 export interface CordState {
   id: number;
-  points: Vec3[];
+  points: Vec2[];
 }
 
 /** Complete headless world snapshot at one sim instant. */
@@ -55,7 +54,7 @@ export interface PinTargetInput {
   /** Which endpoint is carried: 0 or the rope's last point index. */
   index: number;
   /** World position the carried end should converge toward this step. */
-  position: Vec3;
+  position: Vec2;
 }
 
 /**
@@ -73,7 +72,7 @@ export interface SeatInput {
   /** Which endpoint is plugged: 0 or the rope's last point index. */
   index: number;
   /** World position of the socket the jack seats into. */
-  position: Vec3;
+  position: Vec2;
 }
 
 /**
@@ -98,7 +97,7 @@ export interface CordPopInput {
 
 /**
  * T-LIFE-1 — the user-initiated release failure: the HELD jack of cord
- * `cordId` was released NOT over a cube (main.ts's release routing, which
+ * `cordId` was released NOT over a rectangle (the release routing, which
  * replaces the interim M1 "drop" release). The lifecycle decides:
  * `awaiting-plug` or `popped` → `vanishing` (the approved failure); `carried`
  * (nothing seated) → the ordinary floor drop, no transition. One-shot per
@@ -128,11 +127,12 @@ export interface CordDespawnInput {
 export interface SpawnCordInput {
   cordId: number;
   /** World position the coil appears at — the carried red end starts here. */
-  at: Vec3;
+  at: Vec2;
 }
 
 /**
- * T-INT-5 — the passive cursor-brush frame signal (plan.md INT-5): the
+ * T-INT-5 — the passive cursor-brush frame signal (plan.md INT-5; 2D pivot:
+ * the cursor RAY became a cursor POINT — the plane IS the world): the
  * pointer MOVED since the last consumed move. `move` is the interaction
  * layer's monotonic pointer-move counter (it advances only on real
  * pointermove events), and the world applies exactly ONE impulse pass per
@@ -140,21 +140,21 @@ export interface SpawnCordInput {
  * replay of one input across a frame's substeps idempotent (one impulse
  * per pointer-move frame, never one per substep). ABSENT/NULL = the
  * pointer is still or off-stage: no impulse, zero cost — even when a
- * swinging cord passes straight through the ray (Thor's rule: brush
- * impulses ride MOVE events, never time).
+ * swinging cord passes straight through the cursor point (Thor's rule:
+ * brush impulses ride MOVE events, never time).
  */
 export interface BrushInput {
   /** Monotonic pointer-move count; advances only on real move events. */
   move: number;
-  /** The cursor ray in sim space at the moved position. */
-  ray: Ray3;
+  /** The cursor point in sim space at the moved position. */
+  point: Vec2;
   /**
    * A11Y-1 — the reduced-motion dampening seam: a per-frame multiplier on the
    * world's configured brush STRENGTH (0.5 = half impulse amplitude), composed
    * by the interaction/composition layer from prefers-reduced-motion. This is
    * INPUT, not config: the tuned strength in brush.ts is untouched, and the
    * world stays a pure function of (state, dt, input) — the scale is frame
-   * data exactly like the ray, so determinism contracts are unaffected.
+   * data exactly like the point, so determinism contracts are unaffected.
    * ABSENT, non-finite, or negative reads as 1 (identity): every pre-A11Y-1
    * input replays byte-for-byte. 0 tunes the brush off for the frame (the
    * strength-0 law in brush.ts).
@@ -168,13 +168,17 @@ export interface BrushInput {
  * QA-1 can record/replay input sequences headless.
  */
 export interface SimInput {
-  /** Pointer ray in sim space, or null when the pointer is off the stage. */
-  pointerRay: Ray3 | null;
+  /**
+   * Pointer point in sim space, or null when the pointer is off the stage
+   * (the 2D pivot's rename of the v1 pointerRay — the cursor is a point in
+   * the world plane now, not a ray through a volume).
+   */
+  pointerPoint: Vec2 | null;
   /**
    * T-INT-5 — the passive cursor-brush signal: present ONLY on frames a
    * pointer-move event arrived (the interaction layer composes it from its
    * move counter; see BrushInput). The world brushes every live cord's free
-   * points inside the halo around `brush.ray`, once per new `move` value.
+   * points inside the halo around `brush.point`, once per new `move` value.
    */
   brush?: BrushInput | null;
   /**
@@ -193,17 +197,17 @@ export interface SimInput {
    *
    * INT-3 — the same field is also the SEAT TRANSPORT while linked: a
    * seatTarget naming the already-seated index moves that plugged pin to
-   * `position` (the socket's cube is being dragged; the seated jack follows
-   * its cube — hard-follow, the approved reading of "cords follow the
-   * cube"). Re-sending an unchanged transform is the INT-2 latch pattern and
-   * is a bitwise no-op in the rope that never restarts the settle.
+   * `position` (the socket's rectangle is being dragged; the seated jack
+   * follows its host — hard-follow, the approved reading of "cords follow
+   * the cube"). Re-sending an unchanged transform is the INT-2 latch pattern
+   * and is a bitwise no-op in the rope that never restarts the settle.
    */
   seatTarget?: SeatInput | null;
   /**
    * INT-4 — the multi-cord carry list: one entry per currently driven end.
    * A drop on one cord can overlap a carry on another (spawning while
-   * carrying, spamming N), and a cube hosting several plugs transports all
-   * of them at once — the M1 singular fields above cannot express that.
+   * carrying, spamming N), and a rectangle hosting several plugs transports
+   * all of them at once — the M1 singular fields above cannot express that.
    * Each entry routes by `cordId` (absent = 0, the anchor cord). Absent or
    * empty means nothing is carried. Plain data; callers reuse shells.
    */
@@ -211,8 +215,8 @@ export interface SimInput {
   /**
    * INT-4 — the multi-cord plug/transport list: every seated end whose
    * transform the composition wants to (re-)send this frame — the INT-2
-   * latch generalized, since a dragged cube can carry several seated plugs.
-   * Semantics per entry are exactly the singular field's: a NON-seated
+   * latch generalized, since a dragged rectangle can carry several seated
+   * plugs. Semantics per entry are exactly the singular field's: a NON-seated
    * endpoint plugs, an already-seated index transports, repeats are no-ops.
    * Each entry routes by `cordId` (absent = 0). Absent or empty means no
    * plug intent.
@@ -238,8 +242,8 @@ export interface SimInput {
   popCords?: readonly CordPopInput[] | null;
   /**
    * T-LIFE-1 — the user-initiated release failure (see ReleaseJackInput):
-   * the held jack left the hand NOT over a cube. At most one per step (one
-   * pointer). Routed by the lifecycle: awaiting-plug/popped → vanishing,
+   * the held jack left the hand NOT over a rectangle. At most one per step
+   * (one pointer). Routed by the lifecycle: awaiting-plug/popped → vanishing,
    * carried → ordinary drop (no transition), anything else rejected.
    */
   releaseJack?: ReleaseJackInput | null;

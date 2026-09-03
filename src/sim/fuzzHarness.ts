@@ -3,31 +3,38 @@
  * production multi-cord world, built once and reused by every adversarial
  * pattern (fuzz.test.ts) and the DoD gate scenarios (dodGate.test.ts).
  *
- * It is the COMPOSITION MIRROR of src/main.ts — every discipline that makes
- * the real page legal is reproduced here, because the fuzz's whole job is to
- * prove those disciplines hold under adversarial input, not to re-derive
- * them:
+ * It is the COMPOSITION MIRROR of the composition root — every discipline
+ * that makes the real page legal is reproduced here, because the fuzz's whole
+ * job is to prove those disciplines hold under adversarial input, not to
+ * re-derive them:
  *
- * - the PRODUCTION world shape (the REFINE-3 opening cord — spawned coiled on
- *   a module top with its red end plugged through the same seat latch any
- *   release composes, exactly main.ts's load staging — 24-segment cords,
+ * - the PRODUCTION world shape (the opening cord — spawned coiled on a
+ *   module top with its red end plugged through the same seat latch any
+ *   release composes, exactly the load staging — 24-segment cords,
  *   over-stretch detection ON, vanish choreography ON, brush ON) — but with
  *   `lifecycle.strict = true`: an ILLEGAL transition THROWS in this harness,
  *   so "FSM legality" is not an assertion, it is the test's failure mode;
  * - the SAME-FRAME LATCH DROP: the seat-latch array handed to the driver as
  *   `input.seatTargets` is the live array; the pop/pull event handlers
- *   SPLICE the popped end's entry out of it mid-step, exactly like main.ts's
- *   releaseSeat — without it the substep that popped would legally re-seat
- *   the plug through the replayed latch;
+ *   SPLICE the popped end's entry out of it mid-step, exactly like the
+ *   composition's releaseSeat — without it the substep that popped would
+ *   legally re-seat the plug through the replayed latch;
  * - the carry/seat/drop lifecycle: one held end at a time (grab guard =
  *   jackGrabbable: vanishing cords and popped surviving sockets refuse),
  *   seats only from a held end, drops converge to the floor-rest point then
- *   stop sending targets (the release stub), transports ride cube deltas;
+ *   stop sending targets (the release stub), transports ride rectangle
+ *   deltas;
  * - INTENT ACCOUNTING: every one-shot intent sent in a frame is tagged, and
  *   every lifecycle TRANSITION the world emits must be accounted for by that
  *   frame's tags or by the machine's own automatic reasons
  *   ('over-stretch', 'grace-expired', 'vanish-complete') — an unaccounted
  *   transition IS a silent unplug, and fails the run.
+ *
+ * 2D PIVOT (town-hall Revision 2): the bench became the PANEL — the eight
+ * host rectangles hang at varied heights above the floor line in the world
+ * plane (gravity −Y, floor y = 0), the brush cursor is a POINT, and every
+ * span/leash measurement is planar. The disciplines and invariants are
+ * untouched.
  *
  * Invariants are checked AFTER EVERY FRAME (checkInvariants): finiteness,
  * the two-tier stretch law (the EXACT SIM-2 leash wherever it is exact, the
@@ -48,24 +55,28 @@ import type { VanishEvent } from './vanish';
 import type {
   CordPopInput,
   PinTargetInput,
-  Ray3,
   ReleaseJackInput,
   SeatInput,
   SimInput,
   SimState,
   SpawnCordInput,
-  Vec3,
+  Vec2,
 } from './types';
 
-/** The production numbers (main.ts): the page's exact stepping discipline. */
+/** The production numbers (the composition root): the page's exact stepping discipline. */
 export const FUZZ_TIMESTEP = 1 / 120;
 export const FUZZ_MAX_SUBSTEPS = 5;
 export const FUZZ_SEGMENTS = 24;
 export const FUZZ_SEGMENT_LENGTH = 0.1;
 /** Total rest length of every cord — the leash denominator. */
 export const FUZZ_TOTAL_REST = FUZZ_SEGMENTS * FUZZ_SEGMENT_LENGTH;
-/** The interaction layer's floor-rest height (main.ts FLOOR_REST_Y). */
+/** The interaction layer's floor-rest height (FLOOR_REST_Y). */
 export const FUZZ_FLOOR_REST_Y = 0.055;
+/**
+ * Half the height of a host rectangle (the v1 CUBE_SIZE 0.5, halved): a
+ * seat on a module's TOP edge sits this far above its center.
+ */
+export const FUZZ_RECT_HALF = 0.25;
 /**
  * The loose absolute cap on a NO-SEAT cord's residual motion at the end of a
  * calm tail (the DECAY assertion beside it is the sharp law): discarded
@@ -80,56 +91,57 @@ export const FUZZ_CALM_FLOOR = 0.01;
 export const FUZZ_FRAME_DT = 1 / 60;
 
 /**
- * The bench's eight cubes (the harness's own layout, independent of the
- * render stage): spread over a ~2-unit patch so any two FACE POINTS sit
- * inside one cord's reach (< total × 1.04 ≈ 2.496) — the geometry the
- * production seat rule produces on the real bench.
+ * The panel's eight host rectangles (the harness's own layout, independent
+ * of the render stage): candy-zoned modules hanging at varied heights over
+ * a ~3.5-unit span, so NEIGHBORING top-edge points sit inside one cord's
+ * reach (< total × 1.04 ≈ 2.496) while the farthest pairs do not — the
+ * geometry the production seat rule produces on the real panel.
  */
 export const FUZZ_CUBES: ReadonlyArray<readonly [number, number]> = [
-  [0.0, 0.9],
-  [-0.85, 0.95],
+  [0.0, 1.5],
+  [-0.85, 1.55],
   [0.85, 1.05],
-  [1.7, 0.15],
-  [1.25, -1.35],
-  [-1.65, -0.35],
-  [-1.25, -1.55],
-  [-1.7, 0.15],
+  [1.7, 1.1],
+  [1.25, 1.35],
+  [-1.65, 1.0],
+  [-1.25, 1.45],
+  [-1.7, 1.15],
 ];
 
-/** The largest cube-top-to-cube-top span the bench can produce at link time. */
+/** The largest module-top-to-module-top span the panel can produce at link time. */
 export const MAX_CUBE_TOP_SPAN: number = (() => {
   let worst = 0;
-  for (const [ax, az] of FUZZ_CUBES) {
-    for (const [bx, bz] of FUZZ_CUBES) {
-      const d = Math.hypot(ax - bx, az - bz);
+  for (const [ax, ay] of FUZZ_CUBES) {
+    for (const [bx, by] of FUZZ_CUBES) {
+      const d = Math.hypot(ax - bx, ay + FUZZ_RECT_HALF - (by + FUZZ_RECT_HALF));
       if (d > worst) worst = d;
     }
   }
   return worst;
 })();
 
-/** The largest per-frame cube transport any scenario performs (the TIER-2 allowance). */
+/** The largest per-frame rectangle transport any scenario performs (the TIER-2 allowance). */
 export const FUZZ_CUBE_DRAG_STEP = 0.35;
-/** Scenario-side clamp on dragged cube centers (the TIER-2/3 geometry bound). */
+/** Scenario-side clamp on dragged rectangle centers (the TIER-2/3 geometry bound). */
 export const FUZZ_CUBE_CLAMP = 3.5;
 /**
- * The largest span a LINKED cord can legitimately reach: seats live on cube
- * tops, cubes clamp to ±FUZZ_CUBE_CLAMP, and one seat may teleport to its
- * cube top at link time (seating beyond the leash is legal totality — the
- * detector pops the next pass).
+ * The largest span a LINKED cord can legitimately reach: seats live on
+ * module tops, modules clamp to ±FUZZ_CUBE_CLAMP, and one seat may teleport
+ * to its module top at link time (seating beyond the leash is legal
+ * totality — the detector pops the next pass).
  */
 export const MAX_LINKED_SPAN =
   2 * FUZZ_CUBE_CLAMP + MAX_CUBE_TOP_SPAN + FUZZ_CUBE_DRAG_STEP;
 
-/** A seat the composition holds for one end (main.ts SeatRecord's mirror). */
+/** A seat the composition holds for one end (the SeatRecord's mirror). */
 interface SeatRecord {
   readonly cordId: number;
   readonly index: number;
   readonly cubeId: number;
-  readonly baseCenter: Vec3;
-  readonly basePin: Vec3;
-  /** Mutated in place by cube transports; `seatInput.position` aliases it. */
-  readonly position: Vec3;
+  readonly baseCenter: Vec2;
+  readonly basePin: Vec2;
+  /** Mutated in place by rectangle transports; `seatInput.position` aliases it. */
+  readonly position: Vec2;
   readonly seatInput: SeatInput;
 }
 
@@ -137,7 +149,7 @@ interface SeatRecord {
 interface DropRecord {
   readonly cordId: number;
   readonly index: number;
-  readonly target: Vec3;
+  readonly target: Vec2;
   framesLeft: number;
 }
 
@@ -155,29 +167,29 @@ export interface FuzzHarness {
    * Runs the invariant checks on the resulting state (throws on violation).
    */
   frame(dt: number): void;
-  // --- composition ops (scenarios call these; all mirror main.ts) ---
+  // --- composition ops (scenarios call these; all mirror the composition) ---
   /** N key / HUD button: a new cord lands coiled in hand at `at`. */
-  spawn(at: Vec3): number;
+  spawn(at: Vec2): number;
   /** Pointer-down on a jack end. Returns false when the grab is refused. */
   grab(cordId: number, index: number): boolean;
   /** The held end's carry target this frame (violent targets are the point). */
-  moveTo(position: Vec3): void;
-  /** Pointer-up over a cube face: seat the held end at the world point. */
-  seatOnCube(cubeId: number, at: Vec3): boolean;
+  moveTo(position: Vec2): void;
+  /** Pointer-up over a rectangle edge: seat the held end at the world point. */
+  seatOnCube(cubeId: number, at: Vec2): boolean;
   /** Pointer-up over open floor: the FSM routes (drop or → vanishing). */
   releaseOffCube(): void;
-  /** INT-3: drag a cube (translate-only); its seated plugs ride the delta. */
-  dragCubeTo(cubeId: number, center: Vec3): void;
+  /** INT-3: drag a rectangle (translate-only); its seated plugs ride the delta. */
+  dragCubeTo(cubeId: number, center: Vec2): void;
   /** An explicit pop intent (INT-6's seam; scenarios may fire it directly). */
   pop(cordId: number, index: number): void;
-  /** INT-5: a pointer-move frame — the brush sweeps `ray` once. */
-  brushMove(ray: Ray3, strengthScale?: number): void;
+  /** INT-5: a pointer-move frame — the brush sweeps `point` once. */
+  brushMove(point: Vec2, strengthScale?: number): void;
   /** True when the end obeys the production grabability law right now. */
   grabbable(cordId: number, index: number): boolean;
-  /** The live world point of a cord end (for aiming rays and drops). */
-  endPoint(cordId: number, index: number): Vec3;
-  /** The cube center (for transport scenarios). */
-  cubeCenter(cubeId: number): Vec3;
+  /** The live world point of a cord end (for aiming brushes and drops). */
+  endPoint(cordId: number, index: number): Vec2;
+  /** The rectangle center (for transport scenarios). */
+  cubeCenter(cubeId: number): Vec2;
   /** A held-end read ({cordId, index} or null). */
   readonly held: { readonly cordId: number; readonly index: number } | null;
   /**
@@ -195,7 +207,7 @@ export interface FuzzHarness {
 export interface FuzzHarnessOptions {
   /**
    * Include the production opening cord (id 0, awaiting-plug, red end seated
-   * on a module top — the REFINE-3 staging, mirroring main.ts's load step).
+   * on a module top — the staging, mirroring the load step).
    */
   withAnchor?: boolean;
   /** Skip invariant checks (determinism A/B runs still assert equality). */
@@ -219,27 +231,28 @@ export function createFuzzHarness(options: FuzzHarnessOptions = {}): FuzzHarness
   let frames = 0;
 
   // The seat latch — THE live array the driver replays across substeps. The
-  // pop/pull handlers below splice it mid-step (main.ts releaseSeat).
+  // pop/pull handlers below splice it mid-step (the composition's
+  // releaseSeat).
   const seatLatch: SeatInput[] = [];
   const carryTargets: PinTargetInput[] = [];
   const seatRecords = new Map<string, SeatRecord>();
   const drops: DropRecord[] = [];
-  const cubeCenters: Vec3[] = FUZZ_CUBES.map(([x, z]) => ({ x, y: 0.25, z }));
-  let held: { cordId: number; index: number; target: Vec3 } | null = null;
+  const cubeCenters: Vec2[] = FUZZ_CUBES.map(([x, y]) => ({ x, y }));
+  let held: { cordId: number; index: number; target: Vec2 } | null = null;
   /**
    * A failure release whose carry intent has not FLOWED yet (a same-frame
    * grab+release): the carry keeps composing until the machine has seen the
-   * grab (#7/#8), THEN the releaseJack intent fires — mirroring main.ts's
-   * staging fix exactly. Without it the intent would race the machine and
-   * draw a rejection (a strict-world throw).
+   * grab (#7/#8), THEN the releaseJack intent fires — mirroring the
+   * composition's staging fix exactly. Without it the intent would race the
+   * machine and draw a rejection (a strict-world throw).
    */
-  let stagedFailure: { cordId: number; index: number; target: Vec3 } | null = null;
+  let stagedFailure: { cordId: number; index: number; target: Vec2 } | null = null;
   let pendingSpawn: SpawnCordInput | null = null;
   let pendingRelease: ReleaseJackInput | null = null;
   let pendingPop: CordPopInput | null = null;
   let nextCordId = withAnchor ? 1 : 0;
   let brushCounter = 0;
-  let brush: { move: number; ray: Ray3; strengthScale?: number } | null = null;
+  let brush: { move: number; point: Vec2; strengthScale?: number } | null = null;
   /**
    * Intent tags staged by ops BETWEEN frames; `frame()` swaps the set at its
    * start, so the tags a transition must be accounted against are exactly the
@@ -267,6 +280,11 @@ export function createFuzzHarness(options: FuzzHarnessOptions = {}): FuzzHarness
     vanish: {
       onEvent: (event: VanishEvent): void => {
         eventLog.push(`vanish:${event.kind}|${event.cordId}|${event.end ?? -1}|${event.time.toFixed(6)}`);
+        if (event.kind === 'start') {
+          // The choreography owns every end from here (the composition clears
+          // its active carry at sequence start): stop composing targets.
+          if (held !== null && held.cordId === event.cordId) held = null;
+        }
         if (event.kind === 'pull' && event.end !== null) {
           releaseSeat(event.cordId, event.end); // same-frame latch drop
         }
@@ -293,6 +311,21 @@ export function createFuzzHarness(options: FuzzHarnessOptions = {}): FuzzHarness
         if (event.to === 'popped' && event.end !== null) {
           releaseSeat(event.cordId, event.end); // INT-6's same-frame drop
         }
+        if (event.to === 'vanishing') {
+          // A dying cord accepts no NEW seat: any staged-but-unapplied seat
+          // record for it dies with the transition (the popped-end re-seat
+          // staged mid-grace is exactly this — the grace can expire between
+          // the pointerup's staging and the latch's first composition). The
+          // far end's LANDED seat stays: it is a legal transport until the
+          // choreography's pull-out drops it in its own event.
+          for (const key of [...seatRecords.keys()]) {
+            const [cordIdStr, indexStr] = key.split(':');
+            if (Number(cordIdStr) !== event.cordId) continue;
+            if (world.lifecycle.endMode(event.cordId, Number(indexStr)) !== 'seated') {
+              releaseSeat(event.cordId, Number(indexStr));
+            }
+          }
+        }
       },
       onRejected: (rejection) => {
         throw new Error(
@@ -309,23 +342,23 @@ export function createFuzzHarness(options: FuzzHarnessOptions = {}): FuzzHarness
   });
   let simState: SimState = { time: 0, cords: [] };
 
-  // REFINE-3 — the composition-faithful OPENING CORD, mirroring main.ts's
-  // load staging exactly: cord 0 is SPAWNED coiled on a module's top (the
-  // ordinary INT-4 spawn) and its RED end is PLUGGED through the same seat
-  // latch any release composes, in ONE explicit production step before the
-  // first frame — deterministic, and outside frame() so the accounting below
+  // The composition-faithful OPENING CORD, mirroring the load staging
+  // exactly: cord 0 is SPAWNED coiled on a module's top (the ordinary INT-4
+  // spawn) and its RED end is PLUGGED through the same seat latch any
+  // release composes, in ONE explicit production step before the first
+  // frame — deterministic, and outside frame() so the accounting below
   // sees its transitions against the seeded tags on frame 1. The pin sits
-  // PLUG_SEATED_DEPTH (socket.ts, 0.082) inside the top face, the coil one
+  // PLUG_SEATED_DEPTH (socket.ts, 0.082) inside the top edge, the coil one
   // tube radius above it — the page's own opening numbers.
   if (withAnchor) {
-    const [ox, oz] = FUZZ_CUBES[7];
-    const seatPosition = { x: ox, y: 0.5 - 0.082, z: oz };
+    const [ox, oy] = FUZZ_CUBES[7];
+    const seatPosition = { x: ox, y: oy + FUZZ_RECT_HALF - 0.082 };
     const record: SeatRecord = {
       cordId: 0,
       index: 0,
       cubeId: 7,
-      baseCenter: { x: cubeCenters[7].x, y: cubeCenters[7].y, z: cubeCenters[7].z },
-      basePin: { x: seatPosition.x, y: seatPosition.y, z: seatPosition.z },
+      baseCenter: { x: cubeCenters[7].x, y: cubeCenters[7].y },
+      basePin: { x: seatPosition.x, y: seatPosition.y },
       position: seatPosition,
       seatInput: { cordId: 0, index: 0, position: seatPosition },
     };
@@ -334,19 +367,18 @@ export function createFuzzHarness(options: FuzzHarnessOptions = {}): FuzzHarness
     pendingTags.add('spawn:0');
     pendingTags.add('seat:0:0');
     simState = world(simState, FUZZ_TIMESTEP, {
-      pointerRay: null,
-      spawnCord: { cordId: 0, at: { x: ox, y: 0.53, z: oz } },
+      pointerPoint: null,
+      spawnCord: { cordId: 0, at: { x: ox, y: oy + FUZZ_RECT_HALF + 0.03 } },
       seatTargets: [record.seatInput],
     });
   }
 
   // --- invariant checks (thrown as loud failures, frame-stamped) -----------
 
-  const dist2 = (a: Vec3, b: Vec3): number => {
+  const dist2 = (a: Vec2, b: Vec2): number => {
     const dx = a.x - b.x;
     const dy = a.y - b.y;
-    const dz = a.z - b.z;
-    return dx * dx + dy * dy + dz * dz;
+    return dx * dx + dy * dy;
   };
 
   function fail(message: string): never {
@@ -372,10 +404,10 @@ export function createFuzzHarness(options: FuzzHarnessOptions = {}): FuzzHarness
       const end0 = cord.points[0];
       const endN = cord.points[n];
       for (const p of cord.points) {
-        if (!Number.isFinite(p.x) || !Number.isFinite(p.y) || !Number.isFinite(p.z)) {
+        if (!Number.isFinite(p.x) || !Number.isFinite(p.y)) {
           fail(`cord ${cord.id} has a non-finite point`);
         }
-        if (Math.abs(p.x) > 100 || Math.abs(p.y) > 100 || Math.abs(p.z) > 100) {
+        if (Math.abs(p.x) > 100 || Math.abs(p.y) > 100) {
           fail(`cord ${cord.id} exploded to ${JSON.stringify(p)}`);
         }
       }
@@ -388,7 +420,7 @@ export function createFuzzHarness(options: FuzzHarnessOptions = {}): FuzzHarness
       // TIER 1 — the EXACT SIM-2 leash: an end the harness is ACTIVELY
       // carrying this frame (a composed pinTarget — held, staged, or an
       // in-flight drop) cannot escape the other end's hard seat: the rope
-      // projects the carried pin onto the max-length sphere around it every
+      // projects the carried pin onto the max-length circle around it every
       // step (pinned bitwise ≤ total + 1e-9 in the rope tests; 1e-6 absorbs
       // long-run float drift). Not applicable to vanishing cords (the
       // choreography owns their ends) or ends nobody is driving (a stale
@@ -431,8 +463,8 @@ export function createFuzzHarness(options: FuzzHarnessOptions = {}): FuzzHarness
       // the yank, the constraint solve absorbs the rest), so the detonation
       // net sits at 3×. A real solver blowup reaches hundreds instantly and
       // is caught here or by the |p| ≤ 100 position bound. A linked cord is
-      // exempt up to the bench-geometry bound (seats ride dragged cubes; the
-      // detector pops the step after crossing).
+      // exempt up to the panel-geometry bound (seats ride dragged modules;
+      // the detector pops the step after crossing).
       let maxSpan2 = 0;
       for (let i = 0; i < cord.points.length; i += 1) {
         for (let k = i + 1; k < cord.points.length; k += 1) {
@@ -505,7 +537,7 @@ export function createFuzzHarness(options: FuzzHarnessOptions = {}): FuzzHarness
       frames += 1;
       const tags = pendingTags;
       pendingTags = new Set();
-      const input: SimInput = { pointerRay: null };
+      const input: SimInput = { pointerPoint: null };
       // A staged failure release matures once the machine has SEEN the grab
       // (the carry intent flowed in an earlier frame → endMode 'carrying'):
       // fire the one-shot release intent now, stop composing its target.
@@ -575,13 +607,13 @@ export function createFuzzHarness(options: FuzzHarnessOptions = {}): FuzzHarness
       accountTransitions(transitionIndex, tags);
       checkInvariants();
     },
-    spawn(at: Vec3) {
+    spawn(at: Vec2) {
       const cordId = nextCordId;
       nextCordId += 1;
-      pendingSpawn = { cordId, at: { x: at.x, y: at.y, z: at.z } };
+      pendingSpawn = { cordId, at: { x: at.x, y: at.y } };
       pendingTags.add(`spawn:${cordId}`);
       // The spawned red end lands in hand at the spawn point (INT-4).
-      held = { cordId, index: 0, target: { x: at.x, y: at.y, z: at.z } };
+      held = { cordId, index: 0, target: { x: at.x, y: at.y } };
       return cordId;
     },
     grabbable(cordId, index) {
@@ -594,13 +626,13 @@ export function createFuzzHarness(options: FuzzHarnessOptions = {}): FuzzHarness
       if (held !== null) return false; // one pointer, one drag
       if (index !== 0 && index !== FUZZ_SEGMENTS) return false;
       if (!harness.grabbable(cordId, index)) return false;
-      // A seated end pulls its plug: drop the record + latch (main.ts does
-      // this in the pointerdown handler, before the carry intent flows).
+      // A seated end pulls its plug: drop the record + latch (the composition
+      // does this in the pointerdown handler, before the carry intent flows).
       releaseSeat(cordId, index);
-      // ONE CONTROLLER PER CORD (main.ts's law): grabbing an end cancels the
-      // other end's in-flight drop — a mid-drop end simply falls (the rope
-      // re-frees it when the carry switches). Without this, two carry
-      // targets flap one rope's carriedIndex between its ends.
+      // ONE CONTROLLER PER CORD (the composition's law): grabbing an end
+      // cancels the other end's in-flight drop — a mid-drop end simply falls
+      // (the rope re-frees it when the carry switches). Without this, two
+      // carry targets flap one rope's carriedIndex between its ends.
       for (let i = drops.length - 1; i >= 0; i -= 1) {
         if (drops[i].cordId === cordId) drops.splice(i, 1);
       }
@@ -611,7 +643,7 @@ export function createFuzzHarness(options: FuzzHarnessOptions = {}): FuzzHarness
     },
     moveTo(position) {
       if (held === null) return;
-      held.target = { x: position.x, y: position.y, z: position.z };
+      held.target = { x: position.x, y: position.y };
     },
     seatOnCube(cubeId, at) {
       if (held === null) return false;
@@ -621,10 +653,10 @@ export function createFuzzHarness(options: FuzzHarnessOptions = {}): FuzzHarness
         cordId,
         index,
         cubeId,
-        baseCenter: { x: center.x, y: center.y, z: center.z },
-        basePin: { x: at.x, y: at.y, z: at.z },
-        position: { x: at.x, y: at.y, z: at.z },
-        seatInput: { cordId, index, position: { x: at.x, y: at.y, z: at.z } },
+        baseCenter: { x: center.x, y: center.y },
+        basePin: { x: at.x, y: at.y },
+        position: { x: at.x, y: at.y },
+        seatInput: { cordId, index, position: { x: at.x, y: at.y } },
       };
       record.seatInput.position = record.position; // alias: transports mutate in place
       seatRecords.set(seatKey(cordId, index), record);
@@ -646,7 +678,7 @@ export function createFuzzHarness(options: FuzzHarnessOptions = {}): FuzzHarness
         }
         // SAME-FRAME grab+release (the violent-release edge): the machine has
         // not seen the grab yet — keep the carry composing until it has, then
-        // fire the release (main.ts's staged path, mirrored exactly).
+        // fire the release (the staged path, mirrored exactly).
         stagedFailure = { cordId, index, target };
         return;
       }
@@ -655,7 +687,7 @@ export function createFuzzHarness(options: FuzzHarnessOptions = {}): FuzzHarness
       drops.push({
         cordId,
         index,
-        target: { x: end.x, y: FUZZ_FLOOR_REST_Y, z: end.z },
+        target: { x: end.x, y: FUZZ_FLOOR_REST_Y },
         framesLeft: 90,
       });
     },
@@ -663,36 +695,34 @@ export function createFuzzHarness(options: FuzzHarnessOptions = {}): FuzzHarness
       const c = cubeCenters[cubeId];
       c.x = center.x;
       c.y = center.y;
-      c.z = center.z;
-      // Every seated plug hosted by this cube rides the translate delta.
+      // Every seated plug hosted by this rectangle rides the translate delta.
       for (const record of seatRecords.values()) {
         if (record.cubeId !== cubeId) continue;
         record.position.x = record.basePin.x + (c.x - record.baseCenter.x);
         record.position.y = record.basePin.y + (c.y - record.baseCenter.y);
-        record.position.z = record.basePin.z + (c.z - record.baseCenter.z);
       }
     },
     pop(cordId, index) {
       pendingPop = { cordId, index, reason: 'fuzz' };
       pendingTags.add(`pop:${cordId}:${index}`);
     },
-    brushMove(ray, strengthScale) {
+    brushMove(point, strengthScale) {
       brushCounter += 1;
       brush = {
         move: brushCounter,
-        ray: { origin: { x: ray.origin.x, y: ray.origin.y, z: ray.origin.z }, direction: { x: ray.direction.x, y: ray.direction.y, z: ray.direction.z } },
+        point: { x: point.x, y: point.y },
         ...(strengthScale === undefined ? {} : { strengthScale }),
       };
     },
     endPoint(cordId, index) {
       const cord = simState.cords.find((c) => c.id === cordId);
-      if (cord === undefined || cord.points[index] === undefined) return { x: 0, y: 0, z: 0 };
+      if (cord === undefined || cord.points[index] === undefined) return { x: 0, y: 0 };
       const p = cord.points[index];
-      return { x: p.x, y: p.y, z: p.z };
+      return { x: p.x, y: p.y };
     },
     cubeCenter(cubeId) {
       const c = cubeCenters[cubeId];
-      return { x: c.x, y: c.y, z: c.z };
+      return { x: c.x, y: c.y };
     },
     calmTail(seconds) {
       // Quiet frames: nothing held, nothing dropped, no brush, no intents.
@@ -712,19 +742,18 @@ export function createFuzzHarness(options: FuzzHarnessOptions = {}): FuzzHarness
       // - a cord with NO seat (a discarded spawn) never sleeps BY DESIGN
       //   (sleep requires a plug — rope.ts) — discarded coils keep relaxing
       //   outward on the floor for a while. Their contract is DECAY: the
-      //   residual motion
-      //   over the tail's final second must be strictly below the previous
-      //   second's and inside the loose absolute cap (a jitter loop or a
-      //   sustained swing would hold or grow).
+      //   residual motion over the tail's final second must be strictly
+      //   below the previous second's and inside the loose absolute cap (a
+      //   jitter loop or a sustained swing would hold or grow).
       const survivors = harness.liveCordIds();
       if (survivors.length === 0) return { survivors };
       const windowFrames = Math.round(1 / FUZZ_FRAME_DT);
       const residual = new Map<number, number[]>(); // per no-seat cord, u/s per frame
-      const before = new Map<number, Vec3[]>();
+      const before = new Map<number, Vec2[]>();
       for (const cord of simState.cords) {
         before.set(
           cord.id,
-          cord.points.map((p) => ({ x: p.x, y: p.y, z: p.z })),
+          cord.points.map((p) => ({ x: p.x, y: p.y })),
         );
       }
       for (let w = 0; w < windowFrames * 2; w += 1) {
@@ -744,8 +773,7 @@ export function createFuzzHarness(options: FuzzHarnessOptions = {}): FuzzHarness
           for (let i = 0; i < cord.points.length; i += 1) {
             const dx = cord.points[i].x - was[i].x;
             const dy = cord.points[i].y - was[i].y;
-            const dz = cord.points[i].z - was[i].z;
-            const speed = Math.sqrt(dx * dx + dy * dy + dz * dz) / FUZZ_FRAME_DT;
+            const speed = Math.sqrt(dx * dx + dy * dy) / FUZZ_FRAME_DT;
             if (speed > maxSpeed) maxSpeed = speed;
           }
           let series = residual.get(cord.id);
@@ -755,7 +783,7 @@ export function createFuzzHarness(options: FuzzHarnessOptions = {}): FuzzHarness
           }
           series.push(maxSpeed);
           for (let i = 0; i < cord.points.length; i += 1) {
-            was[i] = { x: cord.points[i].x, y: cord.points[i].y, z: cord.points[i].z };
+            was[i] = { x: cord.points[i].x, y: cord.points[i].y };
           }
         }
         // Refresh the baseline for seated cords too (single frame pair each).
@@ -764,14 +792,14 @@ export function createFuzzHarness(options: FuzzHarnessOptions = {}): FuzzHarness
           const was = before.get(cord.id);
           if (was === undefined) continue;
           for (let i = 0; i < cord.points.length; i += 1) {
-            was[i] = { x: cord.points[i].x, y: cord.points[i].y, z: cord.points[i].z };
+            was[i] = { x: cord.points[i].x, y: cord.points[i].y };
           }
         }
       }
       // Seated cords: bitwise still across the final frame pair.
-      const finalBefore = new Map<number, Vec3[]>();
+      const finalBefore = new Map<number, Vec2[]>();
       for (const cord of simState.cords) {
-        finalBefore.set(cord.id, cord.points.map((p) => ({ x: p.x, y: p.y, z: p.z })));
+        finalBefore.set(cord.id, cord.points.map((p) => ({ x: p.x, y: p.y })));
       }
       harness.frame(FUZZ_FRAME_DT);
       for (const cord of simState.cords) {
@@ -788,8 +816,7 @@ export function createFuzzHarness(options: FuzzHarnessOptions = {}): FuzzHarness
           for (let i = 0; i < cord.points.length; i += 1) {
             if (
               !Object.is(cord.points[i].x, was[i].x) ||
-              !Object.is(cord.points[i].y, was[i].y) ||
-              !Object.is(cord.points[i].z, was[i].z)
+              !Object.is(cord.points[i].y, was[i].y)
             ) {
               fail(`cord ${cord.id} (seated) is not bitwise-still after ${seconds}s of calm`);
             }
@@ -833,7 +860,7 @@ export function createFuzzHarness(options: FuzzHarnessOptions = {}): FuzzHarness
       // back to the same bits), so equal strings ⇔ equal bit patterns.
       const parts: string[] = [`t=${simState.time}`];
       for (const cord of simState.cords) {
-        parts.push(`c${cord.id}:` + cord.points.map((p) => `${p.x},${p.y},${p.z}`).join(';'));
+        parts.push(`c${cord.id}:` + cord.points.map((p) => `${p.x},${p.y}`).join(';'));
       }
       return parts.join('|');
     },

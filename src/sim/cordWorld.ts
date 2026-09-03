@@ -3,14 +3,13 @@ import type {
   CordState,
   CordPopInput,
   PinTargetInput,
-  Ray3,
   ReleaseJackInput,
   SeatInput,
   SimInput,
   SimState,
   SimStep,
   SpawnCordInput,
-  Vec3,
+  Vec2,
 } from './types';
 import { createVerletRope, resolveRopeConfig } from './rope';
 import type { RopeConfig } from './rope';
@@ -61,7 +60,7 @@ import type {
  *   while the end is seated is by definition the un-seat.
  * - SEAT (each entry of `input.seatTargets`): exactly the singular field's
  *   semantics per cord — a non-seated endpoint plugs (the settle runs), an
- *   already-seated index transports (the dragged cube's socket), repeats
+ *   already-seated index transports (the dragged rectangle's socket), repeats
  *   are no-ops, the still-pinned anchor is ignored (it only becomes
  *   seatable after `unseat` releases it).
  * - SPAWN (`input.spawnCord`): a NEW cord appears coiled at `at` (see
@@ -139,17 +138,21 @@ import type {
  *   and GRABBING cancels it instantly (noteCarrying's reset).
  * - T-INT-5 — THE PASSIVE CURSOR-BRUSH (`input.brush`, see brush.ts): every
  *   frame the pointer MOVED, each live cord's FREE points inside the halo
- *   around the cursor ray take a small additive velocity impulse away from
- *   the ray (cosine falloff; radius/strength tunable on `CordWorldConfig.
+ *   around the cursor POINT take a small additive velocity impulse away from
+ *   the cursor (cosine falloff; radius/strength tunable on `CordWorldConfig.
  *   brush`, defaults in brush.ts). ONE pass per NEW move-counter value — the
  *   driver's substep replays of one input are idempotent, and an idle
  *   pointer (no `brush` composed) injects nothing even when a swinging cord
- *   passes through the ray (Thor's zero-idle-cost rule). PINS WIN — seated,
- *   carried, and anchored ends are skipped. VANISHING CORDS ARE STILL
- *   BRUSHABLE (documented call): the sequence is contact/time-driven and its
- *   completion is guaranteed by the fall-timeout totality guard, so body
- *   impulses cannot derail it — a dying cord swept on its way out keeps
+ *   passes through the cursor point (Thor's zero-idle-cost rule). PINS WIN —
+ *   seated, carried, and anchored ends are skipped. VANISHING CORDS ARE
+ *   STILL BRUSHABLE (documented call): the sequence is contact/time-driven
+ *   and its completion is guaranteed by the fall-timeout totality guard, so
+ *   body impulses cannot derail it — a dying cord swept on its way out keeps
  *   dying on schedule while its body reacts.
+ *
+ * 2D PIVOT (town-hall Revision 2): Vec2 points, the leash projects onto a
+ * CIRCLE, the over-stretch detector measures planar separation, the brush
+ * halo is a circle around the cursor point. Every behavioral law identical.
  *
  * Zero steady-state allocation: entries and point shells are preallocated
  * per cord and mutated in place; only a spawn allocates (a new rope, its
@@ -208,8 +211,8 @@ export interface CordWorldConfig {
   /**
    * T-INT-6 — the over-stretch auto-unplug detector (see OverStretchOptions).
    * ABSENT = DISABLED: the world keeps its T-LIFE-1 behavior (pops arrive
-   * only as explicit `popCords` intents). The production composition opts in
-   * (main.ts); tests construct either kind.
+   * only as explicit `popCords` intents). The production composition opts in;
+   * tests construct either kind.
    */
   overStretch?: OverStretchOptions;
   /**
@@ -233,7 +236,7 @@ export interface CordWorldConfig {
 
 /**
  * The world step plus its lifecycle read side: queries for the composition
- * (main.ts refuses grabs of seated ends; REN-5 lights states; INT-6 reads
+ * (it refuses grabs of seated ends; REN-5 lights states; INT-6 reads
  * the grace clock) and LIFE-2's single choreography seam.
  */
 export interface CordWorldStep extends SimStep {
@@ -243,10 +246,10 @@ export interface CordWorldStep extends SimStep {
 interface CordEntry {
   readonly id: number;
   readonly rope: ReturnType<typeof createVerletRope>;
-  readonly points: Vec3[];
+  readonly points: Vec2[];
   readonly cord: CordState;
   /**
-   * T-LIFE-2 — this cord's floor plane (from its rope template), the
+   * T-LIFE-2 — this cord's floor line (from its rope template), the
    * choreography's contact reference. The Rope itself does not expose it.
    */
   readonly floorY: number | null;
@@ -257,8 +260,8 @@ interface CordEntry {
    * pop/un-seat); null in every other state. Plain scalars, zero allocation.
    */
   linkPrev: {
-    ax: number; ay: number; az: number;
-    bx: number; by: number; bz: number;
+    ax: number; ay: number;
+    bx: number; by: number;
   } | null;
 }
 
@@ -299,7 +302,7 @@ export function createCordWorldStep(config: CordWorldConfig = {}): CordWorldStep
   // (deterministic). Runs are created at the → vanishing transition and
   // dropped at completion (or when any despawn removes the cord first).
   const vanishRuns = new Map<number, VanishRun>();
-  const vanishScratch: Vec3 = { x: 0, y: 0, z: 0 };
+  const vanishScratch: Vec2 = { x: 0, y: 0 };
   // REFINE-4 — the abandonment sweep's per-step scratch: the (cordId, end)
   // keys this step's carry intents drive, membership-only. One reused Set —
   // cleared and refilled every step, allocation-free in steady state.
@@ -363,7 +366,7 @@ export function createCordWorldStep(config: CordWorldConfig = {}): CordWorldStep
     cordId: number,
     kind: VanishEventKind,
     end: number | null,
-    at: Vec3 | null,
+    at: Vec2 | null,
   ): void => {
     if (vanishOptions?.onEvent === undefined) return;
     const event: VanishEvent = { cordId, kind, end, at, time: lifecycle.now() };
@@ -373,21 +376,21 @@ export function createCordWorldStep(config: CordWorldConfig = {}): CordWorldStep
   const entries: CordEntry[] = [];
   const world: SimState = { time: 0, cords: [] };
   // Reused coil scratch — shells survive across spawns.
-  const coilScratch: Vec3[] = [];
+  const coilScratch: Vec2[] = [];
   // T-INT-6 — reused read scratch for the detector's two pin reads (and the
   // link-arming snapshot in applySeat). Zero per-step allocation.
-  const scratchA: Vec3 = { x: 0, y: 0, z: 0 };
-  const scratchB: Vec3 = { x: 0, y: 0, z: 0 };
+  const scratchA: Vec2 = { x: 0, y: 0 };
+  const scratchB: Vec2 = { x: 0, y: 0 };
 
   const spawnCord = (req: SpawnCordInput, dt: number): void => {
     if (!Number.isInteger(req.cordId) || req.cordId < 0) return; // garbage id: ignore
     const p = req.at;
-    if (!Number.isFinite(p.x) || !Number.isFinite(p.y) || !Number.isFinite(p.z)) return;
+    if (!Number.isFinite(p.x) || !Number.isFinite(p.y)) return;
     if (entries.length >= maxCords) return; // at cap: ignore (totality)
     if (entries.some((e) => e.id === req.cordId)) return; // idempotent per cordId
     const resolved = resolveRopeConfig({
       ...cordTemplate,
-      pin: { x: p.x, y: p.y, z: p.z },
+      pin: { x: p.x, y: p.y },
       pinIndex: 0, // the RED end is point 0
     });
     const rope = createVerletRope(resolved);
@@ -400,10 +403,10 @@ export function createCordWorldStep(config: CordWorldConfig = {}): CordWorldStep
     coilPoints(p, resolved.segmentCount, resolved.segmentLength, DEFAULT_COIL, coilScratch);
     for (let i = 0; i <= resolved.segmentCount; i += 1) {
       const c = coilScratch[i];
-      if (c !== undefined) rope.setPoint(i, c.x, c.y, c.z);
+      if (c !== undefined) rope.setPoint(i, c.x, c.y);
     }
     if (dt > 0 && Number.isFinite(dt)) {
-      for (let i = 0; i <= resolved.segmentCount; i += 1) rope.setVelocity(i, 0, 0, 0, dt);
+      for (let i = 0; i <= resolved.segmentCount; i += 1) rope.setVelocity(i, 0, 0, dt);
     }
     // The RED end becomes the carried pin: release the spawn's anchor seat
     // (both ends of a fresh cord are free-to-grab — "either end"), engage
@@ -413,7 +416,7 @@ export function createCordWorldStep(config: CordWorldConfig = {}): CordWorldStep
     rope.unseat(0);
     rope.carryEnd(0);
     rope.setPinTarget(0, p);
-    const points: Vec3[] = [];
+    const points: Vec2[] = [];
     rope.writePointsTo(points);
     const cord: CordState = { id: req.cordId, points };
     entries.push({ id: req.cordId, rope, points, cord, floorY: resolved.floorY, linkPrev: null });
@@ -437,10 +440,9 @@ export function createCordWorldStep(config: CordWorldConfig = {}): CordWorldStep
       {
         x: pin.x,
         y: pin.y - anchorTemplate.segmentCount * anchorTemplate.segmentLength,
-        z: pin.z,
       },
     );
-    const points: Vec3[] = [];
+    const points: Vec2[] = [];
     rope.writePointsTo(points);
     const cord: CordState = { id: 0, points };
     entries.push({ id: 0, rope, points, cord, floorY: anchorTemplate.floorY, linkPrev: null });
@@ -485,7 +487,7 @@ export function createCordWorldStep(config: CordWorldConfig = {}): CordWorldStep
 
   // Seat/transport intent → the named rope, gated by the lifecycle. Same
   // semantics as the singular INT-2 field, PER END: an already-seated index
-  // TRANSPORTS (the dragged cube's socket) — idempotent physics, NOT a
+  // TRANSPORTS (the dragged rectangle's socket) — idempotent physics, NOT a
   // lifecycle transition, and legal even while vanishing (the seated plug
   // stays in its socket until LIFE-2 pulls it). A fresh seat is the approved
   // carried→awaiting-plug / awaiting-plug→linked / popped→linked transition:
@@ -499,11 +501,11 @@ export function createCordWorldStep(config: CordWorldConfig = {}): CordWorldStep
     if (!Number.isInteger(index) || (index !== 0 && index !== rope.segmentCount)) return;
     if (index === rope.pinnedIndex && !rope.anchorReleased) return;
     if (rope.isEndSeated(index)) {
-      rope.setSeatPosition(index, seatTo.position.x, seatTo.position.y, seatTo.position.z);
+      rope.setSeatPosition(index, seatTo.position.x, seatTo.position.y);
       return;
     }
     const p = seatTo.position;
-    if (!(Number.isFinite(p.x) && Number.isFinite(p.y) && Number.isFinite(p.z))) return;
+    if (!(Number.isFinite(p.x) && Number.isFinite(p.y))) return;
     if (lifecycle.seat(entry.id, index)) {
       rope.seat({ index, position: p });
       // T-INT-6 — the seat that LINKS the cord arms the far-end rule: both
@@ -514,8 +516,8 @@ export function createCordWorldStep(config: CordWorldConfig = {}): CordWorldStep
         entry.rope.readPoint(0, scratchA);
         entry.rope.readPoint(entry.rope.segmentCount, scratchB);
         entry.linkPrev = {
-          ax: scratchA.x, ay: scratchA.y, az: scratchA.z,
-          bx: scratchB.x, by: scratchB.y, bz: scratchB.z,
+          ax: scratchA.x, ay: scratchA.y,
+          bx: scratchB.x, by: scratchB.y,
         };
       }
     }
@@ -538,34 +540,34 @@ export function createCordWorldStep(config: CordWorldConfig = {}): CordWorldStep
   // (a) a pop and its re-seat may still legally share a step (LIFE-1's
   // ordering), and (b) the pop's onTransition event reaches the composition
   // BEFORE this step's seat latch re-sends flow — the caller's same-frame
-  // latch drop (main.ts's releaseSeat) therefore lands in time (the LIFE-1
-  // verifier's carry-over note, honored).
+  // latch drop therefore lands in time (the LIFE-1 verifier's carry-over
+  // note, honored).
   //
   // THE RULE (deterministic, documented):
-  // - MEASURE: the two seated pins' separation, read from the ROPE (the end
-  //   points are re-exacted to their seats every step — enforcePins — so the
-  //   read is bitwise the seats) vs the cord's total rest length
-  //   (segmentCount × segmentLength).
+  // - MEASURE: the two seated pins' PLANAR separation, read from the ROPE
+  //   (the end points are re-exacted to their seats every step —
+  //   enforcePins — so the read is bitwise the seats) vs the cord's total
+  //   rest length (segmentCount × segmentLength).
   // - FIRE when separation ≥ total × (1 + threshold). The SIM-2 leash holds a
   //   carried end within total + ~1e-9 of the other hard pin, so a legal
   //   second seat LANDS below the bound at any supported threshold — the
   //   machine-epsilon overshoot can never fire. Over-stretch therefore only
-  //   arises from seat TRANSPORT (a dragged cube) or a direct far seat.
+  //   arises from seat TRANSPORT (a dragged rectangle) or a direct far seat.
   // - WHICH END POPS — THE FAR END: the seat that moved LESS since the
-  //   previous detection pass (the stationary socket; the cube the hand is
-  //   dragging keeps its plug — "drag cube A, cord A→B: B's plug pops", the
-  //   town-hall's approved far-jack-pops rule). A stationary seat's latch
-  //   re-sends a bitwise-identical transform (the INT-3 no-op), so its
-  //   displacement is exactly 0 and the dragged side is > 0. EXACT TIES
-  //   (both seats moved bitwise-equally — including both stationary, e.g. a
-  //   second seat placed beyond reach by a non-leashed caller) pop the BLUE
-  //   end (the higher index) — arbitrary but fixed.
+  //   previous detection pass (the stationary socket; the rectangle the hand
+  //   is dragging keeps its plug — "drag rectangle A, cord A→B: B's plug
+  //   pops", the town-hall's approved far-jack-pops rule). A stationary
+  //   seat's latch re-sends a bitwise-identical transform (the INT-3 no-op),
+  //   so its displacement is exactly 0 and the dragged side is > 0. EXACT
+  //   TIES (both seats moved bitwise-equally — including both stationary,
+  //   e.g. a second seat placed beyond reach by a non-leashed caller) pop
+  //   the BLUE end (the higher index) — arbitrary but fixed.
   // - HYSTERESIS: the detector only examines LINKED cords. The pop itself
   //   moves the cord to `popped`, which the detector skips — an oscillating
-  //   dragged cube can fire at most ONE pop per linked window ("don't re-arm
-  //   while popped"). A re-seat re-arms by re-entering `linked` (with fresh
-  //   linkPrev); if the cord is STILL over-stretched there, it pops again —
-  //   honest (the geometry is genuinely past the bound).
+  //   dragged rectangle can fire at most ONE pop per linked window ("don't
+  //   re-arm while popped"). A re-seat re-arms by re-entering `linked` (with
+  //   fresh linkPrev); if the cord is STILL over-stretched there, it pops
+  //   again — honest (the geometry is genuinely past the bound).
   const detectOverStretch: (() => void) | null = (() => {
     const options = config.overStretch;
     if (options === undefined) return null; // not configured: detector off
@@ -576,7 +578,7 @@ export function createCordWorldStep(config: CordWorldConfig = {}): CordWorldStep
       );
     }
     // Scratch — the detector allocates nothing per step (one reused pop
-    // shell, two reused Vec3 reads).
+    // shell, two reused Vec2 reads).
     const popShell: CordPopInput = { cordId: 0, index: 0, reason: 'over-stretch' };
     return (): void => {
       for (const entry of entries) {
@@ -586,8 +588,7 @@ export function createCordWorldStep(config: CordWorldConfig = {}): CordWorldStep
         rope.readPoint(rope.segmentCount, scratchB);
         const dx = scratchB.x - scratchA.x;
         const dy = scratchB.y - scratchA.y;
-        const dz = scratchB.z - scratchA.z;
-        const sep2 = dx * dx + dy * dy + dz * dz;
+        const sep2 = dx * dx + dy * dy;
         const total = rope.segmentCount * rope.segmentLength;
         const bound = total * (1 + threshold);
         if (sep2 >= bound * bound) {
@@ -597,12 +598,10 @@ export function createCordWorldStep(config: CordWorldConfig = {}): CordWorldStep
           if (prev !== null) {
             const d0x = scratchA.x - prev.ax;
             const d0y = scratchA.y - prev.ay;
-            const d0z = scratchA.z - prev.az;
-            const d0 = d0x * d0x + d0y * d0y + d0z * d0z;
+            const d0 = d0x * d0x + d0y * d0y;
             const dNx = scratchB.x - prev.bx;
             const dNy = scratchB.y - prev.by;
-            const dNz = scratchB.z - prev.bz;
-            const dN = dNx * dNx + dNy * dNy + dNz * dNz;
+            const dN = dNx * dNx + dNy * dNy;
             if (d0 < dN) far = 0; // end 0 moved less: it is the far socket
           }
           popShell.cordId = entry.id;
@@ -612,23 +611,24 @@ export function createCordWorldStep(config: CordWorldConfig = {}): CordWorldStep
         }
         if (entry.linkPrev === null) {
           entry.linkPrev = {
-            ax: scratchA.x, ay: scratchA.y, az: scratchA.z,
-            bx: scratchB.x, by: scratchB.y, bz: scratchB.z,
+            ax: scratchA.x, ay: scratchA.y,
+            bx: scratchB.x, by: scratchB.y,
           };
         } else {
           const prev = entry.linkPrev;
-          prev.ax = scratchA.x; prev.ay = scratchA.y; prev.az = scratchA.z;
-          prev.bx = scratchB.x; prev.by = scratchB.y; prev.bz = scratchB.z;
+          prev.ax = scratchA.x; prev.ay = scratchA.y;
+          prev.bx = scratchB.x; prev.by = scratchB.y;
         }
       }
     };
   })();
 
-  // T-LIFE-1 — the release routing (main.ts replaces the interim M1 drop
-  // with this): the HELD jack was released not over a cube. No rope mutation
-  // on either outcome — the carried pin keeps falling through whatever carry
-  // targets still flow (LIFE-2 choreographs over it); the FSM owns the
-  // LIFECYCLE consequence: awaiting-plug/popped → vanishing, carried → drop.
+  // T-LIFE-1 — the release routing (the composition replaces the interim M1
+  // drop with this): the HELD jack was released not over a rectangle. No rope
+  // mutation on either outcome — the carried pin keeps falling through
+  // whatever carry targets still flow (LIFE-2 choreographs over it); the FSM
+  // owns the LIFECYCLE consequence: awaiting-plug/popped → vanishing,
+  // carried → drop.
   const applyRelease = (release: ReleaseJackInput): void => {
     lifecycle.releaseCarriedJack(release.cordId, release.index);
   };
@@ -659,7 +659,7 @@ export function createCordWorldStep(config: CordWorldConfig = {}): CordWorldStep
   // The far plug whips toward the shatter; points already at the point
   // barely move. The rope's own distance constraints + damping carry the
   // retraction from here — the solver's motion, never a keyframe.
-  const applyCollapseImpulse = (entry: CordEntry, at: Vec3, pullSpeed: number, dt: number): void => {
+  const applyCollapseImpulse = (entry: CordEntry, at: Vec2, pullSpeed: number, dt: number): void => {
     const rope = entry.rope;
     const total = rope.segmentCount * rope.segmentLength;
     const points = entry.points; // the last-written snapshot == the live rope here
@@ -667,11 +667,10 @@ export function createCordWorldStep(config: CordWorldConfig = {}): CordWorldStep
       const p = points[i];
       const dx = at.x - p.x;
       const dy = at.y - p.y;
-      const dz = at.z - p.z;
-      const d = Math.sqrt(dx * dx + dy * dy + dz * dz);
+      const d = Math.sqrt(dx * dx + dy * dy);
       if (d < 1e-9) continue; // already at the point: nothing to pull
       const s = Math.min(1, d / total) * pullSpeed;
-      rope.setVelocity(i, (dx / d) * s, (dy / d) * s, (dz / d) * s, dt);
+      rope.setVelocity(i, (dx / d) * s, (dy / d) * s, dt);
     }
   };
 
@@ -694,7 +693,6 @@ export function createCordWorldStep(config: CordWorldConfig = {}): CordWorldStep
         dt,
         endX: vanishScratch.x,
         endY: vanishScratch.y,
-        endZ: vanishScratch.z,
         floorY: entry.floorY,
         options: vanishOptions,
       });
@@ -702,9 +700,9 @@ export function createCordWorldStep(config: CordWorldConfig = {}): CordWorldStep
         if (action.kind === 'shatter') {
           // Instant, exactly once (the run's `shattered` latch). The impact
           // point is the collapse target for the pull that follows.
-          emitVanish(run.cordId, 'shatter', run.failEnd, { x: action.at.x, y: action.at.y, z: action.at.z });
+          emitVanish(run.cordId, 'shatter', run.failEnd, { x: action.at.x, y: action.at.y });
         } else if (action.kind === 'pull-out') {
-          // The cord pulls out of its seated cube: the OTHER end unseats
+          // The cord pulls out of its seated rectangle: the OTHER end unseats
           // (the lock-permitted pull) and the collapse impulse reels the
           // body toward the shatter point.
           const other = run.failEnd === 0 ? entry.rope.segmentCount : 0;
@@ -713,7 +711,7 @@ export function createCordWorldStep(config: CordWorldConfig = {}): CordWorldStep
             if (entry.linkPrev !== null) entry.linkPrev = null;
           }
           applyCollapseImpulse(entry, run.at, vanishOptions.pullSpeed, dt);
-          emitVanish(run.cordId, 'pull', other, { x: run.at.x, y: run.at.y, z: run.at.z });
+          emitVanish(run.cordId, 'pull', other, { x: run.at.x, y: run.at.y });
         } else {
           // Sequence end: the completion report goes through the SAME
           // applyDespawn an explicit `despawnCords` intent takes (LIFE-1's
@@ -786,27 +784,28 @@ export function createCordWorldStep(config: CordWorldConfig = {}): CordWorldStep
     // across the frame's substeps — the counter makes every replay after the
     // first a no-op — and an idle pointer (no `brush` composed, or the same
     // counter) never brushes, even when a swinging cord passes straight
-    // through the ray (Thor's zero-idle-cost rule: impulses ride MOVE
-    // events, never time). A garbage move counter or non-finite ray consumes
-    // the move and brushes nothing (totality). Vanishing cords are still
-    // brushable — the documented call; their pins win like every cord's.
-    let brushRay: Ray3 | null = null;
+    // through the cursor point (Thor's zero-idle-cost rule: impulses ride
+    // MOVE events, never time). A garbage move counter or non-finite cursor
+    // point consumes the move and brushes nothing (totality). Vanishing
+    // cords are still brushable — the documented call; their pins win like
+    // every cord's.
+    let brushPoint: Vec2 | null = null;
     const brush = input.brush;
     if (brush !== null && brush !== undefined && Number.isFinite(brush.move)) {
       if (brush.move !== lastBrushMove) {
         lastBrushMove = brush.move;
-        const r = brush.ray;
+        const c = brush.point;
         if (
-          r !== null && r !== undefined &&
-          Number.isFinite(r.origin.x) && Number.isFinite(r.origin.y) && Number.isFinite(r.origin.z) &&
-          Number.isFinite(r.direction.x) && Number.isFinite(r.direction.y) && Number.isFinite(r.direction.z)
+          c !== null && c !== undefined &&
+          Number.isFinite(c.x) && Number.isFinite(c.y)
         ) {
-          brushRay = r;
+          brushPoint = c;
         }
         // A11Y-1 — resolve the frame's strength scale with the move (inside
-        // the new-counter branch: the scale rides move events like the ray).
-        // Absent/garbage = 1; a changed scale refills the scratch strength
-        // (config strength × scale) so the pass below stays allocation-free.
+        // the new-counter branch: the scale rides move events like the
+        // point). Absent/garbage = 1; a changed scale refills the scratch
+        // strength (config strength × scale) so the pass below stays
+        // allocation-free.
         const rawScale = brush.strengthScale;
         const scale =
           typeof rawScale === 'number' && Number.isFinite(rawScale) && rawScale >= 0
@@ -878,7 +877,7 @@ export function createCordWorldStep(config: CordWorldConfig = {}): CordWorldStep
       // substep the pointer moved (visible same-frame) and no later intent
       // can zero it. Pins were skipped inside the pass. The options are the
       // A11Y-1-scaled scratch (identity unless the frame carried a scale).
-      if (brushRay !== null) applyBrushToRope(entry.rope, brushRay, brushPassOptions, dt);
+      if (brushPoint !== null) applyBrushToRope(entry.rope, brushPoint, brushPassOptions, dt);
       entry.rope.step(dt);
       entry.rope.writePointsTo(entry.points);
     }

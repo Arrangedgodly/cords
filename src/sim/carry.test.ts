@@ -3,7 +3,7 @@ import { createVerletRope } from './rope';
 import type { Rope } from './rope';
 import { createRopeSimStep } from './ropeStep';
 import { createFixedTimestepDriver } from './fixedTimestep';
-import type { SimState, Vec3 } from './types';
+import type { SimState, Vec2 } from './types';
 
 /**
  * SIM-2 acceptance (plan.md: "Carried-pin constraint & stretch leash") — the
@@ -42,14 +42,14 @@ const DEFAULT_CORD = {
 
 /** A rope hanging straight down from (0, PIN_Y, 0), free end carried. */
 function makeCarriedRope(): Rope {
-  const rope = createVerletRope({ ...DEFAULT_CORD, pin: { x: 0, y: PIN_Y, z: 0 } });
-  rope.placeAlong({ x: 0, y: PIN_Y, z: 0 }, { x: 0, y: PIN_Y - TOTAL, z: 0 });
+  const rope = createVerletRope({ ...DEFAULT_CORD, pin: { x: 0, y: PIN_Y} });
+  rope.placeAlong({ x: 0, y: PIN_Y}, { x: 0, y: PIN_Y - TOTAL});
   rope.carryEnd(END);
   return rope;
 }
 
-function readPoint(rope: Rope, index: number): Vec3 {
-  const out: Vec3 = { x: 0, y: 0, z: 0 };
+function readPoint(rope: Rope, index: number): Vec2 {
+  const out: Vec2 = { x: 0, y: 0};
   rope.readPoint(index, out);
   return out;
 }
@@ -60,8 +60,7 @@ function endpointDistance(rope: Rope): number {
   const b = readPoint(rope, rope.pointCount - 1);
   const dx = b.x - a.x;
   const dy = b.y - a.y;
-  const dz = b.z - a.z;
-  return Math.sqrt(dx * dx + dy * dy + dz * dz);
+  return Math.sqrt(dx * dx + dy * dy);
 }
 
 /** Bitwise array equality — the determinism bar is exact, not approx. */
@@ -78,7 +77,7 @@ function positions(rope: Rope): number[] {
   const flat: number[] = [];
   for (let i = 0; i < rope.pointCount; i += 1) {
     const p = readPoint(rope, i);
-    flat.push(p.x, p.y, p.z);
+    flat.push(p.x, p.y);
   }
   return flat;
 }
@@ -88,7 +87,7 @@ describe('carry — violent drag (SIM-2 acceptance a)', () => {
     const rope = makeCarriedRope();
     // The grabbed end hangs at (0, 0, 0); this target is exactly 50 m away:
     // sqrt(30² + 40²) = 50. One call = the whole teleport lands in one step.
-    rope.setPinTarget(END, { x: 30, y: 40, z: 0 });
+    rope.setPinTarget(END, { x: 30, y: 40});
 
     let nanCount = 0;
     let worstLeashOvershoot = 0; // max over steps of (endpointDistance - TOTAL)
@@ -119,13 +118,13 @@ describe('carry — violent drag (SIM-2 acceptance a)', () => {
   it('the bounded pin converges step by step — it never teleports, even toward a violent target', () => {
     const rope = makeCarriedRope();
     const cap = 12 * DT; // maxPinSpeed * dt: the per-step travel ceiling
-    rope.setPinTarget(END, { x: 30, y: 40, z: 0 });
+    rope.setPinTarget(END, { x: 30, y: 40});
     rope.step(DT);
     const afterOne = readPoint(rope, END);
     // After the teleport frame the pin has moved exactly one cap-length from
     // its start (0, 0, 0), along the target direction (0.6, 0.8, 0) — a drag,
     // not a jump.
-    expect(Math.sqrt(afterOne.x * afterOne.x + afterOne.y * afterOne.y + afterOne.z * afterOne.z))
+    expect(Math.sqrt(afterOne.x * afterOne.x + afterOne.y * afterOne.y))
       .toBeCloseTo(cap, 12);
     expect(afterOne.x / cap).toBeCloseTo(0.6, 9);
     expect(afterOne.y / cap).toBeCloseTo(0.8, 9);
@@ -169,8 +168,7 @@ describe('carry — leash circle (SIM-2 acceptance b)', () => {
       uz = nz;
       rope.setPinTarget(END, {
         x: ux * PULL,
-        y: PIN_Y + uy * PULL,
-        z: uz * PULL,
+        y: PIN_Y + uy * PULL
       });
       rope.step(DT);
       if (!rope.isFiniteState()) nanCount += 1;
@@ -200,8 +198,7 @@ describe('carry — determinism (SIM-2 acceptance c)', () => {
         const t = f * 0.05;
         rope.setPinTarget(END, {
           x: Math.cos(t) * 2.4,
-          y: PIN_Y + 1.1 + Math.sin(t * 1.7) * 1.3,
-          z: Math.sin(t) * 2.4,
+          y: PIN_Y + 1.1 + Math.sin(t * 1.7) * 1.3
         });
         rope.step(DT);
       }
@@ -216,26 +213,25 @@ describe('carry — determinism (SIM-2 acceptance c)', () => {
 
   it('SimInput.pinTarget through the production SimStep + fixed driver is bitwise-identical across runs', () => {
     const run = (): number[] => {
-      const step = createRopeSimStep({ cord: { ...DEFAULT_CORD, pin: { x: 0, y: PIN_Y, z: 0 } } });
+      const step = createRopeSimStep({ cord: { ...DEFAULT_CORD, pin: { x: 0, y: PIN_Y} } });
       const driver = createFixedTimestepDriver(step, { timestep: DT, maxSubsteps: 5 });
       let state: SimState = { time: 0, cords: [] };
       for (let f = 0; f < 120; f += 1) {
         const t = f * 0.13;
         const result = driver.advance(state, 1 / 60, {
-          pointerRay: null,
+          pointerPoint: null,
           pinTarget: {
             index: END,
             position: {
               x: Math.cos(t) * 2,
-              y: 1.0 + Math.sin(t) * 0.8,
-              z: Math.sin(t * 0.6) * 1.5,
+              y: 1.0 + Math.sin(t) * 0.8
             },
           },
         });
         expect(result.substeps).toBe(2);
         state = result.state;
       }
-      return state.cords[0].points.flatMap((p) => [p.x, p.y, p.z]);
+      return state.cords[0].points.flatMap((p) => [p.x, p.y]);
     };
     expectBitwiseEqual(run(), run(), 'driver carry run 1 vs run 2');
   });
@@ -246,12 +242,11 @@ describe('carry — determinism (SIM-2 acceptance c)', () => {
       const t = f * 0.09;
       rope.setPinTarget(END, {
         x: Math.cos(t) * 2.2,
-        y: PIN_Y + Math.sin(t * 1.4) * 1.5,
-        z: Math.sin(t) * 2.2,
+        y: PIN_Y + Math.sin(t * 1.4) * 1.5
       });
       rope.step(DT);
       const seat = readPoint(rope, 0);
-      if (seat.x !== 0 || seat.y !== PIN_Y || seat.z !== 0) {
+      if (seat.x !== 0 || seat.y !== PIN_Y) {
         throw new Error(`seated pin moved at frame ${f}: ${JSON.stringify(seat)}`);
       }
     }
@@ -268,8 +263,7 @@ describe('carry — release stub (SIM-2 acceptance d)', () => {
       const t = f * 0.21;
       rope.setPinTarget(END, {
         x: Math.cos(t) * 2.5,
-        y: 0.4 + Math.sin(t * 1.3),
-        z: Math.sin(t) * 2.5,
+        y: 0.4 + Math.sin(t * 1.3)
       });
       rope.step(DT);
     }
@@ -278,7 +272,7 @@ describe('carry — release stub (SIM-2 acceptance d)', () => {
 
     // The "hand" stops: the last target stands (reachable — inside the leash
     // sphere), nothing new is sent, and the cord settles around the held pin.
-    const LAST_TARGET = { x: 0.5, y: 0.9, z: 0.2 }; // 0.88 from the seat — inside
+    const LAST_TARGET = { x: 0.5, y: 0.9}; // 0.88 from the seat — inside
     rope.setPinTarget(END, LAST_TARGET);
     for (let s = 0; s < 900; s += 1) {
       rope.step(DT);
@@ -289,7 +283,6 @@ describe('carry — release stub (SIM-2 acceptance d)', () => {
     const held = readPoint(rope, END);
     expect(held.x).toBe(LAST_TARGET.x);
     expect(held.y).toBe(LAST_TARGET.y);
-    expect(held.z).toBe(LAST_TARGET.z);
     const frozen = positions(rope);
     for (let s = 0; s < 120; s += 1) rope.step(DT);
     // The pin holds bitwise; the free points' residual Verlet oscillation
@@ -311,7 +304,6 @@ describe('carry — release stub (SIM-2 acceptance d)', () => {
     const seat = readPoint(rope, 0);
     expect(seat.x).toBe(0);
     expect(seat.y).toBe(PIN_Y);
-    expect(seat.z).toBe(0);
   });
 });
 
@@ -322,45 +314,43 @@ describe('carry — API guards and violent-input survival', () => {
     expect(() => rope.carryEnd(5)).toThrow();
     expect(() => rope.carryEnd(1.5)).toThrow();
     expect(() => rope.carryEnd(0)).toThrow(); // the seated pin
-    expect(() => rope.setPinTarget(END, { x: 1, y: 1, z: 1 })).not.toThrow();
+    expect(() => rope.setPinTarget(END, { x: 1, y: 1})).not.toThrow();
 
-    const bare = createVerletRope({ ...DEFAULT_CORD, pin: { x: 0, y: PIN_Y, z: 0 } });
+    const bare = createVerletRope({ ...DEFAULT_CORD, pin: { x: 0, y: PIN_Y} });
     expect(bare.carriedIndex).toBe(null);
-    expect(() => bare.setPinTarget(0, { x: 1, y: 1, z: 1 })).toThrow(); // nothing carried
+    expect(() => bare.setPinTarget(0, { x: 1, y: 1})).toThrow(); // nothing carried
   });
 
   it('NaN/Inf targets are ignored: the pin holds, state stays finite, a later valid target still drags', () => {
     const rope = makeCarriedRope();
-    rope.setPinTarget(END, { x: Number.NaN, y: 0, z: 0 });
+    rope.setPinTarget(END, { x: Number.NaN, y: 0});
     rope.step(DT);
     expect(rope.isFiniteState()).toBe(true);
     let p = readPoint(rope, END);
     expect(p.x).toBe(0);
     expect(p.y).toBe(0);
-    expect(p.z).toBe(0);
 
-    rope.setPinTarget(END, { x: Number.POSITIVE_INFINITY, y: 0, z: 0 });
+    rope.setPinTarget(END, { x: Number.POSITIVE_INFINITY, y: 0});
     rope.step(DT);
     expect(rope.isFiniteState()).toBe(true);
     p = readPoint(rope, END);
     expect(p.x).toBe(0);
 
     // A valid target afterwards still engages the (bounded) convergence.
-    rope.setPinTarget(END, { x: 0.4, y: 0.2, z: 0 });
+    rope.setPinTarget(END, { x: 0.4, y: 0.2});
     for (let s = 0; s < 120; s += 1) rope.step(DT);
     p = readPoint(rope, END);
     expect(p.x).toBe(0.4);
     expect(p.y).toBe(0.2);
-    expect(p.z).toBe(0);
     expect(rope.maxConstraintViolation()).toBeLessThanOrEqual(0.05);
   });
 
   it('placeAlong disengages the carry — a fresh cord', () => {
     const rope = makeCarriedRope();
     expect(rope.carriedIndex).toBe(END);
-    rope.placeAlong({ x: 0, y: PIN_Y, z: 0 }, { x: 0, y: 0, z: 0 });
+    rope.placeAlong({ x: 0, y: PIN_Y}, { x: 0, y: 0});
     expect(rope.carriedIndex).toBe(null);
-    expect(() => rope.setPinTarget(END, { x: 0, y: 0, z: 0 })).toThrow();
+    expect(() => rope.setPinTarget(END, { x: 0, y: 0})).toThrow();
     rope.step(DT);
     expect(rope.isFiniteState()).toBe(true);
   });
@@ -372,17 +362,16 @@ describe('carry — API guards and violent-input survival', () => {
       gravity: 9.81,
       iterations: 4,
       damping: 0.985,
-      pin: { x: 0, y: 1, z: 0 },
+      pin: { x: 0, y: 1},
     });
-    rope.placeAlong({ x: 0, y: 1, z: 0 }, { x: 0, y: 0.9, z: 0 });
+    rope.placeAlong({ x: 0, y: 1}, { x: 0, y: 0.9});
     rope.carryEnd(1);
     const L = 1 * 0.1;
     for (let f = 0; f < 300; f += 1) {
       const t = f * 0.13;
       rope.setPinTarget(1, {
         x: Math.cos(t) * 1.5,
-        y: 1 + Math.sin(t) * 1.2,
-        z: Math.sin(t * 0.7) * 1.5,
+        y: 1 + Math.sin(t) * 1.2
       });
       rope.step(DT);
       expect(rope.isFiniteState()).toBe(true);

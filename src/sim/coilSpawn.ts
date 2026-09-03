@@ -2,19 +2,26 @@
  * INT-4 — the coiled spawn geometry. A cord grabbed from midair appears as a
  * COILED coil at the grab point, not as a straight line: point 0 (the RED
  * end, which becomes the carried pin) sits exactly at the spawn point, and
- * the remaining points wind outward along a flat Archimedean spiral in the
- * horizontal plane through it. No scripted uncoil animation exists — this is
- * only the START STATE; gravity + the constraint solve produce the springy
- * uncoil (the spiral chords are deliberately COMPRESSED below the rope's
- * natural segment rest, so the solve pushes the coil open as it falls —
- * stored spring, released by the sim).
+ * the remaining points wind outward along a flat Archimedean spiral around
+ * it. No scripted uncoil animation exists — this is only the START STATE;
+ * gravity + the constraint solve produce the springy uncoil (the spiral
+ * chords are deliberately COMPRESSED below the rope's natural segment rest,
+ * so the solve pushes the coil open as it falls — stored spring, released
+ * by the sim).
+ *
+ * 2D PIVOT (town-hall Revision 2): the spiral lives in the WORLD PLANE
+ * (the v1 horizontal xz-plane through the grab point became the xy-plane —
+ * same spiral, one fewer axis). Gravity then acts IN the coil's plane, so
+ * the spawned coil reads as a flat spiral that sags open under the hand —
+ * the same stored-compression spring, unrolled in the plane the player
+ * actually sees.
  *
  * Pure math: deterministic (identical inputs → bitwise-identical points),
- * allocation-light (writes into caller-owned shells), no three.js, no DOM,
+ * allocation-light (writes into caller-owned shells), no renderer, no DOM,
  * no wall-clock, no RNG — the liftable-core house rule holds.
  */
 
-import type { Vec3 } from './types';
+import type { Vec2 } from './types';
 
 /** Tuning of the spawn coil (world units; INT-lane feel knobs). */
 export interface CoilParams {
@@ -43,19 +50,19 @@ export const DEFAULT_COIL: Readonly<CoilParams> = {
  * around `at`. `out` must have room for `segmentCount + 1` points; slots
  * that are undefined are created (the same shell-filling contract as
  * Rope.writePointsTo). Point 0 lands EXACTLY on `at` — the carried red end
- * is in hand on the spawn frame. Every later point lies in the horizontal
- * plane through `at`, at radius `radiusInner..radiusOuter`, spaced by an
+ * is in hand on the spawn frame. Every later point lies in the world plane,
+ * at radius `radiusInner..radiusOuter`, spaced by an
  * arc-length-uniform walk so every chord ≈ `compression × segmentLength`
  * (all chords stay ≤ the natural rest: the coil is never born overstretched).
  * Deterministic: no RNG, no clock — the same (at, geometry, params) give
  * bitwise-identical points every run.
  */
 export function coilPoints(
-  at: Vec3,
+  at: Vec2,
   segmentCount: number,
   segmentLength: number,
   params: CoilParams,
-  out: Vec3[],
+  out: Vec2[],
 ): void {
   const arc = params.compression * segmentCount * segmentLength;
   // Archimedean spiral r(θ) = r0 + (r1 − r0)·θ/θmax: its arc length is
@@ -66,7 +73,7 @@ export function coilPoints(
     params.radiusInner + ((params.radiusOuter - params.radiusInner) * theta) / thetaMax;
   let theta = 0;
   for (let i = 0; i <= segmentCount; i += 1) {
-    const shell = out[i] ?? (out[i] = { x: 0, y: 0, z: 0 });
+    const shell = out[i] ?? (out[i] = { x: 0, y: 0 });
     let radius: number;
     if (i === 0) {
       // The carried red end: exactly at the grab point.
@@ -87,7 +94,6 @@ export function coilPoints(
       radius = radiusAt(theta);
     }
     shell.x = at.x + radius * Math.cos(theta);
-    shell.y = at.y; // flat coil in the horizontal plane through the grab point
-    shell.z = at.z + radius * Math.sin(theta);
+    shell.y = at.y + radius * Math.sin(theta); // flat coil in the world plane
   }
 }

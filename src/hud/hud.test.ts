@@ -16,7 +16,7 @@ import { describe, expect, it } from 'vitest';
 import { createCordWorldStep } from '../sim/cordWorld';
 import { createFixedTimestepDriver } from '../sim/fixedTimestep';
 import type { CordWorldStep } from '../sim/cordWorld';
-import type { SimInput, SimState, Vec3 } from '../sim';
+import type { SimInput, SimState, Vec2 } from '../sim';
 import { createHudPanel } from './panel';
 import type { HudElementLike } from './panel';
 import {
@@ -37,9 +37,9 @@ const DT = 1 / 120;
 const FRAME = 1 / 60;
 const SEGMENTS = 8;
 const END = SEGMENTS;
-const PIN: Vec3 = { x: 0, y: 1.6, z: 0 };
-const A: Vec3 = { x: 0.9, y: 0.42, z: 0 };
-const B: Vec3 = { x: 0.35, y: 0.42, z: 0.1 };
+const PIN: Vec2 = { x: 0, y: 1.6};
+const A: Vec2 = { x: 0.9, y: 0.42};
+const B: Vec2 = { x: 0.35, y: 0.42};
 
 interface World {
   advance(frames: number, input: SimInput): SimState;
@@ -65,12 +65,12 @@ function makeWorld(withAnchor = true): World {
 
 /** The HUD's own read: the live cord list + each cord's lifecycle state. */
 const countsOf = (world: World) =>
-  readHudCounts(world.advance(0, { pointerRay: null }).cords, world.step.lifecycle.stateOf);
+  readHudCounts(world.advance(0, { pointerPoint: null }).cords, world.step.lifecycle.stateOf);
 
 describe('T-REN-3 — HUD counts through the world seams (the model)', () => {
   it('names the anchor-only scene: 1 cord, nothing linked', () => {
     const world = makeWorld();
-    world.advance(10, { pointerRay: null });
+    world.advance(10, { pointerPoint: null });
     expect(countsOf(world)).toEqual({ cords: 1, awaitingPlug: 1, linked: 0, popped: 0, vanishing: 0 });
     // The anchor's pin IS a seat (LIFE-1): the cord awaits its other plug,
     // and A11Y-1's summary says so instead of a bare "1 cord."
@@ -80,8 +80,8 @@ describe('T-REN-3 — HUD counts through the world seams (the model)', () => {
 
   it('counts spawns (carried cords are cords)', () => {
     const world = makeWorld();
-    world.advance(1, { pointerRay: null, spawnCord: { cordId: 1, at: { x: 0.5, y: 1, z: 0 } } });
-    world.advance(1, { pointerRay: null, spawnCord: { cordId: 2, at: { x: -0.5, y: 1, z: 0 } } });
+    world.advance(1, { pointerPoint: null, spawnCord: { cordId: 1, at: { x: 0.5, y: 1} } });
+    world.advance(1, { pointerPoint: null, spawnCord: { cordId: 2, at: { x: -0.5, y: 1} } });
     expect(countsOf(world)).toEqual({ cords: 3, awaitingPlug: 1, linked: 0, popped: 0, vanishing: 0 });
     expect(sceneSummary(countsOf(world)))
       .toBe('3 cords, 1 awaiting plug. Press N for a new cord, R to reset.');
@@ -89,11 +89,11 @@ describe('T-REN-3 — HUD counts through the world seams (the model)', () => {
 
   it('counts LINKED on the second seat (the first seat stays awaiting-plug)', () => {
     const world = makeWorld();
-    world.advance(1, { pointerRay: null, spawnCord: { cordId: 1, at: { x: 0.5, y: 1, z: 0 } } });
-    world.advance(3, { pointerRay: null, seatTargets: [{ cordId: 1, index: 0, position: A }] });
+    world.advance(1, { pointerPoint: null, spawnCord: { cordId: 1, at: { x: 0.5, y: 1} } });
+    world.advance(3, { pointerPoint: null, seatTargets: [{ cordId: 1, index: 0, position: A }] });
     expect(world.step.lifecycle.stateOf(1)).toBe('awaiting-plug');
     expect(countsOf(world)).toEqual({ cords: 2, awaitingPlug: 2, linked: 0, popped: 0, vanishing: 0 });
-    world.advance(3, { pointerRay: null,
+    world.advance(3, { pointerPoint: null,
       seatTargets: [
         { cordId: 1, index: 0, position: A },
         { cordId: 1, index: END, position: B },
@@ -107,18 +107,18 @@ describe('T-REN-3 — HUD counts through the world seams (the model)', () => {
 
   it('counts POPPED and follows the grace expiry into VANISHING', () => {
     const world = makeWorld();
-    world.advance(1, { pointerRay: null, spawnCord: { cordId: 1, at: { x: 0.5, y: 1, z: 0 } } });
-    world.advance(3, { pointerRay: null,
+    world.advance(1, { pointerPoint: null, spawnCord: { cordId: 1, at: { x: 0.5, y: 1} } });
+    world.advance(3, { pointerPoint: null,
       seatTargets: [
         { cordId: 1, index: 0, position: A },
         { cordId: 1, index: END, position: B },
       ],
     });
-    world.advance(1, { pointerRay: null, popCords: [{ cordId: 1, index: 0 }] });
+    world.advance(1, { pointerPoint: null, popCords: [{ cordId: 1, index: 0 }] });
     expect(countsOf(world)).toEqual({ cords: 2, awaitingPlug: 1, linked: 0, popped: 1, vanishing: 0 });
     expect(sceneSummary(countsOf(world)))
       .toBe('2 cords, 1 awaiting plug, 1 popped. Press N for a new cord, R to reset.');
-    world.advance(400, { pointerRay: null }); // ~3.33 s of sim time — past the ~3 s grace
+    world.advance(400, { pointerPoint: null }); // ~3.33 s of sim time — past the ~3 s grace
     expect(countsOf(world)).toEqual({ cords: 2, awaitingPlug: 1, linked: 0, popped: 0, vanishing: 1 });
     expect(sceneSummary(countsOf(world)))
       .toBe('2 cords, 1 awaiting plug, 1 vanishing. Press N for a new cord, R to reset.');
@@ -126,17 +126,17 @@ describe('T-REN-3 — HUD counts through the world seams (the model)', () => {
 
   it('drops the count when the despawn removes the cord (vanish completed)', () => {
     const world = makeWorld();
-    world.advance(1, { pointerRay: null, spawnCord: { cordId: 1, at: { x: 0.5, y: 1, z: 0 } } });
-    world.advance(3, { pointerRay: null, seatTargets: [{ cordId: 1, index: 0, position: A }] });
+    world.advance(1, { pointerPoint: null, spawnCord: { cordId: 1, at: { x: 0.5, y: 1} } });
+    world.advance(3, { pointerPoint: null, seatTargets: [{ cordId: 1, index: 0, position: A }] });
     // The held jack: a carry intent names the blue end (the grab), then the
     // user-initiated failure — released off-cube.
     world.advance(2, {
-      pointerRay: null,
-      pinTargets: [{ cordId: 1, index: END, position: { x: 0.5, y: 0.9, z: 0 } }],
+      pointerPoint: null,
+      pinTargets: [{ cordId: 1, index: END, position: { x: 0.5, y: 0.9} }],
     });
-    world.advance(1, { pointerRay: null, releaseJack: { cordId: 1, index: END } });
+    world.advance(1, { pointerPoint: null, releaseJack: { cordId: 1, index: END } });
     expect(countsOf(world)).toEqual({ cords: 2, awaitingPlug: 1, linked: 0, popped: 0, vanishing: 1 });
-    world.advance(1, { pointerRay: null, despawnCords: [{ cordId: 1 }] });
+    world.advance(1, { pointerPoint: null, despawnCords: [{ cordId: 1 }] });
     expect(countsOf(world)).toEqual({ cords: 1, awaitingPlug: 1, linked: 0, popped: 0, vanishing: 0 });
     expect(sceneSummary(countsOf(world)))
       .toBe('1 cord, 1 awaiting plug. Press N for a new cord, R to reset.');
@@ -151,21 +151,21 @@ describe('T-REN-3 — HUD counts through the world seams (the model)', () => {
     expect(sceneSummary(counts)).toBe('No cords on the bench. Press N for a new cord.');
     // And the ids RESET reuses are legal there: id 0 is an ordinary spawn id
     // in a no-anchor world (the render layer revives view 0 on reuse).
-    world.advance(1, { pointerRay: null, spawnCord: { cordId: 0, at: { x: 0.2, y: 1, z: 0 } } });
+    world.advance(1, { pointerPoint: null, spawnCord: { cordId: 0, at: { x: 0.2, y: 1} } });
     expect(countsOf(world)).toEqual({ cords: 1, awaitingPlug: 0, linked: 0, popped: 0, vanishing: 0 });
     expect(world.step.lifecycle.stateOf(0)).toBe('carried');
   });
 
   it('full reset cycle: a busy scene, then the no-anchor rebuild reads zero', () => {
     const busy = makeWorld();
-    busy.advance(1, { pointerRay: null, spawnCord: { cordId: 1, at: { x: 0.5, y: 1, z: 0 } } });
-    busy.advance(3, { pointerRay: null,
+    busy.advance(1, { pointerPoint: null, spawnCord: { cordId: 1, at: { x: 0.5, y: 1} } });
+    busy.advance(3, { pointerPoint: null,
       seatTargets: [
         { cordId: 1, index: 0, position: A },
         { cordId: 1, index: END, position: B },
       ],
     });
-    busy.advance(1, { pointerRay: null, spawnCord: { cordId: 2, at: { x: -0.5, y: 1, z: 0 } } });
+    busy.advance(1, { pointerPoint: null, spawnCord: { cordId: 2, at: { x: -0.5, y: 1} } });
     expect(countsOf(busy)).toEqual({ cords: 3, awaitingPlug: 1, linked: 1, popped: 0, vanishing: 0 });
     const afterReset = countsOf(makeWorld(false));
     expect(afterReset).toEqual({ cords: 0, awaitingPlug: 0, linked: 0, popped: 0, vanishing: 0 });
@@ -173,10 +173,10 @@ describe('T-REN-3 — HUD counts through the world seams (the model)', () => {
 
   it('readHudCountsInto reuses the shell (no fresh objects) and stays total over unknown ids', () => {
     const world = makeWorld();
-    world.advance(1, { pointerRay: null, spawnCord: { cordId: 1, at: { x: 0.5, y: 1, z: 0 } } });
+    world.advance(1, { pointerPoint: null, spawnCord: { cordId: 1, at: { x: 0.5, y: 1} } });
     const shell = createHudCounts();
-    const a = readHudCountsInto(world.advance(0, { pointerRay: null }).cords, world.step.lifecycle.stateOf, shell);
-    const b = readHudCountsInto(world.advance(0, { pointerRay: null }).cords, world.step.lifecycle.stateOf, shell);
+    const a = readHudCountsInto(world.advance(0, { pointerPoint: null }).cords, world.step.lifecycle.stateOf, shell);
+    const b = readHudCountsInto(world.advance(0, { pointerPoint: null }).cords, world.step.lifecycle.stateOf, shell);
     expect(a).toBe(b); // same shell, mutated in place
     expect(a).toEqual({ cords: 2, awaitingPlug: 1, linked: 0, popped: 0, vanishing: 0 });
     // Totality: a stateOf that knows nothing still counts the cord on the bench.
@@ -251,13 +251,13 @@ describe('A11Y-1 — the scene summary speaks EVERY lifecycle transition', () =>
     const world = makeWorld();
     const summaries: string[] = [];
     const snap = () => summaries.push(sceneSummary(countsOf(world)));
-    world.advance(10, { pointerRay: null });
+    world.advance(10, { pointerPoint: null });
     snap(); // anchor: awaiting-plug
-    world.advance(1, { pointerRay: null, spawnCord: { cordId: 1, at: { x: 0.5, y: 1, z: 0 } } });
+    world.advance(1, { pointerPoint: null, spawnCord: { cordId: 1, at: { x: 0.5, y: 1} } });
     snap(); // spawn: carried (#0 — the cord count moves)
-    world.advance(3, { pointerRay: null, seatTargets: [{ cordId: 1, index: 0, position: A }] });
+    world.advance(3, { pointerPoint: null, seatTargets: [{ cordId: 1, index: 0, position: A }] });
     snap(); // #1 carried → awaiting-plug (first seat)
-    world.advance(3, { pointerRay: null,
+    world.advance(3, { pointerPoint: null,
       seatTargets: [
         { cordId: 1, index: 0, position: A },
         { cordId: 1, index: END, position: B },
@@ -265,22 +265,22 @@ describe('A11Y-1 — the scene summary speaks EVERY lifecycle transition', () =>
     });
     snap(); // #2 awaiting-plug → linked (second seat)
     world.advance(2, {
-      pointerRay: null,
-      pinTargets: [{ cordId: 1, index: END, position: { x: 0.5, y: 1.0, z: 0 } }],
+      pointerPoint: null,
+      pinTargets: [{ cordId: 1, index: END, position: { x: 0.5, y: 1.0} }],
     });
     snap(); // #7 linked → awaiting-plug (the hand-pulled plug)
-    world.advance(3, { pointerRay: null,
+    world.advance(3, { pointerPoint: null,
       seatTargets: [
         { cordId: 1, index: 0, position: A },
         { cordId: 1, index: END, position: B },
       ],
     });
     snap(); // #2 again: the pulled end re-seats → linked
-    world.advance(1, { pointerRay: null, popCords: [{ cordId: 1, index: 0 }] });
+    world.advance(1, { pointerPoint: null, popCords: [{ cordId: 1, index: 0 }] });
     snap(); // #4 linked → popped
-    world.advance(400, { pointerRay: null }); // past the ~3 s grace
+    world.advance(400, { pointerPoint: null }); // past the ~3 s grace
     snap(); // #6 popped → vanishing (expiry)
-    world.advance(1, { pointerRay: null, despawnCords: [{ cordId: 1 }] });
+    world.advance(1, { pointerPoint: null, despawnCords: [{ cordId: 1 }] });
     snap(); // vanish completion → the cord leaves the world
     // The states the walk actually visited (the world's own truth):
     expect(world.step.lifecycle.stateOf(0)).toBe('awaiting-plug');
@@ -295,13 +295,13 @@ describe('A11Y-1 — the scene summary speaks EVERY lifecycle transition', () =>
     // The one transition that only REMOVES a named count: the first seat's
     // jack is grabbed back off its socket before the second seat ever lands.
     const world = makeWorld();
-    world.advance(1, { pointerRay: null, spawnCord: { cordId: 1, at: { x: 0.5, y: 1, z: 0 } } });
-    world.advance(3, { pointerRay: null, seatTargets: [{ cordId: 1, index: 0, position: A }] });
+    world.advance(1, { pointerPoint: null, spawnCord: { cordId: 1, at: { x: 0.5, y: 1} } });
+    world.advance(3, { pointerPoint: null, seatTargets: [{ cordId: 1, index: 0, position: A }] });
     expect(world.step.lifecycle.stateOf(1)).toBe('awaiting-plug');
     const before = sceneSummary(countsOf(world));
     world.advance(2, {
-      pointerRay: null,
-      pinTargets: [{ cordId: 1, index: 0, position: { x: 0.4, y: 1.0, z: 0 } }],
+      pointerPoint: null,
+      pinTargets: [{ cordId: 1, index: 0, position: { x: 0.4, y: 1.0} }],
     });
     expect(world.step.lifecycle.stateOf(1)).toBe('carried'); // transition #8
     const after = sceneSummary(countsOf(world));
@@ -345,21 +345,21 @@ describe('REFINE-1 — vanishNotice + the notice-led summary (the death is NAMED
     // The composition's law: popped → vanishing always changes the counts,
     // so the one-shot notice is consumed by the very update that follows it.
     const world = makeWorld();
-    world.advance(1, { pointerRay: null, spawnCord: { cordId: 1, at: { x: 0.5, y: 1, z: 0 } } });
-    world.advance(3, { pointerRay: null,
+    world.advance(1, { pointerPoint: null, spawnCord: { cordId: 1, at: { x: 0.5, y: 1} } });
+    world.advance(3, { pointerPoint: null,
       seatTargets: [
         { cordId: 1, index: 0, position: A },
         { cordId: 1, index: END, position: B },
       ],
     });
-    world.advance(1, { pointerRay: null, popCords: [{ cordId: 1, index: 0 }] });
-    world.advance(400, { pointerRay: null }); // past the ~3s grace → vanishing
+    world.advance(1, { pointerPoint: null, popCords: [{ cordId: 1, index: 0 }] });
+    world.advance(400, { pointerPoint: null }); // past the ~3s grace → vanishing
     const atExpiry = countsOf(world);
     expect(atExpiry).toEqual({ cords: 2, awaitingPlug: 1, linked: 0, popped: 0, vanishing: 1 });
     const withNotice = sceneSummary(atExpiry, vanishNotice(1));
     expect(withNotice.startsWith('Cord shattered — unplugged. ')).toBe(true);
     // And the despawn retires it: the next sentence never speaks the death again.
-    world.advance(1, { pointerRay: null, despawnCords: [{ cordId: 1 }] });
+    world.advance(1, { pointerPoint: null, despawnCords: [{ cordId: 1 }] });
     expect(sceneSummary(countsOf(world)).includes('shattered')).toBe(false);
   });
 });
@@ -401,16 +401,16 @@ describe('REFINE-4 — putAwayNotice: the self-clean line (distinct vocabulary)'
     const world = makeWorld();
     // A dropped coil (no end driven) counts down the idle window and leaves
     // through the same vanishing state — the counts move, the line rides.
-    world.advance(1, { pointerRay: null, spawnCord: { cordId: 1, at: { x: 0.5, y: 1, z: 0 } } });
+    world.advance(1, { pointerPoint: null, spawnCord: { cordId: 1, at: { x: 0.5, y: 1} } });
     // No carry targets ever flow: the sweep retires the spawn's carry the
     // first target-less step, the window counts, expiry → vanishing.
-    world.advance(1, { pointerRay: null, releaseJack: { cordId: 1, index: 0 } });
-    world.advance(1260, { pointerRay: null }); // 10.5 s > the ~10 s default window
+    world.advance(1, { pointerPoint: null, releaseJack: { cordId: 1, index: 0 } });
+    world.advance(1260, { pointerPoint: null }); // 10.5 s > the ~10 s default window
     const atAbandon = countsOf(world);
     expect(atAbandon).toEqual({ cords: 2, awaitingPlug: 1, linked: 0, popped: 0, vanishing: 1 });
     expect(sceneSummary(atAbandon, putAwayNotice(1)).startsWith('Cord put away. ')).toBe(true);
     // The despawn retires the line like every death.
-    world.advance(1, { pointerRay: null, despawnCords: [{ cordId: 1 }] });
+    world.advance(1, { pointerPoint: null, despawnCords: [{ cordId: 1 }] });
     expect(sceneSummary(countsOf(world)).includes('put away')).toBe(false);
   });
 });
@@ -700,24 +700,24 @@ describe('T-REN-3 — the panel: honest painting + the update gate', () => {
 
   it('paints counts derived from the REAL world end to end (spawn → link)', () => {
     const world = makeWorld();
-    world.advance(1, { pointerRay: null, spawnCord: { cordId: 1, at: { x: 0.5, y: 1, z: 0 } } });
-    world.advance(3, { pointerRay: null,
+    world.advance(1, { pointerPoint: null, spawnCord: { cordId: 1, at: { x: 0.5, y: 1} } });
+    world.advance(3, { pointerPoint: null,
       seatTargets: [
         { cordId: 1, index: 0, position: A },
         { cordId: 1, index: END, position: B },
       ],
     });
-    world.advance(1, { pointerRay: null, spawnCord: { cordId: 2, at: { x: -0.5, y: 1, z: 0 } } });
+    world.advance(1, { pointerPoint: null, spawnCord: { cordId: 2, at: { x: -0.5, y: 1} } });
     const { panel, fixture } = makePanel();
     const f = fixture();
-    panel.update(readHudCounts(world.advance(0, { pointerRay: null }).cords, world.step.lifecycle.stateOf));
+    panel.update(readHudCounts(world.advance(0, { pointerPoint: null }).cords, world.step.lifecycle.stateOf));
     expect(f.litCords()).toBe(3); // anchor + linked cord + carried cord
     expect(f.litLinked()).toBe(1);
     expect(f.summary.textContent)
       .toBe('3 cords, 1 awaiting plug, 1 linked. Press N for a new cord, R to reset.');
     // RESET's read: the no-anchor rebuild drives the same panel to empty.
     const afterReset = makeWorld(false);
-    panel.update(readHudCounts(afterReset.advance(0, { pointerRay: null }).cords, afterReset.step.lifecycle.stateOf));
+    panel.update(readHudCounts(afterReset.advance(0, { pointerPoint: null }).cords, afterReset.step.lifecycle.stateOf));
     expect(f.litCords()).toBe(0);
     expect(f.root.hasClass('is-empty')).toBe(true);
     expect(f.summary.textContent).toBe('No cords on the bench. Press N for a new cord.');

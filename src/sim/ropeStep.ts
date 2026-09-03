@@ -1,4 +1,4 @@
-import type { CordState, SimState, SimStep, Vec3 } from './types';
+import type { CordState, SimState, SimStep, Vec2 } from './types';
 import { createVerletRope, resolveRopeConfig } from './rope';
 import type { RopeConfig } from './rope';
 
@@ -7,6 +7,9 @@ import type { RopeConfig } from './rope';
  * contract, replacing the ARC-2 no-op at the composition root. The
  * fixed-timestep driver (ARC-3) calls this once per substep, so every
  * `rope.step(dt)` receives exactly one fixed slice.
+ *
+ * 2D PIVOT (town-hall Revision 2): Vec2 throughout — the plane's own
+ * coordinates, gravity −Y, floor a horizontal line. Every law identical.
  *
  * SIM-2 carry intent flows in through `SimInput.pinTarget`: while the
  * interaction layer keeps sending a target, that endpoint is a carried
@@ -24,8 +27,8 @@ import type { RopeConfig } from './rope';
  *
  * INT-3 — the same latched `seatTarget` is also the SEAT TRANSPORT: when it
  * names the already-seated index, its position is applied through
- * `rope.setSeatPosition`, so a dragged cube's socket transform moves the
- * plugged pin every substep (hard-follow — the cord follows the cube).
+ * `rope.setSeatPosition`, so a dragged rectangle's socket transform moves the
+ * plugged pin every substep (hard-follow — the cord follows its host).
  * Unchanged re-sends are bitwise no-ops inside the rope, so the per-frame
  * latch never kicks the cord into an endless re-settle.
  *
@@ -39,7 +42,7 @@ import type { RopeConfig } from './rope';
  *
  * M1 world model: ONE cord. The rope lives in the closure and IS the state —
  * the incoming `state.cords` is ignored beyond its clock, and the same
- * SimState/CordState/Vec3 shells are mutated and returned every call, so a
+ * SimState/CordState/Vec2 shells are mutated and returned every call, so a
  * frame advances with zero allocation (render reads the snapshot read-only).
  * SIM-2/LIFE-1 grow this into a multi-cord world; determinism already holds
  * because the step is a pure function of (initial state, call sequence).
@@ -62,12 +65,11 @@ export function createRopeSimStep(config: RopeSimStepConfig = {}): SimStep {
     {
       x: pin.x,
       y: pin.y - resolved.segmentCount * resolved.segmentLength,
-      z: pin.z,
     },
   );
 
   // Preallocated world shells — created once here, mutated in place forever.
-  const cordPoints: Vec3[] = new Array(rope.pointCount);
+  const cordPoints: Vec2[] = new Array(rope.pointCount);
   rope.writePointsTo(cordPoints); // fills the shells with the spawn pose
   const cord: CordState = { id: 0, points: cordPoints };
   const world: SimState = { time: 0, cords: [cord] };
@@ -96,13 +98,13 @@ export function createRopeSimStep(config: RopeSimStepConfig = {}): SimStep {
     // anchor is seated by construction, not by a plug event).
     //
     // INT-3 SEAT TRANSPORT: a seatTarget naming the ALREADY-seated index is
-    // the socket moving (its cube is being dragged) — the plugged pin is set
-    // to the transform's position each substep (hard-follow: the jack rides
-    // its socket kinematically; the cord body follows through the constraint
-    // solve). Re-sends of an UNCHANGED transform are no-ops inside the rope
-    // (setSeatPosition skips bitwise-identical positions without waking), so
-    // the latched per-frame re-send can never restart the settle — the
-    // post-drag calm-down stays bounded by the settle window.
+    // the socket moving (its rectangle is being dragged) — the plugged pin is
+    // set to the transform's position each substep (hard-follow: the jack
+    // rides its socket kinematically; the cord body follows through the
+    // constraint solve). Re-sends of an UNCHANGED transform are no-ops inside
+    // the rope (setSeatPosition skips bitwise-identical positions without
+    // waking), so the latched per-frame re-send can never restart the settle
+    // — the post-drag calm-down stays bounded by the settle window.
     //
     // Boundary totality: a garbage (non-finite) position on the PLUG intent
     // is ignored here exactly like anchor-naming intents — upstream SimInput
@@ -116,11 +118,11 @@ export function createRopeSimStep(config: RopeSimStepConfig = {}): SimStep {
     ) {
       if (!rope.isEndSeated(seatTo.index)) {
         const p = seatTo.position;
-        if (Number.isFinite(p.x) && Number.isFinite(p.y) && Number.isFinite(p.z)) {
+        if (Number.isFinite(p.x) && Number.isFinite(p.y)) {
           rope.seat(seatTo);
         }
       } else {
-        rope.setSeatPosition(seatTo.index, seatTo.position.x, seatTo.position.y, seatTo.position.z);
+        rope.setSeatPosition(seatTo.index, seatTo.position.x, seatTo.position.y);
       }
     }
     rope.step(dt);

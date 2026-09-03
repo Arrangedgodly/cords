@@ -3,7 +3,7 @@ import { createVerletRope, DEFAULT_ROPE_CONFIG } from './rope';
 import type { Rope } from './rope';
 import { createRopeSimStep } from './ropeStep';
 import { createFixedTimestepDriver } from './fixedTimestep';
-import type { SimState, Vec3 } from './types';
+import type { SimState, Vec2 } from './types';
 
 /**
  * SIM-3 acceptance (plan.md: "Seat/rest-length solve & settle tuning") — the
@@ -31,31 +31,30 @@ const SEGMENTS = 16;
 const SEG_LEN = 0.1;
 const TOTAL = SEGMENTS * SEG_LEN;
 const PIN_Y = 1.6;
-const PIN: Vec3 = { x: 0, y: PIN_Y, z: 0 };
+const PIN: Vec2 = { x: 0, y: PIN_Y};
 const END = SEGMENTS;
 
 // Plug scenarios. Socket distances from the pin: A 1.513, A2 1.331,
 // B 1.550 (near-taut), C 1.076 — all inside the 1.6 leash.
-const SOCKET_A: Vec3 = { x: 0.9, y: 0.4, z: 0.2 };
-const SOCKET_A2: Vec3 = { x: 0.2, y: 0.3, z: 0.1 };
-const SOCKET_B: Vec3 = { x: 1.35, y: 0.7, z: 0.3 };
-const SOCKET_C: Vec3 = { x: 0.6, y: 0.9, z: 0.15 };
+const SOCKET_A: Vec2 = { x: 0.9, y: 0.4};
+const SOCKET_A2: Vec2 = { x: 0.2, y: 0.3};
+const SOCKET_B: Vec2 = { x: 1.35, y: 0.7};
+const SOCKET_C: Vec2 = { x: 0.6, y: 0.9};
 
 /** A rope hanging straight down from PIN (the spawn pose). */
 function makeHangingRope(): Rope {
   const rope = createVerletRope({ pin: PIN });
-  rope.placeAlong(PIN, { x: 0, y: PIN_Y - TOTAL, z: 0 });
+  rope.placeAlong(PIN, { x: 0, y: PIN_Y - TOTAL});
   return rope;
 }
 
 /** `frames` of violent circular carry, then converge the pin onto `socket`. */
-function dragAndConverge(rope: Rope, socket: Vec3, radius: number, frames = 120): void {
+function dragAndConverge(rope: Rope, socket: Vec2, radius: number, frames = 120): void {
   for (let f = 0; f < frames; f += 1) {
     const t = f * 0.21;
     rope.setPinTarget(END, {
       x: Math.cos(t) * radius,
-      y: 0.5 + Math.sin(t * 1.3) * radius * 0.5,
-      z: Math.sin(t) * radius,
+      y: 0.5 + Math.sin(t * 1.3) * radius * 0.5
     });
     rope.step(DT);
   }
@@ -68,10 +67,10 @@ function dragAndConverge(rope: Rope, socket: Vec3, radius: number, frames = 120)
 }
 
 /** Near-taut drag: pull past the leash (riding the sphere), then converge. */
-function tautDragAndConverge(rope: Rope, socket: Vec3): void {
+function tautDragAndConverge(rope: Rope, socket: Vec2): void {
   for (let f = 0; f < 90; f += 1) {
     const t = f * 0.15;
-    rope.setPinTarget(END, { x: Math.cos(t) * 2.4, y: 0.4, z: Math.sin(t) * 2.4 });
+    rope.setPinTarget(END, { x: Math.cos(t) * 2.4, y: 0.4});
     rope.step(DT);
   }
   for (let f = 0; f < 24; f += 1) {
@@ -81,7 +80,7 @@ function tautDragAndConverge(rope: Rope, socket: Vec3): void {
 }
 
 /** Seats and measures: steps (and adaptation steps) until the rope sleeps. */
-function seatAndMeasure(rope: Rope, socket: Vec3): { settleSteps: number; adaptSteps: number } {
+function seatAndMeasure(rope: Rope, socket: Vec2): { settleSteps: number; adaptSteps: number } {
   rope.seat({ index: END, position: socket });
   let settleSteps = 0;
   let adaptSteps = 0;
@@ -97,8 +96,8 @@ function seatAndMeasure(rope: Rope, socket: Vec3): { settleSteps: number; adaptS
   return { settleSteps, adaptSteps };
 }
 
-function readPoint(rope: Rope, index: number): Vec3 {
-  const out: Vec3 = { x: 0, y: 0, z: 0 };
+function readPoint(rope: Rope, index: number): Vec2 {
+  const out: Vec2 = { x: 0, y: 0};
   rope.readPoint(index, out);
   return out;
 }
@@ -107,7 +106,7 @@ function positions(rope: Rope): number[] {
   const flat: number[] = [];
   for (let i = 0; i < rope.pointCount; i += 1) {
     const p = readPoint(rope, i);
-    flat.push(p.x, p.y, p.z);
+    flat.push(p.x, p.y);
   }
   return flat;
 }
@@ -122,9 +121,9 @@ function expectBitwiseEqual(a: ArrayLike<number>, b: ArrayLike<number>, label: s
   }
 }
 
-function expectPointAt(rope: Rope, index: number, p: Vec3, label: string): void {
+function expectPointAt(rope: Rope, index: number, p: Vec2, label: string): void {
   const got = readPoint(rope, index);
-  if (got.x !== p.x || got.y !== p.y || got.z !== p.z) {
+  if (got.x !== p.x || got.y !== p.y) {
     throw new Error(`${label}: point ${index} at ${JSON.stringify(got)}, expected ${JSON.stringify(p)}`);
   }
 }
@@ -132,7 +131,8 @@ function expectPointAt(rope: Rope, index: number, p: Vec3, label: string): void 
 describe('seat — settle window (SIM-3 acceptance a)', () => {
   // The approved feel target, asserted per scenario: seat a stretched cord,
   // calm (KE below settleEnergy → asleep) inside [1.0, 2.0] s. Measured with
-  // the shipped defaults: 1.367 / 1.825 / 1.083 / 1.483 s.
+  // the shipped defaults (2D re-sweep, seatDamping 0.968): 1.650 / 1.783 /
+  // 1.233 / 1.575 s.
   const scenarios = [
     { name: 'violent mid-swing plug, r=1.2', socket: SOCKET_A, kind: 'violent' as const, radius: 1.2 },
     { name: 'violent mid-swing plug, r=2.2', socket: SOCKET_A2, kind: 'violent' as const, radius: 2.2 },
@@ -215,9 +215,9 @@ describe('seat — smooth rest redistribution (SIM-3 acceptance c)', () => {
     // every point on a vertical line at 2x spacing — segments 200% of rest.
     const SPACING = 2 * SEG_LEN;
     for (let i = 0; i < rope.pointCount; i += 1) {
-      rope.setPoint(i, 0, PIN_Y - SPACING * i, 0);
+      rope.setPoint(i, 0, PIN_Y - SPACING * i);
     }
-    const stretchedSeat: Vec3 = { x: 0, y: PIN_Y - SPACING * SEGMENTS, z: 0 };
+    const stretchedSeat: Vec2 = { x: 0, y: PIN_Y - SPACING * SEGMENTS};
 
     const violationBefore = rope.maxConstraintViolation();
     expect(violationBefore).toBeCloseTo(1.0, 5); // demanding natural rest on 2x segments
@@ -300,13 +300,12 @@ describe('seat — determinism (SIM-3 acceptance d)', () => {
       for (let f = 0; f < 60; f += 1) {
         const t = f * 0.42;
         const result = driver.advance(state, 1 / 60, {
-          pointerRay: null,
+          pointerPoint: null,
           pinTarget: {
             index: END,
             position: {
               x: Math.cos(t) * 1.2,
-              y: 0.5 + Math.sin(t * 1.3) * 0.6,
-              z: Math.sin(t) * 1.2,
+              y: 0.5 + Math.sin(t * 1.3) * 0.6
             },
           },
         });
@@ -314,18 +313,18 @@ describe('seat — determinism (SIM-3 acceptance d)', () => {
         state = result.state;
       }
       driver.advance(state, 1 / 60, {
-        pointerRay: null,
+        pointerPoint: null,
         seatTarget: { index: END, position: SOCKET_A },
       });
-      state = driver.advance(state, 1 / 60, { pointerRay: null }).state;
+      state = driver.advance(state, 1 / 60, { pointerPoint: null }).state;
       // ~3 s of quiet: the cord sleeps, positions freeze bitwise.
       for (let f = 0; f < 178; f += 1) {
-        state = driver.advance(state, 1 / 60, { pointerRay: null }).state;
+        state = driver.advance(state, 1 / 60, { pointerPoint: null }).state;
       }
-      const frozen = state.cords[0].points.flatMap((p) => [p.x, p.y, p.z]);
+      const frozen = state.cords[0].points.flatMap((p) => [p.x, p.y]);
       for (let f = 0; f < 60; f += 1) {
-        state = driver.advance(state, 1 / 60, { pointerRay: null }).state;
-        const now = state.cords[0].points.flatMap((p) => [p.x, p.y, p.z]);
+        state = driver.advance(state, 1 / 60, { pointerPoint: null }).state;
+        const now = state.cords[0].points.flatMap((p) => [p.x, p.y]);
         expectBitwiseEqual(now, frozen, 'driver frame after settle');
       }
       return frozen;
@@ -346,8 +345,7 @@ describe('seat — awaiting-plug coexistence and guards', () => {
       const t = f * 0.21;
       rope.setPinTarget(END, {
         x: Math.cos(t) * 1.2,
-        y: 0.5 + Math.sin(t * 1.3) * 0.6,
-        z: Math.sin(t) * 1.2,
+        y: 0.5 + Math.sin(t * 1.3) * 0.6
       });
       rope.step(DT);
       expectPointAt(rope, 0, PIN, 'anchor during await');
@@ -361,7 +359,7 @@ describe('seat — awaiting-plug coexistence and guards', () => {
 
     // The carry machinery is closed for a plugged end.
     expect(() => rope.carryEnd(END)).toThrow();
-    expect(() => rope.setPinTarget(END, { x: 1, y: 1, z: 1 })).toThrow();
+    expect(() => rope.setPinTarget(END, { x: 1, y: 1})).toThrow();
     expect(() => rope.seat({ index: END, position: SOCKET_A })).toThrow();
   });
 
@@ -372,14 +370,14 @@ describe('seat — awaiting-plug coexistence and guards', () => {
     expect(() => rope.seat({ index: 1.5, position: SOCKET_A })).toThrow();
     expect(() => rope.seat({ index: 0, position: SOCKET_A })).toThrow(); // the anchor
     expect(() =>
-      rope.seat({ index: END, position: { x: Number.NaN, y: 0, z: 0 } }),
+      rope.seat({ index: END, position: { x: Number.NaN, y: 0} }),
     ).toThrow();
     expect(() =>
-      rope.seat({ index: END, position: { x: 1, y: Number.POSITIVE_INFINITY, z: 0 } }),
+      rope.seat({ index: END, position: { x: 1, y: Number.POSITIVE_INFINITY} }),
     ).toThrow();
     expect(rope.isEndSeated(END)).toBe(false); // failed seats never half-apply
     expect(() => rope.seat({ index: END, position: SOCKET_A })).not.toThrow();
-    expect(() => rope.setSeatPosition(END, 1, 2, 3)).not.toThrow();
+    expect(() => rope.setSeatPosition(END, 1, 2)).not.toThrow();
   });
 
   it('setSeatPosition moves the plugged pin bitwise and wakes the rope; the cord re-settles to sleep', () => {
@@ -390,15 +388,15 @@ describe('seat — awaiting-plug coexistence and guards', () => {
     expect(rope.isSettled()).toBe(true);
 
     // The socket's cube is dragged: the jack must ride bitwise and wake.
-    const MOVED: Vec3 = { x: SOCKET_A.x + 0.2, y: SOCKET_A.y, z: SOCKET_A.z - 0.1 };
-    rope.setSeatPosition(END, MOVED.x, MOVED.y, MOVED.z);
+    const MOVED: Vec2 = { x: SOCKET_A.x + 0.2, y: SOCKET_A.y};
+    rope.setSeatPosition(END, MOVED.x, MOVED.y);
     expect(rope.isSettled()).toBe(false);
     rope.step(DT);
     expectPointAt(rope, END, MOVED, 'moved plugged pin');
     expect(rope.isFiniteState()).toBe(true);
 
     // Non-finite moves are ignored (last valid position stands).
-    rope.setSeatPosition(END, Number.NaN, 0, 0);
+    rope.setSeatPosition(END, Number.NaN, 0);
     rope.step(DT);
     expectPointAt(rope, END, MOVED, 'pin after ignored garbage move');
 
@@ -424,9 +422,9 @@ describe('seat — awaiting-plug coexistence and guards', () => {
     seatAndMeasure(rope, SOCKET_A);
 
     const rousers: Array<[string, () => void]> = [
-      ['setVelocity', () => rope.setVelocity(5, 1, 0, 0, DT)],
-      ['setPoint', () => rope.setPoint(5, 0.1, 0.5, 0)],
-      ['setPin', () => rope.setPin(0.05, PIN_Y, 0)],
+      ['setVelocity', () => rope.setVelocity(5, 1, 0, DT)],
+      ['setPoint', () => rope.setPoint(5, 0.1, 0.5)],
+      ['setPin', () => rope.setPin(0.05, PIN_Y)],
       ['wake', () => rope.wake()],
     ];
     for (const [name, rouse] of rousers) {
@@ -444,7 +442,7 @@ describe('seat — awaiting-plug coexistence and guards', () => {
     }
 
     // Fresh cord: the whole seat state resets.
-    rope.placeAlong(PIN, { x: 0, y: PIN_Y - TOTAL, z: 0 });
+    rope.placeAlong(PIN, { x: 0, y: PIN_Y - TOTAL});
     expect(rope.isEndSeated(END)).toBe(false);
     expect(rope.isSettled()).toBe(false);
     for (let s = 0; s < SEGMENTS; s += 1) {
@@ -461,23 +459,23 @@ describe('seat — awaiting-plug coexistence and guards', () => {
       gravity: 9.81,
       iterations: 4,
       damping: 0.985,
-      pin: { x: 0, y: 1, z: 0 },
+      pin: { x: 0, y: 1},
     });
-    rope.placeAlong({ x: 0, y: 1, z: 0 }, { x: 0, y: 0.9, z: 0 });
+    rope.placeAlong({ x: 0, y: 1}, { x: 0, y: 0.9});
     rope.carryEnd(1);
     for (let f = 0; f < 60; f += 1) {
       const t = f * 0.3;
-      rope.setPinTarget(1, { x: Math.cos(t) * 0.3, y: 1 + Math.sin(t) * 0.2, z: 0 });
+      rope.setPinTarget(1, { x: Math.cos(t) * 0.3, y: 1 + Math.sin(t) * 0.2});
       rope.step(DT);
     }
-    const SOCKET: Vec3 = { x: 0.05, y: 0.92, z: 0 };
+    const SOCKET: Vec2 = { x: 0.05, y: 0.92};
     rope.seat({ index: 1, position: SOCKET });
     for (let s = 0; s < 600; s += 1) {
       rope.step(DT);
       expect(rope.isFiniteState()).toBe(true);
     }
     expect(rope.isSettled()).toBe(true);
-    expectPointAt(rope, 0, { x: 0, y: 1, z: 0 }, 'single-seg anchor');
+    expectPointAt(rope, 0, { x: 0, y: 1}, 'single-seg anchor');
     expectPointAt(rope, 1, SOCKET, 'single-seg plug');
   });
 

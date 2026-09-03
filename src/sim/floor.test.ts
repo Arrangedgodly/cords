@@ -41,13 +41,12 @@ function dropAndSettle(
   let prev: Float64Array | null = null;
   const steps = Math.round(seconds / DT);
   const capture = (): Float64Array => {
-    const pts = new Float64Array(rope.pointCount * 3);
+    const pts = new Float64Array(rope.pointCount * 2);
     for (let i = 0; i < rope.pointCount; i += 1) {
-      const out = { x: 0, y: 0, z: 0 };
+      const out = { x: 0, y: 0};
       rope.readPoint(i, out);
-      pts[i * 3] = out.x;
-      pts[i * 3 + 1] = out.y;
-      pts[i * 3 + 2] = out.z;
+      pts[i * 2] = out.x;
+      pts[i * 2 + 1] = out.y;
     }
     return pts;
   };
@@ -55,8 +54,8 @@ function dropAndSettle(
     rope.step(DT);
     const pts = capture();
     for (let i = 0; i < rope.pointCount; i += 1) {
-      if (pts[i * 3 + 1] < floorY) {
-        maxPenetration = Math.max(maxPenetration, floorY - pts[i * 3 + 1]);
+      if (pts[i * 2 + 1] < floorY) {
+        maxPenetration = Math.max(maxPenetration, floorY - pts[i * 2 + 1]);
       }
     }
     // Jitter window: worst per-axis per-step motion over the FINAL second.
@@ -77,11 +76,11 @@ describe('REN-1 floor clamp (floorY)', () => {
     // hang — the lower run MUST come to rest on the plane.
     const floorY = 0;
     const rope = createVerletRope({
-      pin: { x: 0, y: 1.0, z: 0 },
+      pin: { x: 0, y: 1.0},
       floorY,
     });
     // Start horizontal at pin height (a real drop, not a pre-stacked pile).
-    rope.placeAlong({ x: 0, y: 1.0, z: 0 }, { x: 1.6, y: 1.0, z: 0 });
+    rope.placeAlong({ x: 0, y: 1.0}, { x: 1.6, y: 1.0});
 
     const { maxPenetration, finalMaxStepDelta } = dropAndSettle(rope, 12, floorY);
 
@@ -93,7 +92,7 @@ describe('REN-1 floor clamp (floorY)', () => {
     let minY = Infinity;
     let touchesFloor = false;
     for (let i = 0; i < rope.pointCount; i += 1) {
-      const out = { x: 0, y: 0, z: 0 };
+      const out = { x: 0, y: 0};
       rope.readPoint(i, out);
       if (out.y < minY) minY = out.y;
       if (out.y === floorY) touchesFloor = true;
@@ -110,12 +109,12 @@ describe('REN-1 floor clamp (floorY)', () => {
   it('a seated cord still sleeps ON the floor — bitwise stillness, exactly like mid-air', () => {
     const floorY = 0;
     const rope = createVerletRope({
-      pin: { x: -0.5, y: 0.05, z: 0 },
+      pin: { x: -0.5, y: 0.05},
       floorY,
     });
     // Drape: pin near the floor on the left, free end dropped on the right.
-    rope.placeAlong({ x: -0.5, y: 0.05, z: 0 }, { x: 0.5, y: 0.05, z: 0 });
-    rope.seat({ index: rope.segmentCount, position: { x: 0.5, y: 0.02, z: 0 } });
+    rope.placeAlong({ x: -0.5, y: 0.05}, { x: 0.5, y: 0.05});
+    rope.seat({ index: rope.segmentCount, position: { x: 0.5, y: 0.02} });
 
     let sleptAtStep = -1;
     const steps = Math.round(30 / DT);
@@ -130,8 +129,8 @@ describe('REN-1 floor clamp (floorY)', () => {
     expect(rope.isSettled()).toBe(true);
 
     // A sleeping rope is bitwise still ON the floor (integration skipped).
-    const before = { x: 0, y: 0, z: 0 };
-    const after = { x: 0, y: 0, z: 0 };
+    const before = { x: 0, y: 0};
+    const after = { x: 0, y: 0};
     for (let s = 0; s < 120; s += 1) {
       for (let i = 0; i < rope.pointCount; i += 1) {
         rope.readPoint(i, before);
@@ -139,7 +138,6 @@ describe('REN-1 floor clamp (floorY)', () => {
         rope.readPoint(i, after);
         expect(after.x).toBe(before.x);
         expect(after.y).toBe(before.y);
-        expect(after.z).toBe(before.z);
       }
     }
     // And nothing was ever pressed through the plane.
@@ -152,10 +150,10 @@ describe('REN-1 floor clamp (floorY)', () => {
   it('the violent-drag contract holds with a floor: leash exact, finite, and the carried pin stays above a clamped target floor', () => {
     const floorY = 0;
     const rope = createVerletRope({
-      pin: { x: 0, y: 1.6, z: 0 },
+      pin: { x: 0, y: 1.6},
       floorY,
     });
-    rope.placeAlong({ x: 0, y: 1.6, z: 0 }, { x: 0, y: 0, z: 0 });
+    rope.placeAlong({ x: 0, y: 1.6}, { x: 0, y: 0});
     const end = rope.segmentCount;
     rope.carryEnd(end);
     const total = rope.segmentCount * rope.segmentLength;
@@ -167,18 +165,16 @@ describe('REN-1 floor clamp (floorY)', () => {
       const r = total * 2;
       rope.setPinTarget(end, {
         x: Math.cos(a) * r,
-        y: Math.max(floorY + 0.02, Math.sin(a) * r),
-        z: Math.sin(a) * r,
+        y: Math.max(floorY + 0.02, Math.sin(a) * r)
       });
       rope.step(DT);
-      const p = { x: 0, y: 0, z: 0 };
-      const q = { x: 0, y: 0, z: 0 };
+      const p = { x: 0, y: 0};
+      const q = { x: 0, y: 0};
       rope.readPoint(0, p);
       rope.readPoint(end, q);
       const dx = q.x - p.x;
       const dy = q.y - p.y;
-      const dz = q.z - p.z;
-      expect(Math.sqrt(dx * dx + dy * dy + dz * dz)).toBeLessThanOrEqual(total + 1e-9);
+      expect(Math.sqrt(dx * dx + dy * dy)).toBeLessThanOrEqual(total + 1e-9);
       expect(rope.isFiniteState()).toBe(true);
     }
   });
@@ -186,18 +182,17 @@ describe('REN-1 floor clamp (floorY)', () => {
   it('floorY=null is bit-identical to a floor far below — the default solver is untouched', () => {
     const makeAndRun = (floorY: number | null): Float64Array => {
       const rope = createVerletRope({
-        pin: { x: 0.3, y: 1.4, z: -0.2 },
+        pin: { x: 0.3, y: 1.4},
         floorY,
       });
-      rope.placeAlong({ x: 0.3, y: 1.4, z: -0.2 }, { x: -1.1, y: 1.4, z: 0.4 });
+      rope.placeAlong({ x: 0.3, y: 1.4}, { x: -1.1, y: 1.4});
       for (let s = 0; s < 240; s += 1) rope.step(DT);
-      const out = new Float64Array(rope.pointCount * 3);
+      const out = new Float64Array(rope.pointCount * 2);
       for (let i = 0; i < rope.pointCount; i += 1) {
-        const p = { x: 0, y: 0, z: 0 };
+        const p = { x: 0, y: 0};
         rope.readPoint(i, p);
-        out[i * 3] = p.x;
-        out[i * 3 + 1] = p.y;
-        out[i * 3 + 2] = p.z;
+        out[i * 2] = p.x;
+        out[i * 2 + 1] = p.y;
       }
       return out;
     };
@@ -212,18 +207,17 @@ describe('REN-1 floor clamp (floorY)', () => {
   it('floor-enabled runs are deterministic; config validation fail-fast; M1 flow (grab → drag → release onto floor) lands on the bench', () => {
     // Determinism: two identical floor ropes finish bitwise-identical.
     const run = (): Float64Array => {
-      const rope = createVerletRope({ pin: { x: 0, y: 1.2, z: 0 }, floorY: 0 });
-      rope.placeAlong({ x: 0, y: 1.2, z: 0 }, { x: 1.2, y: 1.2, z: 0 });
+      const rope = createVerletRope({ pin: { x: 0, y: 1.2}, floorY: 0 });
+      rope.placeAlong({ x: 0, y: 1.2}, { x: 1.2, y: 1.2});
       rope.carryEnd(rope.segmentCount);
-      rope.setPinTarget(rope.segmentCount, { x: 0.8, y: 0.02, z: 0.4 });
+      rope.setPinTarget(rope.segmentCount, { x: 0.8, y: 0.02});
       for (let s = 0; s < 300; s += 1) rope.step(DT);
-      const out = new Float64Array(rope.pointCount * 3);
+      const out = new Float64Array(rope.pointCount * 2);
       for (let i = 0; i < rope.pointCount; i += 1) {
-        const p = { x: 0, y: 0, z: 0 };
+        const p = { x: 0, y: 0};
         rope.readPoint(i, p);
-        out[i * 3] = p.x;
-        out[i * 3 + 1] = p.y;
-        out[i * 3 + 2] = p.z;
+        out[i * 2] = p.x;
+        out[i * 2 + 1] = p.y;
       }
       return out;
     };
@@ -243,7 +237,7 @@ describe('REN-1 floor clamp (floorY)', () => {
     // pin cannot touch down — the leash wins, by design).
     const floorY = 0;
     const step = createRopeSimStep({
-      cord: { pin: { x: 0, y: 1.6, z: 0 }, floorY },
+      cord: { pin: { x: 0, y: 1.6}, floorY },
     });
     let state = { time: 0, cords: [] as CordState[] };
     const driver = createFixedTimestepDriver(step, { timestep: DT, maxSubsteps: 5 });
@@ -254,7 +248,7 @@ describe('REN-1 floor clamp (floorY)', () => {
       state = driver.advance(
         state,
         1 / 60,
-        carrying ? { pointerRay: null, pinTarget: { index: end, position: { x: 0.2, y: 0.02, z: 0.1 } } } : { pointerRay: null },
+        carrying ? { pointerPoint: null, pinTarget: { index: end, position: { x: 0.2, y: 0.02} } } : { pointerPoint: null },
       ).state;
     }
     const endPoint = state.cords[0].points[end];

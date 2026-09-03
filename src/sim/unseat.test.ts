@@ -1,7 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import { createVerletRope } from './rope';
 import type { Rope } from './rope';
-import type { Vec3 } from './types';
+import type { Vec2 } from './types';
 
 /**
  * INT-4 — the rope-level un-seat (plan.md INT-4: "ends pluggable in ANY
@@ -30,15 +30,15 @@ import type { Vec3 } from './types';
 const DT = 1 / 120;
 const SEGMENTS = 8; // total rope length 0.8
 const END = SEGMENTS;
-const PIN: Vec3 = { x: 0, y: 1.6, z: 0 };
+const PIN: Vec2 = { x: 0, y: 1.6};
 // A socket WITH SLACK from the anchor (0.592 < 0.8): the seated cord hangs
 // with pooled slack, so an un-seat reads as a gentle pull, not a slingshot.
-const SOCKET: Vec3 = { x: 0.3, y: 1.1, z: 0.1 };
+const SOCKET: Vec2 = { x: 0.3, y: 1.1};
 const TOTAL = SEGMENTS * 0.1;
 
 function makeSeatedRope(): Rope {
   const rope = createVerletRope({ pin: PIN, segmentCount: SEGMENTS });
-  rope.placeAlong(PIN, { x: SOCKET.x, y: SOCKET.y, z: SOCKET.z });
+  rope.placeAlong(PIN, { x: SOCKET.x, y: SOCKET.y});
   rope.carryEnd(END);
   for (let f = 0; f < 30; f += 1) {
     rope.setPinTarget(END, SOCKET);
@@ -48,15 +48,15 @@ function makeSeatedRope(): Rope {
   return rope;
 }
 
-function point(rope: Rope, index: number): Vec3 {
-  const out: Vec3 = { x: 0, y: 0, z: 0 };
+function point(rope: Rope, index: number): Vec2 {
+  const out: Vec2 = { x: 0, y: 0};
   rope.readPoint(index, out);
   return out;
 }
 
-function expectPointAt(rope: Rope, index: number, p: Vec3, label: string): void {
+function expectPointAt(rope: Rope, index: number, p: Vec2, label: string): void {
   const got = point(rope, index);
-  if (got.x !== p.x || got.y !== p.y || got.z !== p.z) {
+  if (got.x !== p.x || got.y !== p.y) {
     throw new Error(`${label}: point ${index} at ${JSON.stringify(got)}, expected ${JSON.stringify(p)}`);
   }
 }
@@ -65,7 +65,7 @@ function positions(rope: Rope): number[] {
   const flat: number[] = [];
   for (let i = 0; i < rope.pointCount; i += 1) {
     const p = point(rope, i);
-    flat.push(p.x, p.y, p.z);
+    flat.push(p.x, p.y);
   }
   return flat;
 }
@@ -99,7 +99,7 @@ describe('INT-4 — rope unseat (re-grab a seated end)', () => {
     // its position, never pops.
     rope.step(DT);
     const after = point(rope, END);
-    expect(Math.hypot(after.x - SOCKET.x, after.y - SOCKET.y, after.z - SOCKET.z)).toBeLessThan(5e-3);
+    expect(Math.hypot(after.x - SOCKET.x, after.y - SOCKET.y)).toBeLessThan(5e-3);
 
     // The cord keeps hanging from its other seated end: the anchor bitwise
     // unmoved across a full second of settling, all finite throughout.
@@ -109,7 +109,6 @@ describe('INT-4 — rope unseat (re-grab a seated end)', () => {
       const anchor = point(rope, 0);
       expect(anchor.x).toBe(PIN.x);
       expect(anchor.y).toBe(PIN.y);
-      expect(anchor.z).toBe(PIN.z);
     }
   });
 
@@ -122,29 +121,28 @@ describe('INT-4 — rope unseat (re-grab a seated end)', () => {
     // The formerly-pinned end is now carriable (this threw pre-INT-4).
     // The target stays inside the leash sphere around the remaining seat.
     expect(() => rope.carryEnd(0)).not.toThrow();
-    const HAND: Vec3 = { x: -0.2, y: 1.3, z: 0.2 }; // 0.55 from SOCKET < 0.8
+    const HAND: Vec2 = { x: -0.2, y: 1.3}; // 0.55 from SOCKET < 0.8
     for (let f = 0; f < 90; f += 1) {
       rope.setPinTarget(0, HAND);
       rope.step(DT);
       expect(rope.isFiniteState()).toBe(true);
     }
     const held = point(rope, 0);
-    expect(Math.hypot(held.x - HAND.x, held.y - HAND.y, held.z - HAND.z)).toBeLessThan(0.05);
+    expect(Math.hypot(held.x - HAND.x, held.y - HAND.y)).toBeLessThan(0.05);
     // …and seatable (the anchor guard only protects an anchor that pins).
-    const NEW_SOCKET: Vec3 = { x: -0.4, y: 0.9, z: 0.0 };
+    const NEW_SOCKET: Vec2 = { x: -0.4, y: 0.9};
     expect(() => rope.seat({ index: 0, position: NEW_SOCKET })).not.toThrow();
     rope.step(DT);
     const seated = point(rope, 0);
     expect(seated.x).toBe(NEW_SOCKET.x);
     expect(seated.y).toBe(NEW_SOCKET.y);
-    expect(seated.z).toBe(NEW_SOCKET.z);
   });
 
   it('guards: unseating a free end or non-endpoint throws; the pre-release guards still throw as documented', () => {
     const rope = makeSeatedRope();
     // A rope with NO plug: END is free, so unseating it is a caller bug.
     const free = createVerletRope({ pin: PIN, segmentCount: SEGMENTS });
-    free.placeAlong(PIN, { x: 0, y: PIN.y - TOTAL, z: 0 });
+    free.placeAlong(PIN, { x: 0, y: PIN.y - TOTAL});
     expect(() => free.unseat(END)).toThrow(/not a seated end/);
     expect(() => rope.unseat(3)).toThrow(/not a seated end/);
     expect(() => rope.unseat(-1)).toThrow(/out of range/);
@@ -162,14 +160,14 @@ describe('INT-4 — rope unseat (re-grab a seated end)', () => {
     rope.carryEnd(0);
     // Drag the released end violently toward a point far past the cord's
     // total length from the SOCKET (the only remaining pin).
-    const FAR: Vec3 = { x: SOCKET.x + 0.9, y: SOCKET.y + 0.6, z: SOCKET.z }; // 1.083 away
+    const FAR: Vec2 = { x: SOCKET.x + 0.9, y: SOCKET.y + 0.6}; // 1.083 away
     let worst = 0;
     for (let f = 0; f < 600; f += 1) {
       rope.setPinTarget(0, FAR);
       rope.step(DT);
       expect(rope.isFiniteState()).toBe(true);
       const carried = point(rope, 0);
-      const d = Math.hypot(carried.x - SOCKET.x, carried.y - SOCKET.y, carried.z - SOCKET.z);
+      const d = Math.hypot(carried.x - SOCKET.x, carried.y - SOCKET.y);
       worst = Math.max(worst, d - TOTAL);
       expect(d).toBeLessThanOrEqual(TOTAL + 1e-9); // the SIM-2 bound, re-aimed
     }
@@ -186,21 +184,21 @@ describe('INT-4 — rope unseat (re-grab a seated end)', () => {
     rope.carryEnd(0);
     // A target 5 units from where the anchor used to be: no leash fires
     // (nothing to leash against), the pin converges to the target.
-    const FAR: Vec3 = { x: PIN.x + 5, y: PIN.y, z: PIN.z };
+    const FAR: Vec2 = { x: PIN.x + 5, y: PIN.y};
     for (let f = 0; f < 480; f += 1) {
       rope.setPinTarget(0, FAR);
       rope.step(DT);
       expect(rope.isFiniteState()).toBe(true);
     }
     const carried = point(rope, 0);
-    expect(Math.hypot(carried.x - FAR.x, carried.y - FAR.y, carried.z - FAR.z)).toBeLessThan(0.02);
+    expect(Math.hypot(carried.x - FAR.x, carried.y - FAR.y)).toBeLessThan(0.02);
   });
 
   it('placeAlong resets the release: a fresh cord hangs from its anchor and the guards re-engage', () => {
     const rope = makeSeatedRope();
     rope.unseat(0);
     expect(rope.anchorReleased).toBe(true);
-    rope.placeAlong(PIN, { x: 0.2, y: 0.6, z: 0 });
+    rope.placeAlong(PIN, { x: 0.2, y: 0.6});
     expect(rope.anchorReleased).toBe(false);
     expect(() => rope.carryEnd(0)).toThrow(/carryEnd cannot carry the seated pin/);
   });
@@ -226,7 +224,7 @@ describe('INT-4 — rope unseat (re-grab a seated end)', () => {
  *   one end never throws away the other's state.
  */
 describe('INT-4 FIX — per-end seats: a cord holds BOTH ends seated', () => {
-  const SOCKET_2: Vec3 = { x: -0.25, y: 1.05, z: -0.05 }; // 0.619 from SOCKET < 0.8
+  const SOCKET_2: Vec2 = { x: -0.25, y: 1.05}; // 0.619 from SOCKET < 0.8
 
   /** A LINKED rope: anchor released, re-seated at SOCKET_2; plug still at SOCKET. */
   function makeLinkedRope(): Rope {
@@ -239,7 +237,7 @@ describe('INT-4 FIX — per-end seats: a cord holds BOTH ends seated', () => {
       expect(rope.isFiniteState()).toBe(true);
     }
     const held = point(rope, 0);
-    expect(Math.hypot(held.x - SOCKET_2.x, held.y - SOCKET_2.y, held.z - SOCKET_2.z)).toBeLessThan(0.05);
+    expect(Math.hypot(held.x - SOCKET_2.x, held.y - SOCKET_2.y)).toBeLessThan(0.05);
     rope.seat({ index: 0, position: SOCKET_2 });
     expect(rope.isEndSeated(0)).toBe(true);
     expect(rope.isEndSeated(END)).toBe(true);
@@ -305,8 +303,8 @@ describe('INT-4 FIX — per-end seats: a cord holds BOTH ends seated', () => {
     // stays true, state frozen for a full second.
     const frozen = positions(rope);
     for (let s = 0; s < 120; s += 1) {
-      rope.setSeatPosition(0, SOCKET_2.x, SOCKET_2.y, SOCKET_2.z);
-      rope.setSeatPosition(END, SOCKET.x, SOCKET.y, SOCKET.z);
+      rope.setSeatPosition(0, SOCKET_2.x, SOCKET_2.y);
+      rope.setSeatPosition(END, SOCKET.x, SOCKET.y);
       expect(rope.isSettled()).toBe(true);
       rope.step(DT);
       expectBitwiseEqual(positions(rope), frozen, `double latch step ${s}`);
@@ -314,14 +312,14 @@ describe('INT-4 FIX — per-end seats: a cord holds BOTH ends seated', () => {
     // A genuine move of ONE seat: that pin rides bitwise, the other is
     // untouched bitwise (two-seat transport — a dragged cube moves exactly
     // the plugs seated on it).
-    const MOVED_0: Vec3 = { x: SOCKET_2.x + 0.12, y: SOCKET_2.y + 0.05, z: SOCKET_2.z };
-    rope.setSeatPosition(0, MOVED_0.x, MOVED_0.y, MOVED_0.z);
+    const MOVED_0: Vec2 = { x: SOCKET_2.x + 0.12, y: SOCKET_2.y + 0.05};
+    rope.setSeatPosition(0, MOVED_0.x, MOVED_0.y);
     expect(rope.isSettled()).toBe(false); // the genuine move wakes
     rope.step(DT);
     expectPointAt(rope, 0, MOVED_0, 'moved end-0 seat');
     expectPointAt(rope, END, SOCKET, 'end END seat unmoved');
     // Non-finite garbage on either transport is ignored (last valid stands).
-    rope.setSeatPosition(END, Number.NaN, 0, 0);
+    rope.setSeatPosition(END, Number.NaN, 0);
     rope.step(DT);
     expectPointAt(rope, END, SOCKET, 'seat after ignored garbage move');
   });
@@ -334,8 +332,8 @@ describe('INT-4 FIX — per-end seats: a cord holds BOTH ends seated', () => {
     // Un-seat end 0: its transport now throws (nothing plugged there) and
     // END's transport still works — the slots are independent.
     rope.unseat(0);
-    expect(() => rope.setSeatPosition(0, 1, 1, 1)).toThrow(/no plug seated there/);
-    expect(() => rope.setSeatPosition(END, SOCKET.x, SOCKET.y, SOCKET.z)).not.toThrow();
+    expect(() => rope.setSeatPosition(0, 1, 1)).toThrow(/no plug seated there/);
+    expect(() => rope.setSeatPosition(END, SOCKET.x, SOCKET.y)).not.toThrow();
     // Un-seating the LAST seat is fine too — the old message contract holds.
     rope.unseat(END);
     expect(rope.isEndSeated(0)).toBe(false);

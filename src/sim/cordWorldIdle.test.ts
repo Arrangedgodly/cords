@@ -3,7 +3,7 @@ import { createCordWorldStep } from './cordWorld';
 import { createFixedTimestepDriver } from './fixedTimestep';
 import type { LifecycleRejection, LifecycleTransition } from './lifecycle';
 import type { VanishEvent } from './vanish';
-import type { PinTargetInput, SimInput, SimState, Vec3 } from './types';
+import type { PinTargetInput, SimInput, SimState, Vec2 } from './types';
 
 /**
  * REFINE-4 — IDLE ABANDONMENT at the world boundary, driven through the
@@ -42,8 +42,8 @@ const FLOOR_Y = 0;
 /** The interaction layer's floor-rest hold height (main.ts FLOOR_REST_Y). */
 const FLOOR_REST_Y = 0.055;
 /** A dropped coil's rest pose: hold mid-air, then converge to floor-rest. */
-const HOLD: Vec3 = { x: 0.2, y: 0.5, z: 0.1 };
-const DROP_TO: Vec3 = { x: 0.2, y: FLOOR_REST_Y, z: 0.1 };
+const HOLD: Vec2 = { x: 0.2, y: 0.5};
+const DROP_TO: Vec2 = { x: 0.2, y: FLOOR_REST_Y};
 /** Converging a drop takes ~30 frames at these distances (bounded pin speed). */
 const CONVERGE_FRAMES = 40;
 
@@ -67,7 +67,7 @@ function makeWorld(options?: {
   const vanishEvents: VanishEvent[] = [];
   const step = createCordWorldStep({
     ...(options?.anchor === true
-      ? { anchor: { pin: { x: 0, y: 1.2, z: 0 }, segmentCount: SEGMENTS, floorY: FLOOR_Y } }
+      ? { anchor: { pin: { x: 0, y: 1.2}, segmentCount: SEGMENTS, floorY: FLOOR_Y } }
       : {}),
     cord: { segmentCount: SEGMENTS, floorY: FLOOR_Y },
     vanish: { onEvent: (event: VanishEvent) => vanishEvents.push(event) },
@@ -81,7 +81,7 @@ function makeWorld(options?: {
   let state: SimState = { time: 0, cords: [] };
   let frameCount = 0;
   const frame = (extra?: Partial<SimInput>): SimState => {
-    const input: SimInput = { pointerRay: null, ...(extra ?? {}) };
+    const input: SimInput = { pointerPoint: null, ...(extra ?? {}) };
     state = driver.advance(state, FRAME, input).state;
     frameCount += 1;
     return state;
@@ -157,11 +157,10 @@ describe('REFINE-4 — the abandonment sweep + idle window (world level)', () =>
     const at = shatter!.at!;
     const dx = at.x - restBefore.x;
     const dy = at.y - restBefore.y;
-    const dz = at.z - restBefore.z;
     // The freed end settles the hair it was held above the glass (0.055) and
     // the solver may shift it a grip's width while the coil relaxes — a
     // teleport would be units, not centimeters.
-    expect(Math.hypot(dx, dy, dz)).toBeLessThan(0.15);
+    expect(Math.hypot(dx, dy)).toBeLessThan(0.15);
     expect(at.y).toBeLessThanOrEqual(FLOOR_REST_Y + 0.05);
   });
 
@@ -212,7 +211,7 @@ describe('REFINE-4 — the abandonment sweep + idle window (world level)', () =>
     expect(h.lifecycle.stateOf(1)).toBe('carried');
     expect(h.transitions.some((t) => t.reason === 'abandoned')).toBe(false);
     // Post-rescue NORMALITY: the cord seats through the ordinary intent path.
-    const seatAt: Vec3 = { x: 0.4, y: 0.6, z: -0.2 };
+    const seatAt: Vec2 = { x: 0.4, y: 0.6};
     h.frame({ pinTargets: [rescue], seatTargets: [{ cordId: 1, index: 0, position: seatAt }] });
     expect(h.lifecycle.stateOf(1)).toBe('awaiting-plug');
     // And a seated cord NEVER idles (the anchor law, on the same cord).
@@ -246,8 +245,8 @@ describe('REFINE-4 — the abandonment sweep + idle window (world level)', () =>
     // ~3s grace to 'grace-expired' — the two clocks are independent.
     const h = makeWorld({ idleSeconds: 0.5 });
     h.frame({ spawnCord: { cordId: 1, at: HOLD } });
-    const seatA: Vec3 = { x: -0.4, y: 0.5, z: 0 };
-    const seatB: Vec3 = { x: 0.4, y: 0.5, z: 0 };
+    const seatA: Vec2 = { x: -0.4, y: 0.5};
+    const seatB: Vec2 = { x: 0.4, y: 0.5};
     h.frame({ seatTargets: [{ cordId: 1, index: 0, position: seatA }] }); // awaiting-plug
     h.frame({
       seatTargets: [
@@ -305,7 +304,7 @@ describe('REFINE-4 — the abandonment sweep + idle window (world level)', () =>
       for (let i = 0; i < 300; i += 1) h.frame(); // past both windows + sequences
       const snapshot =
         `t=${h.getState().time}` +
-        h.getState().cords.map((c) => `c${c.id}:${c.points.map((p) => `${p.x},${p.y},${p.z}`).join(';')}`).join('|');
+        h.getState().cords.map((c) => `c${c.id}:${c.points.map((p) => `${p.x},${p.y}`).join(';')}`).join('|');
       const events = [
         ...h.transitions.map((t) => `${t.from}>${t.to}:${t.reason}@${t.end}`),
         ...h.vanishEvents.map((e) => `${e.kind}:${e.cordId}`),

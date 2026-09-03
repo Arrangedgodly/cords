@@ -9,14 +9,13 @@ export type {
   CordPopInput,
   CordState,
   PinTargetInput,
-  Ray3,
   ReleaseJackInput,
   SeatInput,
   SimInput,
   SimState,
   SimStep,
   SpawnCordInput,
-  Vec3,
+  Vec2,
 } from './types';
 export { createNoopStep } from './noopSim';
 export { createVerletRope, DEFAULT_ROPE_CONFIG, resolveRopeConfig } from './rope';

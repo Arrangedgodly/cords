@@ -39,28 +39,27 @@ import { describe, expect, it } from 'vitest';
 import {
   createFuzzHarness,
   FUZZ_CUBES,
+  FUZZ_RECT_HALF,
   FUZZ_FRAME_DT,
   FUZZ_SEGMENTS,
 } from './fuzzHarness';
 import type { FuzzHarness } from './fuzzHarness';
-import type { Ray3, Vec3 } from './types';
+import type { Vec2 } from './types';
 
-const v = (x: number, y: number, z: number): Vec3 => ({ x, y, z });
-const cubeTop = (cubeId: number): Vec3 => {
-  const [x, z] = FUZZ_CUBES[cubeId];
-  return v(x, 0.5, z);
+const v = (x: number, y: number): Vec2 => ({ x, y });
+const cubeTop = (cubeId: number): Vec2 => {
+  const [x, y] = FUZZ_CUBES[cubeId];
+  return v(x, y + FUZZ_RECT_HALF);
 };
-const rayThrough = (at: Vec3): Ray3 => ({
-  origin: v(at.x * 0.5, at.y + 1.5, at.z + 4),
-  direction: v(at.x * 0.5, -(at.y + 1.5), -(at.z + 4)),
-});
+/** A brush cursor near `at` (the 2D harassment aim, same as the corpus). */
+const cursorNear = (at: Vec2): Vec2 => v(at.x + 0.03, at.y - 0.02);
 
 describe('QA-2 measure 2 — a plug registers in the frame the release arrives (≤1 frame)', () => {
   it('the seat intent composed in frame N is seated in frame N (driver frame counting)', () => {
     const h = createFuzzHarness();
     // Spawn (frame 1 lands it in hand), carry to cube 04's top, and seat by
     // composing the latch — exactly what main.ts does on the pointerup frame.
-    h.spawn(v(0.1, 1.3, 0.1));
+    h.spawn(v(0.1, 1.3));
     h.frame(FUZZ_FRAME_DT); // frame 1: the cord exists, red end in hand
     expect(h.held).not.toBeNull();
     const target = cubeTop(3);
@@ -81,7 +80,7 @@ describe('QA-2 measure 2 — a plug registers in the frame the release arrives (
 
   it('the second plug links in its own release frame too — both seats ≤1 frame', () => {
     const h = createFuzzHarness();
-    h.spawn(v(-0.2, 1.2, 0.3));
+    h.spawn(v(-0.2, 1.2));
     h.frame(FUZZ_FRAME_DT);
     h.moveTo(cubeTop(2));
     h.frame(FUZZ_FRAME_DT);
@@ -106,7 +105,7 @@ describe('QA-2 measure 4 — vanish always completes (dedicated interleavings)',
     // (already-failing) end every frame — the harness mirrors a hand that
     // refuses to let go. LIFE-2 owns the end from the transition; the world
     // ignores the carry intents (the lock); the choreography must finish.
-    const id = h.spawn(v(0, 1.3, 0));
+    const id = h.spawn(v(0, 1.3));
     h.frame(FUZZ_FRAME_DT);
     h.moveTo(cubeTop(1));
     h.frame(FUZZ_FRAME_DT);
@@ -122,10 +121,10 @@ describe('QA-2 measure 4 — vanish always completes (dedicated interleavings)',
       // The "drag" continues: nothing is held anymore (the harness cleared
       // it), so harass the sequence with the brush aimed at the falling end
       // while cube transports rock the seated host — interleave everything.
-      if (f % 3 === 0) h.brushMove(rayThrough(h.endPoint(id, FUZZ_SEGMENTS)));
+      if (f % 3 === 0) h.brushMove(cursorNear(h.endPoint(id, FUZZ_SEGMENTS)));
       if (f % 5 === 0) {
         const c = h.cubeCenter(1);
-        h.dragCubeTo(1, v(c.x + 0.1 * Math.sin(f), 0.25, c.z + 0.1 * Math.cos(f)));
+        h.dragCubeTo(1, v(c.x + 0.1 * Math.sin(f), c.y + 0.1 * Math.cos(f)));
       }
       if (!vanished && h.world.lifecycle.stateOf(id) === 'vanishing') vanished = true;
       if (vanished && h.world.lifecycle.stateOf(id) === undefined) {
@@ -143,7 +142,7 @@ describe('QA-2 measure 4 — vanish always completes (dedicated interleavings)',
   it('vanish DURING a second vanish: two sequences in flight interleave to completion', () => {
     const h = createFuzzHarness();
     // Cord A first: seat red, hold blue, release off-cube → vanishing.
-    const a = h.spawn(v(-0.5, 1.4, 0));
+    const a = h.spawn(v(-0.5, 1.4));
     h.frame(FUZZ_FRAME_DT);
     h.moveTo(cubeTop(0));
     h.frame(FUZZ_FRAME_DT);
@@ -156,7 +155,7 @@ describe('QA-2 measure 4 — vanish always completes (dedicated interleavings)',
     // While A is mid-sequence: spawn B, seat its red on another cube, grab
     // its blue, release — B's vanish opens INSIDE A's (the harness's one
     // held end at a time is exactly the production pointer's law).
-    const b = h.spawn(v(0.5, 1.4, 0));
+    const b = h.spawn(v(0.5, 1.4));
     h.frame(FUZZ_FRAME_DT);
     h.moveTo(cubeTop(6));
     h.frame(FUZZ_FRAME_DT);
@@ -171,7 +170,7 @@ describe('QA-2 measure 4 — vanish always completes (dedicated interleavings)',
     let doneA = false;
     let doneB = false;
     for (let f = 0; f < 240 && !(doneA && doneB); f += 1) {
-      h.brushMove(rayThrough(h.endPoint(doneA ? b : a, FUZZ_SEGMENTS)));
+      h.brushMove(cursorNear(h.endPoint(doneA ? b : a, FUZZ_SEGMENTS)));
       h.frame(FUZZ_FRAME_DT);
       if (!doneA && h.world.lifecycle.stateOf(a) === undefined) doneA = true;
       if (!doneB && h.world.lifecycle.stateOf(b) === undefined) doneB = true;
@@ -201,7 +200,7 @@ describe('QA-2 / LIFE-3 — the same-frame grab+release (violent release) regres
     // lands on the floor, the cord SURVIVES awaiting-plug on its other seat.
     // A sub-frame click on a plug is a flick, not a deliberate failure —
     // that is the machine's own law, and zero rejections is the pin.
-    const id = h.spawn(v(0.2, 1.3, -0.1));
+    const id = h.spawn(v(0.2, 1.3));
     h.frame(FUZZ_FRAME_DT);
     h.moveTo(cubeTop(2));
     h.frame(FUZZ_FRAME_DT);
@@ -227,7 +226,7 @@ describe('QA-2 / LIFE-3 — the same-frame grab+release (violent release) regres
     // it in the same burst. Here the pre-release state IS `popped` — the
     // failure branch — but the carry has not flowed, so the staging holds
     // the release until the machine has the end in hand, then vanishes it.
-    const id = h.spawn(v(0, 1.3, 0.2));
+    const id = h.spawn(v(0, 1.3));
     h.frame(FUZZ_FRAME_DT);
     h.moveTo(cubeTop(3));
     h.frame(FUZZ_FRAME_DT);
@@ -264,7 +263,7 @@ describe('QA-2 / LIFE-3 — the same-frame grab+release (violent release) regres
 
   it('an AWAITING-PLUG cord last plug pulled+released in one frame takes the ordinary drop (the machine law)', () => {
     const h: FuzzHarness = createFuzzHarness();
-    const id = h.spawn(v(0, 1.2, 0.4));
+    const id = h.spawn(v(0, 1.2));
     h.frame(FUZZ_FRAME_DT);
     h.moveTo(cubeTop(7));
     h.frame(FUZZ_FRAME_DT);
@@ -284,7 +283,7 @@ describe('QA-2 / LIFE-3 — the same-frame grab+release (violent release) regres
 
   it('the ordinary (next-frame) release is untouched: vanish fires on schedule', () => {
     const h: FuzzHarness = createFuzzHarness();
-    const id = h.spawn(v(0, 1.2, 0.4));
+    const id = h.spawn(v(0, 1.2));
     h.frame(FUZZ_FRAME_DT);
     h.moveTo(cubeTop(7));
     h.frame(FUZZ_FRAME_DT);

@@ -8,7 +8,7 @@ web
 
 ## Stack
 
-Delegated: Vite + TypeScript + Three.js — a single-page static site, no backend, dependencies lockfile-pinned, no CDN runtime code. The approved scoping brief pins Three.js/WebGL, static hosting, and liftable architecture; bundler and language tooling recorded here as the implementation choice serving those pins.
+Delegated: Vite + TypeScript + Canvas 2D (rev 2: three.js dropped in the 2D pivot) — a single-page static site, no backend, dependencies lockfile-pinned, no CDN runtime code. Revision 2 pins a flat 2D world (rectangles, 2D physics, screen-down gravity); static hosting and liftable architecture carry over unchanged.
 
 ## Users
 

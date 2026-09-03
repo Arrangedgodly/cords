@@ -4,7 +4,7 @@ import { createFixedTimestepDriver } from './fixedTimestep';
 import { createVerletRope } from './rope';
 import type { LifecycleRejection, LifecycleTransition } from './lifecycle';
 import type { VanishEvent, VanishOptions } from './vanish';
-import type { SeatInput, SimInput, SimState, Vec3 } from './types';
+import type { SeatInput, SimInput, SimState, Vec2 } from './types';
 
 /**
  * T-LIFE-2 — THE VANISH SEQUENCE CHOREOGRAPHY at the world boundary, driven
@@ -38,7 +38,7 @@ const DT = 1 / 120;
 const FRAME = 1 / 60; // two substeps per frame, like the production driver
 const SEGMENTS = 8;
 const END = SEGMENTS;
-const PIN: Vec3 = { x: 0, y: 1.6, z: 0 };
+const PIN: Vec2 = { x: 0, y: 1.6};
 const FLOOR_Y = 0;
 const CONTACT = 0.05; // DEFAULT_VANISH_CONTACT_OFFSET
 const PULL_SECONDS = 0.35; // DEFAULT_VANISH_PULL_SECONDS
@@ -51,7 +51,7 @@ interface Harness {
   /** Advance one 1/60s frame: extra input merged with the flowing seat latch. */
   frame: (extra?: Partial<SimInput>) => SimState;
   /** Add (or move) a seated end's record — the latch flows from the next frame. */
-  seat: (cordId: number, index: number, position: Vec3) => void;
+  seat: (cordId: number, index: number, position: Vec2) => void;
   /** Toggle the same-frame latch drop on pull (the caller contract). */
   dropLatchOnPull: { enabled: boolean };
   getState: () => SimState;
@@ -60,7 +60,7 @@ interface Harness {
   rejections: LifecycleRejection[];
   vanishEvents: VanishEvent[];
   /** Mid-event position probe (the world state object mutates in place). */
-  endOf: (cordId: number, index: number) => Vec3;
+  endOf: (cordId: number, index: number) => Vec2;
   frames: () => number;
 }
 
@@ -68,7 +68,7 @@ function makeWorld(options?: { vanish?: VanishOptions | false; graceSeconds?: nu
   const transitions: LifecycleTransition[] = [];
   const rejections: LifecycleRejection[] = [];
   const vanishEvents: VanishEvent[] = [];
-  const seatRecords = new Map<string, Vec3>();
+  const seatRecords = new Map<string, Vec2>();
   const dropLatchOnPull = { enabled: true };
   let frameSeatTargets: SeatInput[] | null = null;
   // The composition-side seat-latch discipline, main.ts mirrored: the record
@@ -119,7 +119,7 @@ function makeWorld(options?: { vanish?: VanishOptions | false; graceSeconds?: nu
       const [cordId, index] = key.split(':');
       seatTargets.push({ cordId: Number(cordId), index: Number(index), position });
     }
-    const input: SimInput = { pointerRay: null, ...(extra ?? {}) };
+    const input: SimInput = { pointerPoint: null, ...(extra ?? {}) };
     if (seatTargets.length > 0) input.seatTargets = seatTargets;
     frameSeatTargets = seatTargets;
     state = driver.advance(state, FRAME, input).state;
@@ -130,7 +130,7 @@ function makeWorld(options?: { vanish?: VanishOptions | false; graceSeconds?: nu
   return {
     frame,
     seat: (cordId, index, position) =>
-      seatRecords.set(`${cordId}:${index}`, { x: position.x, y: position.y, z: position.z }),
+      seatRecords.set(`${cordId}:${index}`, { x: position.x, y: position.y}),
     dropLatchOnPull,
     getState: () => state,
     lifecycle: step.lifecycle,
@@ -149,7 +149,7 @@ function makeWorld(options?: { vanish?: VanishOptions | false; graceSeconds?: nu
 function expectFinite(state: SimState, label: string): void {
   for (const cord of state.cords) {
     for (const p of cord.points) {
-      if (!Number.isFinite(p.x) || !Number.isFinite(p.y) || !Number.isFinite(p.z)) {
+      if (!Number.isFinite(p.x) || !Number.isFinite(p.y)) {
         throw new Error(`${label}: non-finite point in cord ${cord.id}`);
       }
     }
@@ -162,17 +162,17 @@ function cordById(state: SimState, id: number) {
   return cord;
 }
 
-const SEAT_A: Vec3 = { x: 0.9, y: 0.42, z: 0 };
+const SEAT_A: Vec2 = { x: 0.9, y: 0.42};
 
 /**
  * Release-path setup: cord 1 spawned, end 0 SEATED at SEAT_A (awaiting-plug),
  * end END held in hand at `hold` (carry targets every frame, main.ts's drag
  * compose mirrored). The caller then sends the release intent.
  */
-function holdForRelease(h: Harness, hold: Vec3): void {
-  h.frame({ spawnCord: { cordId: 1, at: { x: 0.5, y: 1.0, z: 0 } } });
+function holdForRelease(h: Harness, hold: Vec2): void {
+  h.frame({ spawnCord: { cordId: 1, at: { x: 0.5, y: 1.0} } });
   for (let f = 0; f < 60; f += 1) {
-    h.frame({ pinTargets: [{ cordId: 1, index: 0, position: { x: SEAT_A.x, y: 0.9, z: SEAT_A.z } }] });
+    h.frame({ pinTargets: [{ cordId: 1, index: 0, position: { x: SEAT_A.x, y: 0.9} }] });
   }
   h.seat(1, 0, SEAT_A);
   for (let f = 0; f < 30; f += 1) {
@@ -196,16 +196,16 @@ function driveUntilGone(h: Harness, cordId: number, maxFrames = 300): number {
 /** Link-path setup: cord 1 linked (end 0 at A, END at B), then END popped. */
 function linkAndPop(
   h: Harness,
-  A: Vec3 = { x: 0, y: 0.42, z: 0 },
-  B: Vec3 = { x: -0.55, y: 0.42, z: 0 },
+  A: Vec2 = { x: 0, y: 0.42},
+  B: Vec2 = { x: -0.55, y: 0.42},
 ): void {
-  h.frame({ spawnCord: { cordId: 1, at: { x: 0.5, y: 1.0, z: 0 } } });
+  h.frame({ spawnCord: { cordId: 1, at: { x: 0.5, y: 1.0} } });
   for (let f = 0; f < 60; f += 1) {
-    h.frame({ pinTargets: [{ cordId: 1, index: 0, position: { x: A.x, y: 1.0, z: A.z } }] });
+    h.frame({ pinTargets: [{ cordId: 1, index: 0, position: { x: A.x, y: 1.0} }] });
   }
   h.seat(1, 0, A);
   for (let f = 0; f < 30; f += 1) {
-    h.frame({ pinTargets: [{ cordId: 1, index: END, position: { x: B.x, y: 1.0, z: B.z } }] });
+    h.frame({ pinTargets: [{ cordId: 1, index: END, position: { x: B.x, y: 1.0} }] });
   }
   h.seat(1, END, B);
   for (let f = 0; f < 60; f += 1) h.frame(); // linked settle
@@ -217,7 +217,7 @@ function linkAndPop(
 describe('T-LIFE-2 — entry path #3: release-off-cube', () => {
   it('fall → shatter → pull → despawn, in order, shatter exactly once, cord gone, < 2s', () => {
     const h = makeWorld();
-    const HOLD: Vec3 = { x: 1.4, y: 0.9, z: 0.2 };
+    const HOLD: Vec2 = { x: 1.4, y: 0.9};
     holdForRelease(h, HOLD);
     h.frame({ releaseJack: { cordId: 1, index: END } });
     expect(h.lifecycle.stateOf(1)).toBe('vanishing');
@@ -249,11 +249,14 @@ describe('T-LIFE-2 — entry path #3: release-off-cube', () => {
 
   it('the FALL is the sim’s own: physics-speed, never faster than gravity, contact at the shatter frame', () => {
     const h = makeWorld();
-    const HOLD: Vec3 = { x: 1.4, y: 0.9, z: 0.2 };
+    const HOLD: Vec2 = { x: 1.4, y: 0.9};
     holdForRelease(h, HOLD);
-    h.frame({ releaseJack: { cordId: 1, index: END } });
+    // Read the held end's height BEFORE the release frame: the measurement
+    // is "where the hand held it when it let go" (the release frame itself
+    // already advances two substeps of free fall — physics, not the hold).
     const startY = h.endOf(1, END).y;
     expect(startY).toBeCloseTo(HOLD.y, 2); // held at the release height
+    h.frame({ releaseJack: { cordId: 1, index: END } });
 
     // Watch the failing end every frame until the shatter fires.
     const ys: number[] = [];
@@ -282,33 +285,33 @@ describe('T-LIFE-2 — entry path #3: release-off-cube', () => {
 
   it('the PULL-OUT frees the seated plug and the cord visibly retracts toward the failure point', () => {
     const h = makeWorld();
-    holdForRelease(h, { x: 1.4, y: 0.9, z: 0.2 });
+    holdForRelease(h, { x: 1.4, y: 0.9});
     h.frame({ releaseJack: { cordId: 1, index: END } });
     // Capture the whole polyline at the pull event (mid-step read: the world
     // state object mutates in place) and just before the cord despawns.
-    let pullPoints: Vec3[] | null = null;
-    let lastPoints: Vec3[] | null = null;
-    let shatterAt: Vec3 | null = null;
+    let pullPoints: Vec2[] | null = null;
+    let lastPoints: Vec2[] | null = null;
+    let shatterAt: Vec2 | null = null;
     for (let f = 0; f < 240; f += 1) {
       h.frame();
       const cord = h.getState().cords.find((c) => c.id === 1);
       if (cord === undefined) break;
-      lastPoints = cord.points.map((p) => ({ x: p.x, y: p.y, z: p.z }));
+      lastPoints = cord.points.map((p) => ({ x: p.x, y: p.y}));
       const pull = h.vanishEvents.find((e) => e.kind === 'pull');
       if (pull !== undefined && pullPoints === null) {
         pullPoints = lastPoints;
-        shatterAt = { x: pull.at!.x, y: pull.at!.y, z: pull.at!.z };
+        shatterAt = { x: pull.at!.x, y: pull.at!.y};
         expect(h.lifecycle.endMode(1, 0)).toBe('free'); // out of its socket
       }
     }
     expect(pullPoints).not.toBeNull();
     expect(lastPoints).not.toBeNull();
-    const dist = (p: Vec3): number =>
-      Math.sqrt((p.x - shatterAt!.x) ** 2 + (p.y - shatterAt!.y) ** 2 + (p.z - shatterAt!.z) ** 2);
-    const centroid = (points: Vec3[]): Vec3 => {
-      let x = 0; let y = 0; let z = 0;
-      for (const p of points) { x += p.x; y += p.y; z += p.z; }
-      return { x: x / points.length, y: y / points.length, z: z / points.length };
+    const dist = (p: Vec2): number =>
+      Math.sqrt((p.x - shatterAt!.x) ** 2 + (p.y - shatterAt!.y) ** 2);
+    const centroid = (points: Vec2[]): Vec2 => {
+      let x = 0; let y = 0;
+      for (const p of points) { x += p.x; y += p.y; }
+      return { x: x / points.length, y: y / points.length};
     };
     // The seated plug LEFT its socket (impulse > a jiggle)...
     expect(dist(lastPoints![0])).toBeGreaterThan(0.04);
@@ -321,12 +324,10 @@ describe('T-LIFE-2 — entry path #3: release-off-cube', () => {
     const cLast = centroid(lastPoints!);
     const dirX = shatterAt!.x - cPull.x;
     const dirY = shatterAt!.y - cPull.y;
-    const dirZ = shatterAt!.z - cPull.z;
-    const gap = Math.sqrt(dirX * dirX + dirY * dirY + dirZ * dirZ);
+    const gap = Math.sqrt(dirX * dirX + dirY * dirY);
     const moveX = cLast.x - cPull.x;
     const moveY = cLast.y - cPull.y;
-    const moveZ = cLast.z - cPull.z;
-    const toward = (moveX * dirX + moveY * dirY + moveZ * dirZ) / gap;
+    const toward = (moveX * dirX + moveY * dirY) / gap;
     expect(toward).toBeGreaterThan(gap * 0.6); // it crossed most of the gap
     expect(h.getState().cords.some((c) => c.id === 1)).toBe(false);
   });
@@ -335,7 +336,7 @@ describe('T-LIFE-2 — entry path #3: release-off-cube', () => {
     // The contract honored (the default harness): the pulled end's record and
     // frame-array entry die in the pull's own event — nothing to re-send.
     const h = makeWorld();
-    holdForRelease(h, { x: 1.4, y: 0.9, z: 0.2 });
+    holdForRelease(h, { x: 1.4, y: 0.9});
     h.frame({ releaseJack: { cordId: 1, index: END } });
     driveUntilGone(h, 1);
     expect(h.rejections).toHaveLength(0);
@@ -347,7 +348,7 @@ describe('T-LIFE-2 — entry path #3: release-off-cube', () => {
     // but the warning channel fires, which is why the drop IS the contract.
     const v = makeWorld();
     v.dropLatchOnPull.enabled = false;
-    holdForRelease(v, { x: 1.4, y: 0.9, z: 0.2 });
+    holdForRelease(v, { x: 1.4, y: 0.9});
     v.frame({ releaseJack: { cordId: 1, index: END } });
     driveUntilGone(v, 1);
     expect(v.vanishEvents.map((e) => e.kind)).toEqual(['start', 'shatter', 'pull', 'complete']);
@@ -358,7 +359,7 @@ describe('T-LIFE-2 — entry path #3: release-off-cube', () => {
 
   it('a stale carry latch cannot re-grab the failing end mid-fall (the vanishing carry lock)', () => {
     const h = makeWorld();
-    const HOLD: Vec3 = { x: 1.4, y: 0.9, z: 0.2 };
+    const HOLD: Vec2 = { x: 1.4, y: 0.9};
     holdForRelease(h, HOLD);
     h.frame({ releaseJack: { cordId: 1, index: END } });
     // A caller that keeps composing the failing end's carry target every frame
@@ -374,7 +375,7 @@ describe('T-LIFE-2 — entry path #3: release-off-cube', () => {
 
   it('vanishInfo: null → fall/0 → pull/progress → null again (the fade read)', () => {
     const h = makeWorld();
-    holdForRelease(h, { x: 1.4, y: 0.9, z: 0.2 });
+    holdForRelease(h, { x: 1.4, y: 0.9});
     expect(h.lifecycle.vanishInfo(1)).toBeNull(); // not vanishing yet
     h.frame({ releaseJack: { cordId: 1, index: END } });
     expect(h.lifecycle.vanishInfo(1)).toEqual({ phase: 'fall', progress: 0 });
@@ -424,7 +425,7 @@ describe('T-LIFE-2 — entry path #6: grace expiry (the popped jack falls from w
     const h = makeWorld();
     // Seats HIGH (1.6): the 0.8 cord hangs the popped end at ~0.8 — above the
     // contact band forever. The sequence must still finish (guard: 1.55s).
-    linkAndPop(h, { x: 0, y: 1.6, z: 0 }, { x: -0.55, y: 1.6, z: 0 });
+    linkAndPop(h, { x: 0, y: 1.6}, { x: -0.55, y: 1.6});
     for (let f = 0; f < 190; f += 1) h.frame();
     expect(h.lifecycle.stateOf(1)).toBe('vanishing');
     driveUntilGone(h, 1);
@@ -443,7 +444,7 @@ describe('T-LIFE-2 — entry path #6: grace expiry (the popped jack falls from w
 describe('T-LIFE-2 — timing tunables + fail-fast', () => {
   it('pullSeconds is honored: a 0.1s window completes ~0.1s after the shatter', () => {
     const h = makeWorld({ vanish: { pullSeconds: 0.1 } });
-    holdForRelease(h, { x: 1.4, y: 0.9, z: 0.2 });
+    holdForRelease(h, { x: 1.4, y: 0.9});
     h.frame({ releaseJack: { cordId: 1, index: END } });
     driveUntilGone(h, 1);
     const shatter = h.vanishEvents.find((e) => e.kind === 'shatter')!;
@@ -464,7 +465,7 @@ describe('T-LIFE-2 — timing tunables + fail-fast', () => {
 describe('T-LIFE-2 — the lock, the intent path, id reuse, and the opt-out', () => {
   it('an explicit despawnCords mid-sequence still works: cord gone, the run drops silently', () => {
     const h = makeWorld();
-    holdForRelease(h, { x: 1.4, y: 0.9, z: 0.2 });
+    holdForRelease(h, { x: 1.4, y: 0.9});
     h.frame({ releaseJack: { cordId: 1, index: END } });
     h.frame();
     h.frame(); // mid-fall
@@ -480,18 +481,18 @@ describe('T-LIFE-2 — the lock, the intent path, id reuse, and the opt-out', ()
 
   it('the freed id is reusable — a second life runs a second, fresh sequence', () => {
     const h = makeWorld();
-    holdForRelease(h, { x: 1.4, y: 0.9, z: 0.2 });
+    holdForRelease(h, { x: 1.4, y: 0.9});
     h.frame({ releaseJack: { cordId: 1, index: END } });
     driveUntilGone(h, 1);
-    h.frame({ spawnCord: { cordId: 1, at: { x: 0.5, y: 1.0, z: 0 } } });
+    h.frame({ spawnCord: { cordId: 1, at: { x: 0.5, y: 1.0} } });
     expect(h.lifecycle.stateOf(1)).toBe('carried');
     // Second life, same choreography: seat red, hold blue, fail it again.
     for (let f = 0; f < 60; f += 1) {
-      h.frame({ pinTargets: [{ cordId: 1, index: 0, position: { x: SEAT_A.x, y: 0.9, z: SEAT_A.z } }] });
+      h.frame({ pinTargets: [{ cordId: 1, index: 0, position: { x: SEAT_A.x, y: 0.9} }] });
     }
     h.seat(1, 0, SEAT_A);
     for (let f = 0; f < 30; f += 1) {
-      h.frame({ pinTargets: [{ cordId: 1, index: END, position: { x: 1.4, y: 0.9, z: 0.2 } }] });
+      h.frame({ pinTargets: [{ cordId: 1, index: END, position: { x: 1.4, y: 0.9} }] });
     }
     h.frame({ releaseJack: { cordId: 1, index: END } });
     driveUntilGone(h, 1);
@@ -503,7 +504,7 @@ describe('T-LIFE-2 — the lock, the intent path, id reuse, and the opt-out', ()
 
   it('ABSENT config = LIFE-1 behavior byte-for-byte: locked until an explicit despawn', () => {
     const h = makeWorld({ vanish: false });
-    holdForRelease(h, { x: 1.4, y: 0.9, z: 0.2 });
+    holdForRelease(h, { x: 1.4, y: 0.9});
     h.frame({ releaseJack: { cordId: 1, index: END } });
     expect(h.lifecycle.stateOf(1)).toBe('vanishing');
     for (let f = 0; f < 120; f += 1) h.frame(); // 2s: nothing happens by itself
@@ -521,7 +522,7 @@ describe('T-LIFE-2 — the lock, the intent path, id reuse, and the opt-out', ()
     // release it off-cube. The leash keeps the held end ~0.8 from the pin at
     // (0,1.6,0), so the fall rides the timeout guard — still a full sequence.
     for (let f = 0; f < 60; f += 1) {
-      h.frame({ pinTargets: [{ cordId: 0, index: END, position: { x: 0.35, y: 0.9, z: 0 } }] });
+      h.frame({ pinTargets: [{ cordId: 0, index: END, position: { x: 0.35, y: 0.9} }] });
     }
     expect(h.lifecycle.stateOf(0)).toBe('awaiting-plug');
     h.frame({ releaseJack: { cordId: 0, index: END } });
@@ -542,31 +543,31 @@ describe('T-LIFE-2 — the lock, the intent path, id reuse, and the opt-out', ()
 
 describe('T-LIFE-2 — isolation + determinism', () => {
   it('one cord vanishing never disturbs a linked neighbor (bitwise vs a solo run)', () => {
-    const A2: Vec3 = { x: -0.4, y: 0.42, z: 0 };
-    const B2: Vec3 = { x: -0.9, y: 0.42, z: -0.1 };
+    const A2: Vec2 = { x: -0.4, y: 0.42};
+    const B2: Vec2 = { x: -0.9, y: 0.42};
     const runSolo = (): number[] => {
       const h = makeWorld();
-      h.frame({ spawnCord: { cordId: 2, at: { x: -0.5, y: 1.0, z: 0.1 } } });
+      h.frame({ spawnCord: { cordId: 2, at: { x: -0.5, y: 1.0} } });
       for (let f = 0; f < 60; f += 1) {
-        h.frame({ pinTargets: [{ cordId: 2, index: 0, position: { x: A2.x, y: 1.0, z: A2.z } }] });
+        h.frame({ pinTargets: [{ cordId: 2, index: 0, position: { x: A2.x, y: 1.0} }] });
       }
       h.seat(2, 0, A2);
       for (let f = 0; f < 30; f += 1) {
-        h.frame({ pinTargets: [{ cordId: 2, index: END, position: { x: B2.x, y: 1.0, z: B2.z } }] });
+        h.frame({ pinTargets: [{ cordId: 2, index: END, position: { x: B2.x, y: 1.0} }] });
       }
       h.seat(2, END, B2);
       for (let f = 0; f < 150; f += 1) h.frame();
-      return cordById(h.getState(), 2).points.flatMap((p) => [p.x, p.y, p.z]);
+      return cordById(h.getState(), 2).points.flatMap((p) => [p.x, p.y]);
     };
     const runBusy = (): number[] => {
       const h = makeWorld();
-      h.frame({ spawnCord: { cordId: 1, at: { x: 0.5, y: 1.0, z: 0 } } });
-      h.frame({ spawnCord: { cordId: 2, at: { x: -0.5, y: 1.0, z: 0.1 } } });
+      h.frame({ spawnCord: { cordId: 1, at: { x: 0.5, y: 1.0} } });
+      h.frame({ spawnCord: { cordId: 2, at: { x: -0.5, y: 1.0} } });
       for (let f = 0; f < 60; f += 1) {
         h.frame({
           pinTargets: [
-            { cordId: 2, index: 0, position: { x: A2.x, y: 1.0, z: A2.z } },
-            { cordId: 1, index: 0, position: { x: SEAT_A.x, y: 0.9, z: SEAT_A.z } },
+            { cordId: 2, index: 0, position: { x: A2.x, y: 1.0} },
+            { cordId: 1, index: 0, position: { x: SEAT_A.x, y: 0.9} },
           ],
         });
       }
@@ -575,8 +576,8 @@ describe('T-LIFE-2 — isolation + determinism', () => {
       for (let f = 0; f < 30; f += 1) {
         h.frame({
           pinTargets: [
-            { cordId: 2, index: END, position: { x: B2.x, y: 1.0, z: B2.z } },
-            { cordId: 1, index: END, position: { x: 1.4, y: 0.9, z: 0.2 } },
+            { cordId: 2, index: END, position: { x: B2.x, y: 1.0} },
+            { cordId: 1, index: END, position: { x: 1.4, y: 0.9} },
           ],
         });
       }
@@ -586,7 +587,7 @@ describe('T-LIFE-2 — isolation + determinism', () => {
       for (let f = 0; f < 150; f += 1) h.frame();
       expect(h.vanishEvents.some((e) => e.cordId === 1 && e.kind === 'complete')).toBe(true);
       expect(h.lifecycle.stateOf(2)).toBe('linked'); // untouched, still seated
-      return cordById(h.getState(), 2).points.flatMap((p) => [p.x, p.y, p.z]);
+      return cordById(h.getState(), 2).points.flatMap((p) => [p.x, p.y]);
     };
     const solo = runSolo();
     const busy = runBusy();
@@ -605,13 +606,13 @@ describe('T-LIFE-2 — isolation + determinism', () => {
       const events: string[] = [];
       const snap = (): void => {
         for (const cord of h.getState().cords) {
-          for (const p of cord.points) snapshots.push(p.x, p.y, p.z);
+          for (const p of cord.points) snapshots.push(p.x, p.y);
         }
         for (const e of h.vanishEvents) {
           events.push(`${e.kind}@${e.end}:${e.time.toFixed(6)}@${e.at ? e.at.y.toFixed(6) : ''}`);
         }
       };
-      holdForRelease(h, { x: 1.4, y: 0.9, z: 0.2 });
+      holdForRelease(h, { x: 1.4, y: 0.9});
       h.frame({ releaseJack: { cordId: 1, index: END } });
       for (let f = 0; f < 150; f += 1) {
         h.frame();
@@ -640,20 +641,20 @@ describe('T-LIFE-2 — rope.releaseCarry (the fall’s primitive)', () => {
       const rope = createVerletRope({
         segmentCount: SEGMENTS,
         segmentLength: 0.1,
-        pin: { x: 0, y: pinY, z: 0 },
+        pin: { x: 0, y: pinY},
         pinIndex: 0,
         floorY: FLOOR_Y,
       });
-      rope.placeAlong({ x: 0, y: pinY, z: 0 }, { x: 0, y: pinY - 0.7, z: 0 });
+      rope.placeAlong({ x: 0, y: pinY}, { x: 0, y: pinY - 0.7});
       rope.carryEnd(END);
       for (let i = 0; i < 120; i += 1) {
-        rope.setPinTarget(END, { x: 0.05, y: holdY, z: 0 });
+        rope.setPinTarget(END, { x: 0.05, y: holdY});
         rope.step(DT);
       }
       return rope;
     };
     const readY = (rope: ReturnType<typeof createVerletRope>): number => {
-      const out = { x: 0, y: 0, z: 0 };
+      const out = { x: 0, y: 0};
       rope.readPoint(END, out);
       return out.y;
     };
@@ -679,7 +680,7 @@ describe('T-LIFE-2 — rope.releaseCarry (the fall’s primitive)', () => {
   });
 
   it('releaseCarry throws on nothing-carried / wrong end (caller bug, loud)', () => {
-    const rope = createVerletRope({ segmentCount: SEGMENTS, segmentLength: 0.1, pin: { x: 0, y: 1, z: 0 } });
+    const rope = createVerletRope({ segmentCount: SEGMENTS, segmentLength: 0.1, pin: { x: 0, y: 1} });
     expect(() => rope.releaseCarry(END)).toThrow();
     rope.carryEnd(END);
     expect(() => rope.releaseCarry(0)).toThrow();
