@@ -1,25 +1,32 @@
 /**
- * Composition root — MINIMAL 2D-1 SHELL (town-hall Revision 2: the 3D
- * build was replaced by the 2D pivot; this is the interim headless host).
+ * Composition root — THE CANVAS WORLD (2D-2; town-hall Revision 2's flat
+ * panel, replacing 2D-1's headless shell). One page, one loop, one law per
+ * layer:
  *
- * The sim core (src/sim/) is now fully 2D (vec2, Canvas-ready) and this
- * shell keeps the app BUILDABLE and the sim ALIVE between 2D-1 (this port)
- * and 2D-2 (the Canvas world + interaction rewrite that lands next):
+ *   src/sim/          the liftable headless core (unchanged by this task)
+ *   src/world/        the stage contract — 8 candy-zoned modules, the seat
+ *                     law (edge-perpendicular, deterministic corners), the
+ *                     world↔screen projection
+ *   src/render/       the Canvas 2D painter — panel, modules, cords, jacks
+ *   src/interaction/  pointer → intents: pick jack>rect>cord, drag/carry,
+ *                     seat/deny/release, the brush, N/R
+ *   src/hud/          the surviving DOM faceplate (rewired here)
  *
- *   src/sim/   pure TS core → SimState   (stepped HERE, per frame)
- *   <canvas>   a stub element — NO rendering yet (2D-2 draws the panel
- *              world: candy-zoned rectangles, stroked cords, 1/4" jacks)
+ * The frame loop is ARC-3's fixed-timestep discipline (120 Hz slices, ≤5
+ * substeps, backlog discarded): compose ONE SimInput from the interaction
+ * layer, advance the driver, paint the renderer, update the HUD from the
+ * sim's own lifecycle reads. Motion is sim-driven; a frozen sim paints a
+ * frozen picture.
  *
- * What runs today: the production-shaped world (24-segment cords, floor
- * clamp y ≥ 0, over-stretch auto-unplug, the vanish choreography, the
- * passive cursor-brush, the ~3s grace / ~10s idle windows) stepped through
- * the fixed-timestep driver (ARC-3: 120 Hz slices, ≤5 substeps per frame,
- * backgrounded-tab spikes clamped by discarding backlog) on the browser's
- * animation loop. One read seam for smoke checks: window.cords.lifecycle().
+ * THE OPENING (v1's REFINE-3 staging, translated): one patch cord is spawned
+ * coiled on module 08 with its RED end SEATED on the module's top edge
+ * through the same production seat path any release takes — the first frame
+ * stages the toy's core verb already performed once (grab the blue end, one
+ * module away from a completed link). No invisible anchors exist anywhere.
  *
- * 2D-2 replaces this file's loop with the real Canvas 2D composition
- * (render layer + jack/rectangle/cord-body picking + HUD rewiring); the
- * world construction below is the seam it grows from.
+ * Seams for drives and review (window.cords): lifecycle(), ends() (screen
+ * px), rects() (screen px), probe() (frame timing), spawn()/reset() mirror
+ * the HUD buttons exactly.
  */
 import {
   DEFAULT_GRACE_SECONDS,
@@ -28,82 +35,339 @@ import {
   createCordWorldStep,
   createFixedTimestepDriver,
 } from './sim';
-import type { SimInput, SimState } from './sim';
+import type { CordWorldStep, FixedTimestepDriver, SimInput, SimState, Vec2 } from './sim';
+import { createStage, seatPose } from './world/stage';
+import { createView } from './world/view';
+import type { View } from './world/view';
+import { createRenderer } from './render/renderer';
+import type { FrameInput } from './render/renderer';
+import { createInteractionController } from './interaction/controller';
+import type { InteractionController } from './interaction/controller';
+import { createHudPanel } from './hud/panel';
+import { putAwayNotice, readHudCountsInto, vanishNotice } from './hud/model';
+import type { HudCounts } from './hud/model';
 
 const app = document.querySelector<HTMLDivElement>('#app');
 if (!app) {
   throw new Error('#app mount point missing from index.html');
 }
+const mainLandmark = document.querySelector<HTMLElement>('main');
+if (!mainLandmark) {
+  throw new Error('<main> landmark missing from index.html');
+}
 
-// Fixed-timestep tuning (ARC-3): the sim advances only in SIM_TIMESTEP
-// slices, so behavior is frame-rate independent and deterministic. The cap
-// bounds worst-case work per frame; anything beyond it (a backgrounded
-// tab's multi-second gap) is discarded so the sim never detonates.
+// --- the production world's numbers (2D-1's verified shape) -------------------
 const SIM_TIMESTEP = 1 / 120;
 const MAX_SUBSTEPS_PER_FRAME = 5;
-
-// The world's cords: every spawn shares the same segment geometry.
 const CORD_SEGMENTS = 24;
 const FLOOR_Y = 0;
 const MAX_CORDS = 16;
-
-// T-INT-5 — the passive cursor-brush feel-tunables (the brush.ts defaults).
 const BRUSH = { radiusRestLengths: 1.5, strength: 1.0 } as const;
+const RED = 0;
+const BLUE = CORD_SEGMENTS;
 
-// The stub stage: a real canvas element in the DOM, never drawn to (2D-2
-// becomes the painter). It exists so the page's structure is already the
-// final one — a labeled canvas inside the #app mount.
+// --- the stage ----------------------------------------------------------------
+const stage = createStage();
+
+// --- the canvas ---------------------------------------------------------------
 const canvas = document.createElement('canvas');
 canvas.id = 'stage';
+// The stage IS the page: fixed, full-viewport, top-left anchored (the HUD
+// faceplate floats over its bottom edge, above the floor line's margin).
+canvas.style.position = 'fixed';
+canvas.style.left = '0';
+canvas.style.top = '0';
+canvas.style.display = 'block';
 canvas.setAttribute('role', 'img');
 canvas.setAttribute(
   'aria-label',
-  'Cords — a 2D cable patch panel sandbox. Rendering arrives with the next build; ' +
-    'the physics is already running.',
+  'Cords — a 2D cable patch panel. Eight steel modules on a dark machined ' +
+    'panel; grab a cord jack to plug it into any module edge. Press N for a ' +
+    'new cord, R to reset.',
 );
 app.appendChild(canvas);
 
-// The production-shaped world (2D-2's seam): identical config discipline to
-// the v1 composition — over-stretch ON, vanish choreography ON, brush ON,
-// grace ~3s, idle-abandon ~10s. Lifecycle rejections surface as console
-// warnings (a strict world would throw — tests construct that world).
-const world = createCordWorldStep({
-  cord: { segmentCount: CORD_SEGMENTS, floorY: FLOOR_Y },
-  maxCords: MAX_CORDS,
-  overStretch: { threshold: DEFAULT_OVERSTRETCH_THRESHOLD },
-  vanish: {}, // choreography ON with default timings (fall → shatter → pull → despawn)
-  brush: BRUSH,
-  lifecycle: {
-    idleSeconds: DEFAULT_IDLE_SECONDS,
-    onRejected: (rejection) => {
-      console.warn(
-        `cords: lifecycle rejected ${rejection.action} on cord ${rejection.cordId} (${rejection.from}): ${rejection.detail}`,
-      );
+const renderer = createRenderer(canvas);
+let view: View = createView(window.innerWidth, window.innerHeight);
+const fit = (): void => {
+  view = createView(window.innerWidth, window.innerHeight);
+  renderer.setView(view, window.devicePixelRatio || 1);
+};
+fit();
+window.addEventListener('resize', fit);
+
+const reducedMotionQuery = window.matchMedia('(prefers-reduced-motion: reduce)');
+const reducedMotion = (): boolean => reducedMotionQuery.matches;
+
+// --- a session: one world + driver + controller, rebuilt by RESET --------------
+interface Session {
+  world: CordWorldStep;
+  driver: FixedTimestepDriver;
+  controller: InteractionController;
+  state: SimState;
+  /** Deaths begun since the last HUD update, by vocabulary (REFINE-1/4). */
+  shattered: number;
+  putAway: number;
+}
+
+let session: Session;
+
+const createSession = (withOpening: boolean): Session => {
+  const next: Session = {
+    world: null as unknown as Session['world'],
+    driver: null as unknown as Session['driver'],
+    controller: null as unknown as Session['controller'],
+    state: { time: 0, cords: [] },
+    shattered: 0,
+    putAway: 0,
+  };
+  next.world = createCordWorldStep({
+    cord: { segmentCount: CORD_SEGMENTS, floorY: FLOOR_Y },
+    maxCords: MAX_CORDS,
+    overStretch: { threshold: DEFAULT_OVERSTRETCH_THRESHOLD },
+    vanish: {
+      onEvent: (event) => {
+        next.controller.onVanishEvent(event);
+      },
     },
-  },
+    brush: BRUSH,
+    lifecycle: {
+      idleSeconds: DEFAULT_IDLE_SECONDS,
+      onTransition: (event) => {
+        next.controller.onLifecycleTransition(event);
+        if (event.to === 'vanishing') {
+          if (event.reason === 'abandoned') next.putAway += 1;
+          else next.shattered += 1;
+        }
+      },
+      onRejected: (rejection) => {
+        console.warn(
+          `cords: lifecycle rejected ${rejection.action} on cord ${rejection.cordId} (${rejection.from}): ${rejection.detail}`,
+        );
+      },
+    },
+  });
+  void DEFAULT_GRACE_SECONDS; // the machine's default grace (~3 s) stands
+  next.driver = createFixedTimestepDriver(next.world, {
+    timestep: SIM_TIMESTEP,
+    maxSubsteps: MAX_SUBSTEPS_PER_FRAME,
+  });
+  next.controller = createInteractionController({
+    world: next.world,
+    state: () => next.state,
+    view: () => view,
+    stage,
+    reducedMotion,
+  });
+  if (withOpening) {
+    stageOpening(next);
+  }
+  return next;
+};
+
+/**
+ * THE OPENING — v1's REFINE-3 staging through the production seams only:
+ * cord 0 spawns COILED on module 08's top edge and its red end seats there
+ * in ONE explicit deterministic step before the first frame (exactly the
+ * 2D-1 fuzz harness's composition-faithful anchor). The blue end trails
+ * down to the bench — one grab away from a completed link.
+ */
+function stageOpening(next: Session): void {
+  const m08 = stage[7];
+  if (m08 === undefined) return;
+  const seat = seatPose(m08.x + m08.w * 0.18, m08.y + m08.h / 2, m08); // top edge
+  const cordId = next.controller.spawnCoilAt({ x: seat.x, y: m08.y + m08.h / 2 + 0.03 });
+  next.controller.seatEndOn(cordId, RED, 7, { x: seat.x, y: m08.y + m08.h / 2 });
+  const input: SimInput = next.controller.composeInput();
+  next.state = next.world(next.state, SIM_TIMESTEP, input);
+  next.controller.noteSimTime(next.state.time);
+}
+
+session = createSession(true);
+
+// --- the HUD (v1's DOM faceplate, rewired to this world) ----------------------
+const hud = createHudPanel(mainLandmark, document, {
+  onNewCord: () => spawnNewCord(),
+  onReset: () => resetScene(),
 });
-void DEFAULT_GRACE_SECONDS; // (documented alongside the config; the machine defaults it)
+const hudCounts: HudCounts = { cords: 0, awaitingPlug: 0, linked: 0, popped: 0, vanishing: 0 };
 
-const driver = createFixedTimestepDriver(world, {
-  timestep: SIM_TIMESTEP,
-  maxSubsteps: MAX_SUBSTEPS_PER_FRAME,
+/** N / HUD NEW CORD — a coil springs into hand at the cursor. */
+function spawnNewCord(): void {
+  const pointer = lastPointerWorld();
+  const at: Vec2 = pointer ?? { x: 0, y: 1.6 };
+  session.controller.spawnAt({ x: at.x, y: at.y });
+}
+
+/** R / HUD RESET — a fresh empty bench (the hint returns; modules go home). */
+function resetScene(): void {
+  for (const r of stage) {
+    r.x = r.homeX;
+    r.y = r.homeY;
+  }
+  session = createSession(false);
+}
+
+// --- pointer wiring -------------------------------------------------------------
+const lastPointerScratch: Vec2 = { x: 0, y: 0 };
+const pointerOut: Vec2 = { x: 0, y: 0 };
+let pointerOnStage = false;
+
+function lastPointerWorld(): Vec2 | null {
+  if (!pointerOnStage) return null;
+  return view.toWorld(lastPointerScratch.x, lastPointerScratch.y, pointerOut);
+}
+
+canvas.addEventListener('pointerdown', (e) => {
+  canvas.setPointerCapture(e.pointerId);
+  pointerOnStage = true;
+  lastPointerScratch.x = e.clientX;
+  lastPointerScratch.y = e.clientY;
+  session.controller.pointerDown(e.clientX, e.clientY);
+  canvas.style.cursor = session.controller.hoverCursor();
+});
+canvas.addEventListener('pointermove', (e) => {
+  pointerOnStage = true;
+  lastPointerScratch.x = e.clientX;
+  lastPointerScratch.y = e.clientY;
+  session.controller.pointerMove(e.clientX, e.clientY);
+  canvas.style.cursor = session.controller.hoverCursor();
+});
+canvas.addEventListener('pointerup', (e) => {
+  lastPointerScratch.x = e.clientX;
+  lastPointerScratch.y = e.clientY;
+  session.controller.pointerUp(e.clientX, e.clientY);
+  canvas.style.cursor = session.controller.hoverCursor();
+});
+canvas.addEventListener('pointerleave', () => {
+  pointerOnStage = false;
+  session.controller.pointerLeave();
+  canvas.style.cursor = 'default';
 });
 
-let simState: SimState = { time: 0, cords: [] };
-const emptyInput: SimInput = { pointerPoint: null };
+// --- keyboard (the HUD buttons' own seams; modifier/repeat guarded) ------------
+window.addEventListener('keydown', (e) => {
+  if (e.metaKey || e.ctrlKey || e.altKey) return;
+  if (e.repeat) return;
+  const key = e.key.toLowerCase();
+  if (key === 'n') spawnNewCord();
+  else if (key === 'r') resetScene();
+});
 
-// The frame loop: real frame deltas in, fixed sim slices out. No rendering —
-// the sim state advances for its own sake until 2D-2 paints it.
+// --- perf probe (?probe=1): frame-time log at 12 live cords --------------------
+const probeOn = new URLSearchParams(window.location.search).has('probe');
+const probe = {
+  frames: 0,
+  totalMs: 0,
+  maxMs: 0,
+  lastLog: 0,
+  samples: [] as number[],
+};
+const probeLog = (): void => {
+  const avg = probe.totalMs / Math.max(1, probe.frames);
+  const sorted = [...probe.samples].sort((a, b) => a - b);
+  const p95 = sorted[Math.floor(sorted.length * 0.95)] ?? avg;
+  console.log(
+    `[cords probe] ${probe.frames} frames · avg ${avg.toFixed(3)} ms · p95 ${p95.toFixed(3)} ms · max ${probe.maxMs.toFixed(3)} ms · cords ${session.state.cords.length} (cap 16) — 16.7 ms budget`,
+  );
+};
+if (probeOn) {
+  // Twelve live cords through the production seams: six linked pairs strung
+  // across neighboring modules + six resting coils, staged the way the
+  // composition actually composes — one explicit step between intents (a
+  // spawn's one-shot slot must FLOW before the next spawn overwrites it,
+  // exactly as frames interleave in the harness).
+  const stepOnce = (): void => {
+    const input = session.controller.composeInput();
+    session.state = session.driver.advance(session.state, 1 / 60, input).state;
+    session.controller.noteSimTime(session.state.time);
+  };
+  const pairs: ReadonlyArray<readonly [number, number]> = [
+    [0, 1], [1, 2], [2, 3], [3, 4], [4, 5], [5, 6],
+  ];
+  for (const [a, b] of pairs) {
+    const ra = stage[a];
+    const rb = stage[b];
+    if (ra === undefined || rb === undefined) break;
+    const id = session.controller.spawnCoilAt({ x: ra.x, y: ra.y + ra.h / 2 + 0.03 });
+    stepOnce();
+    session.controller.seatEndOn(id, RED, a, { x: ra.x, y: ra.y + ra.h / 2 });
+    session.controller.seatEndOn(id, BLUE, b, { x: rb.x, y: rb.y + rb.h / 2 });
+    stepOnce();
+  }
+  for (let i = 0; i < 6; i += 1) {
+    const r = stage[i];
+    if (r === undefined) break;
+    session.controller.spawnCoilAt({ x: r.x - 0.5, y: 0.6 });
+    stepOnce();
+  }
+}
+
+// --- the frame loop --------------------------------------------------------------
+const frameInput: FrameInput = {
+  state: session.state,
+  modules: stage,
+  seatPoseOf: (cordId, index) => session.controller.seatPoseOf(cordId, index),
+  deny: null,
+  simTime: 0,
+};
+
+let prevNow = 0;
 const tick = (now: number): void => {
-  const dt = tick.prev === 0 ? 1 / 60 : (now - tick.prev) / 1000;
-  tick.prev = now;
-  simState = driver.advance(simState, dt, emptyInput).state;
+  const dt = prevNow === 0 ? 1 / 60 : (now - prevNow) / 1000;
+  prevNow = now;
+  const frameStart = probeOn ? performance.now() : 0;
+
+  const input = session.controller.composeInput();
+  const advanced = session.driver.advance(session.state, dt, input);
+  session.state = advanced.state;
+  session.controller.noteSimTime(session.state.time);
+
+  frameInput.state = session.state;
+  frameInput.deny = session.controller.deny;
+  frameInput.simTime = session.state.time;
+  renderer.draw(frameInput);
+
+  // HUD: honest counts + the deaths' one spoken lines (consumed here).
+  readHudCountsInto(session.state.cords, session.world.lifecycle.stateOf, hudCounts);
+  let notice: string | null = null;
+  if (session.shattered > 0 || session.putAway > 0) {
+    const parts: string[] = [];
+    if (session.shattered > 0) parts.push(vanishNotice(session.shattered));
+    if (session.putAway > 0) parts.push(putAwayNotice(session.putAway));
+    notice = parts.join(' ');
+    session.shattered = 0;
+    session.putAway = 0;
+  }
+  hud.update(hudCounts, notice);
+
+  if (probeOn) {
+    const ms = performance.now() - frameStart;
+    probe.frames += 1;
+    probe.totalMs += ms;
+    if (ms > probe.maxMs) probe.maxMs = ms;
+    probe.samples.push(ms);
+    if (probe.samples.length > 600) probe.samples.shift();
+    if (now - probe.lastLog > 4000) {
+      probe.lastLog = now;
+      probeLog();
+      probe.frames = 0;
+      probe.totalMs = 0;
+      probe.maxMs = 0;
+    }
+  }
   requestAnimationFrame(tick);
 };
-tick.prev = 0;
 requestAnimationFrame(tick);
 
-// Read-only smoke seam (the shape 2D-2's full composition exposes grows from).
+// --- window.cords — read seams for drives + review ------------------------------
+interface CordsEnd {
+  cordId: number;
+  index: number;
+  x: number; // screen px (CSS)
+  y: number;
+  seated: boolean;
+}
 declare global {
   interface Window {
     cords?: {
@@ -114,16 +378,73 @@ declare global {
         idle: number | null;
         vanish: { phase: string; progress: number } | null;
       }>;
+      /** Every jack's screen position + seatedness (drive targeting). */
+      ends(): CordsEnd[];
+      /** The modules' screen quads (drive targeting). */
+      rects(): Array<{ id: number; x: number; y: number; w: number; h: number }>;
+      /** The live view's numbers (scale, floor line — for drive math). */
+      view(): { scale: number; floorScreenY: number; width: number; height: number };
+      /** N / HUD NEW CORD (the same seam the keyboard uses). */
+      spawn(): void;
+      /** R / HUD RESET. */
+      reset(): void;
+      /** The held end (drive-side verification of a grab), or null. */
+      held(): { cordId: number; index: number } | null;
+      /** Perf probe snapshot (or null when ?probe=1 is absent). */
+      probe(): { frames: number; avgMs: number; maxMs: number; cords: number } | null;
     };
   }
 }
+const endsScratch: Vec2 = { x: 0, y: 0 };
 window.cords = {
   lifecycle: () =>
-    simState.cords.map((cord) => ({
+    session.state.cords.map((cord) => ({
       id: cord.id,
-      state: world.lifecycle.stateOf(cord.id) ?? 'gone',
-      grace: world.lifecycle.graceRemaining(cord.id),
-      idle: world.lifecycle.idleRemaining(cord.id),
-      vanish: world.lifecycle.vanishInfo(cord.id),
+      state: session.world.lifecycle.stateOf(cord.id) ?? 'gone',
+      grace: session.world.lifecycle.graceRemaining(cord.id),
+      idle: session.world.lifecycle.idleRemaining(cord.id),
+      vanish: session.world.lifecycle.vanishInfo(cord.id),
     })),
+  ends: () => {
+    const out: CordsEnd[] = [];
+    for (const cord of session.state.cords) {
+      const last = cord.points.length - 1;
+      for (const index of [0, last] as const) {
+        const p = cord.points[index];
+        view.toScreen(p.x, p.y, endsScratch);
+        out.push({
+          cordId: cord.id,
+          index,
+          x: endsScratch.x,
+          y: endsScratch.y,
+          seated: session.world.lifecycle.endMode(cord.id, index) === 'seated',
+        });
+      }
+    }
+    return out;
+  },
+  rects: () =>
+    stage.map((r) => {
+      view.toScreen(r.x, r.y, endsScratch);
+      return {
+        id: r.id,
+        x: endsScratch.x - (r.w * view.scale) / 2,
+        y: endsScratch.y - (r.h * view.scale) / 2,
+        w: r.w * view.scale,
+        h: r.h * view.scale,
+      };
+    }),
+  view: () => ({ scale: view.scale, floorScreenY: view.floorScreenY, width: view.width, height: view.height }),
+  spawn: () => spawnNewCord(),
+  reset: () => resetScene(),
+  held: () => session.controller.heldEnd(),
+  probe: () =>
+    probeOn
+      ? {
+          frames: probe.frames,
+          avgMs: probe.totalMs / Math.max(1, probe.frames),
+          maxMs: probe.maxMs,
+          cords: session.state.cords.length,
+        }
+      : null,
 };
