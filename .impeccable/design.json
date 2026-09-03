@@ -1,6 +1,6 @@
 {
   "schemaVersion": 2,
-  "generatedAt": "2026-09-02T14:14:02.000Z",
+  "generatedAt": "2026-09-03T14:53:59.000Z",
   "title": "Design System: Cords",
   "extensions": {
     "colorMeta": {
@@ -18,7 +18,7 @@
           "oklch(83.6% 0.149 26.4)",
           "oklch(95.0% 0.071 26.4)"
         ],
-        "purpose": "Cube 01 candy zone."
+        "purpose": "Module 01 candy zone."
       },
       "tangerine": {
         "role": "tertiary",
@@ -34,7 +34,7 @@
           "oklch(83.6% 0.113 57.8)",
           "oklch(95.0% 0.054 57.8)"
         ],
-        "purpose": "Cube 02 candy zone."
+        "purpose": "Module 02 candy zone."
       },
       "sulfur-yellow": {
         "role": "primary",
@@ -66,7 +66,7 @@
           "oklch(83.6% 0.119 154.7)",
           "oklch(95.0% 0.057 154.7)"
         ],
-        "purpose": "Lit LINKED segments + numeral; cube 04 candy zone. REFINE-2: cooled 133°→148° and deepened (was #58c470, which read amber-warm beside the CORDS amber) — 7.24:1 on the panel."
+        "purpose": "Lit LINKED segments + numeral; module 04 candy zone. REFINE-2: cooled 133°→148° and deepened (was #58c470, which read amber-warm beside the CORDS amber) — 7.24:1 on the panel."
       },
       "reef-cyan": {
         "role": "tertiary",
@@ -82,7 +82,7 @@
           "oklch(83.6% 0.086 -153.6)",
           "oklch(95.0% 0.041 -153.6)"
         ],
-        "purpose": "Cube 05 candy zone."
+        "purpose": "Module 05 candy zone."
       },
       "cobalt": {
         "role": "tertiary",
@@ -98,7 +98,7 @@
           "oklch(83.6% 0.136 -96.0)",
           "oklch(95.0% 0.064 -96.0)"
         ],
-        "purpose": "Cube 06 candy zone. (REFINE-2: the blue plug band moved to its own Plug Blue ink.)"
+        "purpose": "Module 06 candy zone. (REFINE-2: the blue plug band moved to its own Plug Blue ink.)"
       },
       "magenta": {
         "role": "tertiary",
@@ -114,7 +114,7 @@
           "oklch(83.6% 0.152 -27.2)",
           "oklch(95.0% 0.072 -27.2)"
         ],
-        "purpose": "Cube 07 candy zone."
+        "purpose": "Module 07 candy zone."
       },
       "bone": {
         "role": "tertiary",
@@ -130,7 +130,7 @@
           "oklch(83.6% 0.014 90.5)",
           "oklch(95.0% 0.007 90.5)"
         ],
-        "purpose": "Cube 08 candy zone; the CORDS nameplate ink."
+        "purpose": "Module 08 candy zone; the CORDS nameplate ink."
       },
       "plug-red": {
         "role": "secondary",
@@ -146,7 +146,7 @@
           "oklch(83.6% 0.137 28.4)",
           "oklch(95.0% 0.065 28.4)"
         ],
-        "purpose": "Red input plug band/boot + the soft-cap deny ring."
+        "purpose": "Red input plug band/boot + the soft-cap deny ring on a rejected module edge."
       },
       "plug-blue": {
         "role": "secondary",
@@ -162,7 +162,7 @@
           "oklch(83.6% 0.154 265.8)",
           "oklch(95.0% 0.074 265.8)"
         ],
-        "purpose": "Blue output plug band/boot + the blue band shard. REFINE-2: a deeper cobalt than the zone (#4a7df2, which rendered desaturated slate at carry distance under the warm key) — the blue twin of Plug Red's rule; OKLCH L 51.7 sits at Plug Red's 53.6, so the polarity pair differentiates by hue alone."
+        "purpose": "Blue output plug band/boot + the band shard. REFINE-2: a deeper cobalt than the zone (#4a7df2, which rendered desaturated slate at full-frame distance) — the blue twin of Plug Red’s rule; OKLCH L 51.7 sits at Plug Red’s 53.6, so the polarity pair differentiates by hue alone."
       },
       "stage-void": {
         "role": "neutral",
@@ -178,7 +178,7 @@
           "oklch(83.6% 0.005 -74.2)",
           "oklch(95.0% 0.002 -74.2)"
         ],
-        "purpose": "Page/scene background + fog color."
+        "purpose": "Page background + the fog falloff’s color — the room above the panel."
       },
       "bench-charcoal": {
         "role": "neutral",
@@ -194,7 +194,7 @@
           "oklch(83.6% 0.008 -99.3)",
           "oklch(95.0% 0.004 -99.3)"
         ],
-        "purpose": "Floor plate albedo (lit steel, not black)."
+        "purpose": "The panel ground — the machined bench the modules bolt onto (tonal steel, not black)."
       },
       "faceplate-charcoal": {
         "role": "neutral",
@@ -226,7 +226,7 @@
           "oklch(83.6% 0.006 -104.4)",
           "oklch(95.0% 0.003 -104.4)"
         ],
-        "purpose": "Cube faceplate base tone."
+        "purpose": "The modules’ steel bodies under the candy zones."
       },
       "cord-rubber": {
         "role": "neutral",
@@ -242,7 +242,7 @@
           "oklch(83.6% 0.010 -92.9)",
           "oklch(95.0% 0.005 -92.9)"
         ],
-        "purpose": "The cord tube."
+        "purpose": "The cord’s body stroke (the middle layer of the three-stroke ink)."
       },
       "plug-chrome": {
         "role": "neutral",
@@ -258,55 +258,7 @@
           "oklch(83.6% 0.005 -112.1)",
           "oklch(95.0% 0.002 -112.1)"
         ],
-        "purpose": "Plug tip + shaft metal."
-      },
-      "warm-key": {
-        "role": "neutral",
-        "displayName": "Warm Key",
-        "canonical": "#ffd2a0",
-        "tonalRamp": [
-          "oklch(15.0% 0.029 69.4)",
-          "oklch(26.4% 0.054 69.4)",
-          "oklch(37.9% 0.082 69.4)",
-          "oklch(49.3% 0.082 69.4)",
-          "oklch(60.7% 0.082 69.4)",
-          "oklch(72.1% 0.082 69.4)",
-          "oklch(83.6% 0.061 69.4)",
-          "oklch(95.0% 0.029 69.4)"
-        ],
-        "purpose": "The bench's one warm lamp — the DirectionalLight (intensity 6.0, low angle from (4, 3.2, 3)) that models the cube faces and makes the charcoal read as lit steel."
-      },
-      "hemi-sky": {
-        "role": "neutral",
-        "displayName": "Hemisphere Sky",
-        "canonical": "#3a4150",
-        "tonalRamp": [
-          "oklch(15.0% 0.009 -94.6)",
-          "oklch(26.4% 0.018 -94.6)",
-          "oklch(37.9% 0.027 -94.6)",
-          "oklch(49.3% 0.027 -94.6)",
-          "oklch(60.7% 0.027 -94.6)",
-          "oklch(72.1% 0.027 -94.6)",
-          "oklch(83.6% 0.020 -94.6)",
-          "oklch(95.0% 0.009 -94.6)"
-        ],
-        "purpose": "The hemisphere light's dim cool sky bounce (intensity 1.25)."
-      },
-      "hemi-ground": {
-        "role": "neutral",
-        "displayName": "Hemisphere Ground",
-        "canonical": "#101216",
-        "tonalRamp": [
-          "oklch(15.0% 0.003 -95.7)",
-          "oklch(26.4% 0.006 -95.7)",
-          "oklch(37.9% 0.009 -95.7)",
-          "oklch(49.3% 0.009 -95.7)",
-          "oklch(60.7% 0.009 -95.7)",
-          "oklch(72.1% 0.009 -95.7)",
-          "oklch(83.6% 0.007 -95.7)",
-          "oklch(95.0% 0.003 -95.7)"
-        ],
-        "purpose": "The hemisphere light's ground bounce beneath the bench."
+        "purpose": "The drawn jack’s tip + shaft metal — flat bright ink closed by its edge stroke and shaded underneath."
       },
       "grip-rubber": {
         "role": "neutral",
@@ -354,7 +306,7 @@
           "oklch(83.6% 0.010 -97.6)",
           "oklch(95.0% 0.005 -97.6)"
         ],
-        "purpose": "Meter labels (10.48:1)."
+        "purpose": "Meter labels + the empty-scene hint (10.48:1)."
       },
       "dim-ink": {
         "role": "neutral",
@@ -498,7 +450,7 @@
           "oklch(83.6% 0.005 -101.6)",
           "oklch(95.0% 0.002 -101.6)"
         ],
-        "purpose": "Segment/keycap borders; panel seam ink."
+        "purpose": "Segment/keycap borders; the module body’s 1px machined border."
       },
       "machined-bevel": {
         "role": "neutral",
@@ -514,7 +466,7 @@
           "oklch(83.6% 0.000 0.0)",
           "oklch(95.0% 0.000 0.0)"
         ],
-        "purpose": "The HUD strip's 1px machined top bevel (border-top) — the lit edge that closes the panel. A border, not a box-shadow, so it is a palette token rather than a shadow-vocabulary entry. REFINE-5: tokenized from the shipped CSS to close the detector's design-system-color advisory."
+        "purpose": "The 1px lit bevel — the HUD strip’s top border, each module’s top edge, and the bench edge above the floor line. A stroke or border, never a shadow, so it is a palette token (REFINE-5); the painted flat-shade strokes live in extensions.machining."
       },
       "panel-seam": {
         "role": "neutral",
@@ -530,7 +482,7 @@
           "oklch(83.6% 0.005 -101.6)",
           "oklch(95.0% 0.002 -101.6)"
         ],
-        "purpose": "Module seams dividing the strip's readouts and actions, and the floor's 4x4-unit machined panels — the darker twin of machined-seam (#0e1013)."
+        "purpose": "Module seams dividing the strip’s readouts and actions, the bench’s 1.2-unit panel tiles, and the floor line’s front face — the darker twin of machined-seam (#0e1013)."
       },
       "fastener-ink": {
         "role": "neutral",
@@ -546,7 +498,7 @@
           "oklch(83.6% 0.005 -101.6)",
           "oklch(95.0% 0.002 -101.6)"
         ],
-        "purpose": "Screw and bolt heads — the strip's two 9px screws and the floor panels' corner bolts."
+        "purpose": "Screw and bolt heads — the strip’s two 9px screws, the modules’ four corner screws, and the bench grid’s corner bolts at the seam intersections."
       },
       "fastener-rim": {
         "role": "neutral",
@@ -610,7 +562,151 @@
           "oklch(83.6% 0.012 -102.8)",
           "oklch(95.0% 0.006 -102.8)"
         ],
-        "purpose": "Painted module numbers 01-08."
+        "purpose": "The painted module numbers 01-08 (700 11px mono, 0.1em tracking, on the steel faces)."
+      },
+      "bench-grid-alt": {
+        "role": "neutral",
+        "displayName": "Bench Grid Alt",
+        "canonical": "#232629",
+        "tonalRamp": [
+          "oklch(15.0% 0.002 -111.9)",
+          "oklch(26.4% 0.005 -111.9)",
+          "oklch(37.9% 0.007 -111.9)",
+          "oklch(49.3% 0.007 -111.9)",
+          "oklch(60.7% 0.007 -111.9)",
+          "oklch(72.1% 0.007 -111.9)",
+          "oklch(83.6% 0.005 -111.9)",
+          "oklch(95.0% 0.002 -111.9)"
+        ],
+        "purpose": "The alternate tile tone of the bench’s 1.2-unit panel grid — the quiet checker that makes the ground read as tiled steel plate."
+      },
+      "cord-rubber-dark": {
+        "role": "neutral",
+        "displayName": "Cord Rubber Dark",
+        "canonical": "#262930",
+        "tonalRamp": [
+          "oklch(15.0% 0.005 -92.9)",
+          "oklch(26.4% 0.009 -92.9)",
+          "oklch(37.9% 0.014 -92.9)",
+          "oklch(49.3% 0.014 -92.9)",
+          "oklch(60.7% 0.014 -92.9)",
+          "oklch(72.1% 0.014 -92.9)",
+          "oklch(83.6% 0.010 -92.9)",
+          "oklch(95.0% 0.005 -92.9)"
+        ],
+        "purpose": "The cord’s wide under-stroke (0.08 world units) — the layer beneath the body that gives the inked line its round, sleeved read."
+      },
+      "plug-chrome-edge": {
+        "role": "neutral",
+        "displayName": "Plug Chrome Edge",
+        "canonical": "#8f959d",
+        "tonalRamp": [
+          "oklch(15.0% 0.005 -104.5)",
+          "oklch(26.4% 0.009 -104.5)",
+          "oklch(37.9% 0.014 -104.5)",
+          "oklch(49.3% 0.014 -104.5)",
+          "oklch(60.7% 0.014 -104.5)",
+          "oklch(72.1% 0.014 -104.5)",
+          "oklch(83.6% 0.010 -104.5)",
+          "oklch(95.0% 0.005 -104.5)"
+        ],
+        "purpose": "The 1px edge stroke closing the chrome tip — the machined chamfer that keeps bright metal forms crisp against dark steel."
+      },
+      "plug-insulator": {
+        "role": "neutral",
+        "displayName": "Plug Insulator",
+        "canonical": "#14161a",
+        "tonalRamp": [
+          "oklch(15.0% 0.003 -95.6)",
+          "oklch(26.4% 0.006 -95.6)",
+          "oklch(37.9% 0.009 -95.6)",
+          "oklch(49.3% 0.009 -95.6)",
+          "oklch(60.7% 0.009 -95.6)",
+          "oklch(72.1% 0.009 -95.6)",
+          "oklch(83.6% 0.006 -95.6)",
+          "oklch(95.0% 0.003 -95.6)"
+        ],
+        "purpose": "The near-black groove separating the jack’s tip from its shaft — the lathe line, printed."
+      },
+      "socket-ink": {
+        "role": "neutral",
+        "displayName": "Socket Ink",
+        "canonical": "#101215",
+        "tonalRamp": [
+          "oklch(15.0% 0.002 -101.6)",
+          "oklch(26.4% 0.005 -101.6)",
+          "oklch(37.9% 0.007 -101.6)",
+          "oklch(49.3% 0.007 -101.6)",
+          "oklch(60.7% 0.007 -101.6)",
+          "oklch(72.1% 0.007 -101.6)",
+          "oklch(83.6% 0.005 -101.6)",
+          "oklch(95.0% 0.002 -101.6)"
+        ],
+        "purpose": "The machined port inset on a module edge — the dark slot a seated plug’s tip crosses into (0.082 units inside the perimeter). Same value as Fastener Ink; its own role."
+      },
+      "shard-steel-deep": {
+        "role": "neutral",
+        "displayName": "Shard Steel Deep",
+        "canonical": "#23262b",
+        "tonalRamp": [
+          "oklch(15.0% 0.004 -99.3)",
+          "oklch(26.4% 0.007 -99.3)",
+          "oklch(37.9% 0.010 -99.3)",
+          "oklch(49.3% 0.010 -99.3)",
+          "oklch(60.7% 0.010 -99.3)",
+          "oklch(72.1% 0.010 -99.3)",
+          "oklch(83.6% 0.008 -99.3)",
+          "oklch(95.0% 0.004 -99.3)"
+        ],
+        "purpose": "The debris shards’ dark cool-steel inks, channel-varied per instance by the seeded pool — this is the deepest of the family (with Shard Steel Dark #26292f, Shard Steel #2a2d33, Shard Steel Bright #303339, and Cord Rubber #2e3138 as the fifth member)."
+      },
+      "shard-steel-dark": {
+        "role": "neutral",
+        "displayName": "Shard Steel Dark",
+        "canonical": "#26292f",
+        "tonalRamp": [
+          "oklch(15.0% 0.004 -95.6)",
+          "oklch(26.4% 0.008 -95.6)",
+          "oklch(37.9% 0.012 -95.6)",
+          "oklch(49.3% 0.012 -95.6)",
+          "oklch(60.7% 0.012 -95.6)",
+          "oklch(72.1% 0.012 -95.6)",
+          "oklch(83.6% 0.009 -95.6)",
+          "oklch(95.0% 0.004 -95.6)"
+        ],
+        "purpose": "The shard family’s second ink — channel-varied dark cool steel for a scattered-metal read."
+      },
+      "shard-steel": {
+        "role": "neutral",
+        "displayName": "Shard Steel",
+        "canonical": "#2a2d33",
+        "tonalRamp": [
+          "oklch(15.0% 0.004 -95.6)",
+          "oklch(26.4% 0.008 -95.6)",
+          "oklch(37.9% 0.012 -95.6)",
+          "oklch(49.3% 0.012 -95.6)",
+          "oklch(60.7% 0.012 -95.6)",
+          "oklch(72.1% 0.012 -95.6)",
+          "oklch(83.6% 0.009 -95.6)",
+          "oklch(95.0% 0.004 -95.6)"
+        ],
+        "purpose": "The shard family’s middle ink — the canonical dark cool steel of the shatter debris."
+      },
+      "shard-steel-bright": {
+        "role": "neutral",
+        "displayName": "Shard Steel Bright",
+        "canonical": "#303339",
+        "tonalRamp": [
+          "oklch(15.0% 0.004 -95.6)",
+          "oklch(26.4% 0.008 -95.6)",
+          "oklch(37.9% 0.011 -95.6)",
+          "oklch(49.3% 0.011 -95.6)",
+          "oklch(60.7% 0.011 -95.6)",
+          "oklch(72.1% 0.011 -95.6)",
+          "oklch(83.6% 0.008 -95.6)",
+          "oklch(95.0% 0.004 -95.6)"
+        ],
+        "purpose": "The shard family’s lightest ink — the bright edge of the scattered steel debris."
       }
     },
     "typographyMeta": {
@@ -689,12 +785,12 @@
       {
         "name": "deny-fade",
         "value": "350 ms linear fade",
-        "purpose": "The flat red soft-cap deny ring on a rejected cube face — a mark, not a lamp."
+        "purpose": "The flat red soft-cap deny ring on a rejected module edge — a mark, not a lamp."
       },
       {
         "name": "shatter-physics",
-        "value": "ballistic 9.81, restitutions 0.4 then 0.22, slide friction 9/s, 0.55 s lifetime, scale-out over the final 35% — 18 shards, base 0.03, scaled 0.75–1.8 (REFINE-1 legibility bump, was 14 at 0.02)",
-        "purpose": "The vanish shatter: deterministic seeded shards (dark steel + the failing end's band color), zero glow. Skipped entirely under reduced motion; the despawn/fade sequence is unchanged."
+        "value": "ballistic 9 u/s², restitutions 0.4 then 0.22, slide friction 9/s, 0.55 s lifetime, scale-out over the final 35% — 18 steel shards + 2 band shards (the largest leads), base 0.03, scaled 0.75–1.8, seeded per-slot, integrated on the sim clock’s own 1/120 grid",
+        "purpose": "The vanish shatter: deterministic pooled shards (the dark-steel family + the failing end’s band ink), zero glow, zero per-frame allocation. Skipped entirely under reduced motion; the despawn/fade sequence is unchanged."
       },
       {
         "name": "dom-state",
@@ -705,6 +801,53 @@
         "name": "dangle-settle",
         "value": "sim-owned: dangle settles ~1.5 s without jitter; brush perturbation dampened x0.5 under reduced motion",
         "purpose": "The feel layer — every moving pixel in the scene is the fixed-timestep solver, never an animation."
+      }
+    ],
+    "machining": [
+      {
+        "name": "grid-hairline",
+        "value": "rgba(0,0,0,0.14)",
+        "purpose": "The bench grid’s 0.3-unit machining hairlines on the cached panel — the ground’s brushed texture."
+      },
+      {
+        "name": "bolt-highlight",
+        "value": "rgba(255,255,255,0.06)",
+        "purpose": "The 1px inset highlight on each corner bolt of the bench grid."
+      },
+      {
+        "name": "underside-shade",
+        "value": "rgba(0,0,0,0.22)",
+        "purpose": "The machined underside flat shade — the bench’s front face below the floor line and the chrome tip/shaft’s lower half."
+      },
+      {
+        "name": "module-edge-shade",
+        "value": "rgba(0,0,0,0.4)",
+        "purpose": "The module’s shaded bottom edge — the lit top bevel’s dark twin."
+      },
+      {
+        "name": "sheen-stroke",
+        "value": "rgba(255,255,255,0.07)",
+        "purpose": "The cord’s top sheen stroke (the painted key light, third ink layer) and the socket inset’s 1px bevel."
+      },
+      {
+        "name": "boot-shade",
+        "value": "rgba(0,0,0,0.18)",
+        "purpose": "The strain-relief boot’s underside half."
+      },
+      {
+        "name": "knurl-flute",
+        "value": "rgba(255,255,255,0.05)",
+        "purpose": "The grip’s four knurl flutes."
+      },
+      {
+        "name": "zone-keyline",
+        "value": "rgba(0,0,0,0.45)",
+        "purpose": "The candy-zone and polarity keyline — the zone pad, the sleeve band, and the boot."
+      },
+      {
+        "name": "fog-falloff",
+        "value": "linear-gradient(#111114 → rgba(17,17,20,0.6) 50% → rgba(17,17,20,0)) over the top 32% of the stage",
+        "purpose": "The one atmospheric gradient — the lit bench dissolving into the room above the panel (v1’s distance fog, translated flat). Painted last, every frame."
       }
     ]
   },
@@ -753,9 +896,9 @@
       "name": "Candy Zone Module Face",
       "kind": "custom",
       "refersTo": "meter-segment",
-      "description": "The scene's cube faceplate translated to DOM: brushed steel plate, inset faceplate seam, corner screws, one 10px-radius candy zone with a dark keyline, and the painted module id.",
+      "description": "The canvas world’s steel module translated to DOM: brushed-steel rounded body, machined border with a lit top bevel and shaded bottom edge, one ~8px-radius candy zone at 62% × 42% with a dark keyline, and the painted module id in the panel’s own mono.",
       "html": "<div class=\"ds-zone-face\">\n  <span class=\"ds-zone-id\">04</span>\n  <span class=\"ds-zone-pad\"></span>\n</div>",
-      "css": ".ds-zone-face { position: relative; width: 128px; height: 128px; background: #2a2d31; border: 6px solid #15171a; outline: 2px solid rgba(255,255,255,0.06); }\n.ds-zone-id { position: absolute; top: 14px; left: 15px; font-family: ui-monospace, \"SF Mono\", Menlo, Consolas, \"Liberation Mono\", monospace; font-size: 12px; font-weight: 700; color: #8f96a0; }\n.ds-zone-pad { position: absolute; left: 32px; top: 59px; width: 64px; height: 28px; border-radius: 5px; background: #2fbd72; border: 1px solid rgba(0,0,0,0.45); }"
+      "css": ".ds-zone-face { position: relative; width: 132px; height: 100px; background: #2a2d31; border: 1px solid #0e1013; border-radius: 5px; box-shadow: inset 0 1px 0 rgba(255,255,255,0.08), inset 0 -1px 0 rgba(0,0,0,0.4); }\n.ds-zone-id { position: absolute; top: 9px; left: 11px; font-family: ui-monospace, \"SF Mono\", Menlo, Consolas, monospace; font-size: 11px; font-weight: 700; letter-spacing: 0.1em; color: #8f96a0; }\n.ds-zone-pad { position: absolute; left: 19%; top: 37%; width: 62%; height: 42%; border-radius: 8px; background: #2fbd72; border: 1.5px solid rgba(0,0,0,0.45); }"
     },
     {
       "name": "Scene Summary (sr-only live region)",
@@ -769,22 +912,22 @@
   "narrative": {
     "northStar": "The Drum Machine Panel",
     "overview": [
-      "Cords is staged as an early-80s hardware instrument faceplate brought to life: a charcoal steel bench under one warm lamp, machined panel seams falling into fog, eight steel modules each carrying a single candy color zone, and the hero object — real 1/4-inch phone plugs on dark rubber cords — lying across it. The interface recedes to a silkscreen faceplate strip along the bottom edge: tracked small-caps legends, squared segmented meters, machined keycap buttons. Nothing is costume; every printed word names a real state, and every lit pixel is live state.",
-      "The system's core honesty is the lit = live state only contract. The scene is unlit hardware — matte rubber, brushed steel, painted silkscreen — until the simulation says otherwise: a completed link's amber chase pulse traveling the cord, a meter row filling one segment per live cord, a popped jack's band blinking like a dying battery. Failure performs in the same hardware grammar: the jack shatters into dark steel shards plus one shard of its own color band, the cord dims through its grace countdown, and the meters count it down to zero.",
-      "Motion is sim-driven, never scripted — no CSS keyframes and no tweens anywhere. Every animated read is a pure function of the simulation's own clock and state, so the same sim instant always paints the same picture and a frozen sim holds its light still."
+      "Cords is staged as an early-80s hardware instrument faceplate brought to life — drawn flat, as the silkscreen itself would print it. One full-viewport machined charcoal panel in Canvas 2D: a bench of 1.2-unit panel tiles, hairline machining, and corner bolts; eight steel modules bolted on in an authored scatter, each carrying a single candy color zone; and the hero object — real 1/4-inch phone plugs on dark rubber cords — inked across it as layered strokes. The interface recedes to a silkscreen faceplate strip along the bottom edge: tracked small-caps legends, squared segmented meters, machined keycap buttons. Nothing is costume; every printed word names a real state, and every lit pixel is live state.",
+      "The system’s core honesty is the lit = live state only contract. The panel is unlit hardware — matte rubber ink, steel fills, painted silkscreen — until the simulation says otherwise: a completed link’s amber chase pulse traveling the drawn cord, a meter row filling one segment per live cord, a popped jack’s band blinking like a dying battery. Failure performs in the same hardware grammar: the jack shatters into dark steel shards plus shards of its own color band, the cord dims through its grace countdown, and the meters count it down to zero.",
+      "Motion is sim-driven, never scripted — no CSS keyframes and no tweens anywhere. Every animated read is a pure function of the simulation’s own clock and state, so the same sim instant always paints the same picture and a frozen sim holds its light still."
     ],
     "keyCharacteristics": [
-      "Charcoal steel ground — dark, never black; the bench reads as lit steel under the warm key.",
+      "A machined charcoal panel — dark, never black; the bench reads as steel through tonal layering (base #22252a over grid alt #232629, void #111114 above the fog falloff).",
       "Eight candy color zones, each doubling as a state ink (amber = live cords, jade = links, red/blue = plug polarity).",
-      "Silkscreen legends: tracked caps that name real state only; if the sim can't say it, the panel doesn't print it.",
+      "Silkscreen legends: tracked caps that name real state only; if the sim can’t say it, the panel doesn’t print it.",
       "One glow budget: the chase-pulse amber on linked cords and the lit meter segments — nothing else glows, ever.",
-      "Machined depth: 1px bevels, seams, screws, and one warm key light; flat surfaces, no glass, no gradients.",
+      "Machined depth: 1px bevels, seams, screws, bolts, and the port insets; flat surfaces, no glass, no drop shadows, no decorative gradients.",
       "Sim-clock motion: deterministic, headless-testable, no keyframes; reduced motion slows or holds effects, never removes live-state meaning."
     ],
     "rules": [
       {
         "name": "The One Glow Rule",
-        "body": "Glow exists only where live state lives: the chase-pulse amber on a linked cord, the lit meter segments, and the focus bracket. Everything else is painted, machined, or lit by the key — never emissive. A decorative glow is a bug.",
+        "body": "Glow exists only where live state lives: the chase-pulse amber on a linked cord, the lit meter segments, and the focus bracket. Everything else stays paint or machining. A decorative glow is a bug.",
         "section": "colors"
       },
       {
@@ -799,25 +942,25 @@
       },
       {
         "name": "The Machined-Edge Rule",
-        "body": "Surfaces are flat; depth is machined (inset bevels, seams, screws) or lit (the key, the fog). No drop shadows, no glass, no gradients, no blur.",
+        "body": "Surfaces are flat; depth is machined (inset bevels, seams, screws, bolts, port insets) or painted (the fog falloff, the sheen and underside strokes). No drop shadows, no glass, no blur, no decorative gradients — the fog falloff at the stage’s top is the one atmospheric gradient, and it is the room, not a surface.",
         "section": "elevation"
       }
     ],
     "dos": [
       "Do light a pixel only when the sim justifies it: lit segments = live counts, chase pulse = linked, band lift = seated-and-linked, band blink = dying.",
       "Do print only real state in silkscreen grammar: tracked caps (0.14-0.34em), Legend/Dim inks, mono numerals for every number.",
-      "Do compose new panel modules from the strip's furniture: #0d0f12 module seam + 24px padding-left, squared slots, 2px keycaps, screw fasteners.",
+      "Do compose new panel modules from the strip’s furniture: #0d0f12 module seam + 24px padding-left, squared slots, 2px keycaps, screw fasteners.",
       "Do keep candy color tied to state or module identity, each with its darker keyline.",
       "Do drive every animated read from the sim clock; reuse the purity seam (pure function of sim state + sim time).",
       "Do honor the reduced-motion seams exactly: slow the pulse x0.5, hold the blink steady, skip particles, keep the dim."
     ],
     "donts": [
-      "Don't add decorative glow, bloom, halos, additive blending, or any emissive material outside the chase pulse and lit meter segments.",
-      "Don't use drop shadows, glass, blur, or gradients — depth is machined or lit.",
-      "Don't print a label, hint, or number the sim cannot back with live state; don't show the empty hint while a cord exists.",
-      "Don't animate with CSS transitions/keyframes, wall-clock tweens, or Math.random().",
-      "Don't let red mean anything but input polarity / denial, or recolor the stretch ticks — measurement furniture is neutral ink.",
-      "Don't introduce display type or sentence case on the panel; the voice is all-caps silkscreen at 9-15px with tabular mono numerals."
+      "Don’t add decorative glow, halos, blur, or shadow effects outside the chase pulse and lit meter segments — the canvas painter carries no glow primitive.",
+      "Don’t use drop shadows, glass, blur, or decorative gradients — depth is machined or painted; the fog falloff is the one exception, and it is atmosphere, not surface.",
+      "Don’t print a label, hint, or number the sim cannot back with live state; don’t show the empty hint while a cord exists.",
+      "Don’t animate with CSS transitions/keyframes, wall-clock tweens, or unseeded randomness.",
+      "Don’t let red mean anything but input polarity / denial, or recolor the stretch ticks — measurement furniture is neutral ink.",
+      "Don’t introduce display type or sentence case on the panel; the voice is all-caps silkscreen at 9-15px with tabular mono numerals."
     ]
   }
 }
