@@ -1,28 +1,48 @@
 /**
- * 2D-2 — THE CANVAS 2D PAINTER (Professor X's lane: visual truth). The flat
- * Drum Machine Panel world: machined charcoal bench with panel seams and
+ * 2D-2/2D-3 — THE CANVAS 2D PAINTER (Professor X's lane: visual truth). The
+ * flat Drum Machine Panel world: machined charcoal bench with panel seams and
  * corner bolts, eight candy-zoned steel modules, cords as stroked smooth
  * curves through the sim's own points, and the 1/4″ jack drawn in 2D at each
  * end — tapered tip, chrome shaft, dark knurled grip, color band + strain
  * relief (Plug Red #c22e26 / Plug Blue #2e58de, the refine-2 albedo values
  * proven to survive at full-frame distance).
  *
+ * 2D-3 restores v1's finishing state furniture, translated flat and split
+ * along the same purity line: the LAWS are pure sim-clock functions
+ * (states.ts, pulse.ts — headless-testable), the PAINT lives here —
+ *   • stretch ticks: neutral silkscreen graduation marks, one per REST
+ *     segment of MEASURED arc, appearing above 0.90 tautness, state-gated to
+ *     carried/awaiting-plug cords (never linked, never counting down);
+ *   • popped grace: the cord dims LINEARly to the 0.22 floor (the visible
+ *     countdown) while the failing jack's band blinks dark through the final
+ *     1.5 s (3→5 Hz stepped ramp, sim-clock; steady under reduced motion);
+ *     the vanish fade composes MULTIPLICATIVELY so expiry never flashes back;
+ *   • shatter: a POOLED debris burst at the impact — 18 dark cool-steel
+ *     shards plus the failing end's BAND shard (the largest piece) — two
+ *     floor bounces, a friction slide, 0.55 s life, scale-out at the end.
+ *     Zero glow, zero allocation after construction; skipped entirely under
+ *     reduced motion (the composition's call, not the pool's);
+ *   • the chase pulse: the ONE GLOW — a sulfur-amber LED segment overdrawn
+ *     on the drawn curve, traveling the measured arc red→blue on the sim
+ *     clock, gated to exactly `linked` (the composition's per-frame read).
+ *
  * DESIGN.md's laws, translated flat: depth is MACHINED (1px bevels, seams,
  * fastener heads) or LIT (one fog falloff toward the top of the stage) — no
- * drop shadows, no glass; the only saturated color is state (zone
- * identities, plug polarity, the deny ring's Plug Red); nothing glows.
- * Motion is the sim's own — this layer paints exactly the state it is
- * handed, so a frozen sim holds its picture still.
+ * drop shadows, no glass; the only saturated color is state. Motion is the
+ * sim's own — this layer paints exactly the state it is handed, so a frozen
+ * sim holds its picture still.
  *
  * Discipline: ZERO per-frame allocation (screen-point shells are pooled
- * once; fonts/gradients are cached at resize), device-pixel-ratio correct
- * (the context transform carries the DPR; every coordinate is CSS px), and
+ * once; fonts/gradients are cached at resize; the shard pool and every
+ * scratch array are constructed here), device-pixel-ratio correct (the
+ * context transform carries the DPR; every coordinate is CSS px), and
  * resize-safe (`setView` rebuilds the cached panel at the new size).
  */
-import type { SimState, Vec2 } from '../sim';
+import type { LifecycleState, SimState, Vec2 } from '../sim';
 import { SEAT_DEPTH } from '../world/stage';
 import type { SeatPose, StageRect } from '../world/stage';
 import type { View } from '../world/view';
+import { graceBlinkOn, graceDimming, stretchTickGain } from './states';
 
 /** The narrow canvas surface the renderer needs (HTMLCanvasElement-shaped). */
 export interface RendererCanvas {
@@ -30,6 +50,56 @@ export interface RendererCanvas {
   height: number;
   readonly style: { width: string; height: string };
   getContext(contextId: '2d'): CanvasRenderingContext2D | null;
+}
+
+/** The failing end's polarity for a shatter burst (the band shard's ink). */
+export type ShardBand = 'red' | 'blue' | null;
+
+/** 2D-3 drive seam: the last drawn chase-pulse read (pulseProbe). */
+export interface PulseProbe {
+  phase: number;
+  /** Per drawn cord: the gate's gain plus the LED segment's screen center. */
+  cords: Array<{ id: number; gain: number; cx: number; cy: number }>;
+}
+
+/** 2D-3 drive seam: the last drawn state furniture (stateProbe). */
+export interface StateProbe {
+  cords: Array<{
+    id: number;
+    tickGain: number;
+    dim: number;
+    fade: number | null;
+    jackHidden: boolean;
+    bandLit: [boolean, boolean];
+  }>;
+  shards: number;
+}
+
+/**
+ * Per-cord paint state — the composition's per-frame read of the lifecycle,
+ * parallel to `FrameInput.state.cords` by index. Built by main.ts from the
+ * machine's own reads; absent (null) = the plain 2D-2 paint, no furniture.
+ */
+export interface CordPaint {
+  /** The lifecycle state ('none' for an unregistered cord). */
+  state: LifecycleState | 'none';
+  /**
+   * End-to-end span over the rest total (0..~1) — the TAUTNESS read that
+   * keys the stretch ticks (a leashed carried cord cannot exceed its rest
+   * length in arc, so taut is the honest reading of "stretched").
+   */
+  tautness: number;
+  /**
+   * Grace seconds remaining while `popped`; 0 while `vanishing` (the dim
+   * holds its floor through the fade); null in every other state.
+   */
+  graceRemaining: number | null;
+  /** The end whose jack failed (the blinking band / the shatter), or null. */
+  failingEnd: number | null;
+  /** Vanish pull-window progress 0..1, or null when not vanishing. */
+  fade: number | null;
+  /** The end whose jack already shattered (hidden — shards replaced it). */
+  jackHiddenEnd: number | null;
 }
 
 /** Per-frame render input — everything the painter may look at. */
@@ -43,6 +113,15 @@ export interface FrameInput {
   deny: { readonly x: number; readonly y: number; readonly t: number } | null;
   /** Sim clock seconds (the deny fade keys on it — deterministic). */
   simTime: number;
+  /** 2D-3: per-cord lifecycle paint reads, parallel to state.cords. */
+  paint?: readonly CordPaint[] | null;
+  /**
+   * 2D-3: the chase-pulse phase in [0,1) from the pure sim clock, or
+   * null/absent to paint no pulse at all this frame.
+   */
+  pulsePhase?: number | null;
+  /** 2D-3: prefers-reduced-motion (the blink holds steady). */
+  reducedMotion?: boolean;
 }
 
 // --- Palette (DESIGN.md frontmatter; the shipped token values) ----------------
@@ -68,6 +147,10 @@ export const PLUG_BLUE = '#2e58de';
 const ZONE_KEYLINE = 'rgba(0,0,0,0.45)';
 const BOOT_SHADE = 'rgba(0,0,0,0.18)';
 const KNURL = 'rgba(255,255,255,0.05)';
+/** The stretch ticks' neutral registration ink (measurement, never red). */
+const TICK_INK = '#b6bcc6';
+/** The chase pulse — the panel's lit-segment amber. THE ONE GLOW. */
+export const PULSE_INK = '#f2d43a';
 
 // --- Jack anatomy (world units, tip → boot; v1's hero-scale proportions) ------
 // The band and boot carry the polarity, so both print generously: the band is
@@ -95,12 +178,88 @@ const ID_FONT = '700 11px ui-monospace, "SF Mono", Menlo, Consolas, monospace';
 /** The pool sizes for the world's own caps: 16 cords × 25 points. */
 const MAX_CORDS = 16;
 const MAX_POINTS = 25;
+/** One segment's rest length (world units) — the production rope default. */
+const REST_SEGMENT = 0.1;
+
+// --- the shatter debris (pooled; v1 REN-5/REFINE-1's grammar) ------------------
+/** Steel shards per burst (the DESIGN law's 18) + the band's two pieces. */
+const SHARD_STEEL_COUNT = 18;
+const SHARD_BAND_COUNT = 2;
+const SHARDS_PER_BURST = SHARD_STEEL_COUNT + SHARD_BAND_COUNT;
+/** Concurrent bursts the pool covers (rapid-fire failures; oldest replaced). */
+const SHARD_MAX_BURSTS = 4;
+/** Debris life in seconds of sim time (scale-out over the final 35%). */
+const SHARD_LIFE = 0.55;
+const SHARD_LIFE_OUT = 0.35 * SHARD_LIFE;
+/** Debris gravity (world units/s²) — the arc reads at bench scale. */
+const SHARD_G = 9;
+/** Fixed debris substep — the burst integrates on the sim clock's own grid,
+ * so the debris is identical whatever the frame cadence (deterministic law). */
+const SHARD_DT = 1 / 120;
+const SHARD_DT_MAX_STEPS = 96; // ≥ SHARD_LIFE / SHARD_DT — a full life per draw
+const SHARD_REST_Y = 0.012; // a shard rests at its own half-height on the bench
+/** Dark cool-steel inks, channel-varied (per-instance, deterministic). */
+const SHARD_STEEL_INKS = ['#23262b', '#26292f', '#2a2d33', '#2e3138', '#303339'] as const;
+
+/** One pooled debris shard. */
+interface Shard {
+  active: boolean;
+  /** The world position (x right, y up — the sim's own plane). */
+  x: number;
+  y: number;
+  vx: number;
+  vy: number;
+  rot: number;
+  vr: number;
+  /** Deterministic per-slot shape/speed seed (LCG-fixed at construction). */
+  scale: number;
+  /** Index into SHARD_STEEL_INKS, or −1 when this slot is a band shard. */
+  inkIndex: number;
+  dirX: number;
+  dirY: number;
+  speed: number;
+  /** Live integration state (assigned at burst time). */
+  ax: number;
+  ay: number;
+  avx: number;
+  avy: number;
+  arot: number;
+  avr: number;
+  bounces: number;
+  birth: number;
+  band: ShardBand;
+}
+
+/** ×1.5 within-hue lift of a #rrggbb ink (the linked seated band's accent). */
+function liftHex(hex: string, factor: number): string {
+  const r = Math.min(255, Math.round(parseInt(hex.slice(1, 3), 16) * factor));
+  const g = Math.min(255, Math.round(parseInt(hex.slice(3, 5), 16) * factor));
+  const b = Math.min(255, Math.round(parseInt(hex.slice(5, 7), 16) * factor));
+  return `#${r.toString(16).padStart(2, '0')}${g.toString(16).padStart(2, '0')}${b.toString(16).padStart(2, '0')}`;
+}
+const LIT_RED = liftHex(PLUG_RED, 1.5);
+const LIT_BLUE = liftHex(PLUG_BLUE, 1.5);
 
 export interface Renderer {
   /** (Re)fit to a view + device pixel ratio; rebuilds the cached panel. */
   setView(view: View, dpr: number): void;
   /** Paint one frame. No allocation in steady state. */
   draw(frame: FrameInput): void;
+  /** 2D-3: spawn a debris burst at `at` (world) on the sim clock. */
+  burst(at: Vec2, band: ShardBand, simTime: number): void;
+  /** 2D-3: drop every live burst (RESET). */
+  clearFragments(): void;
+  /**
+   * 2D-3 drive seam: the last drawn pulse read — the phase used and, per
+   * cord, the gate's gain plus the LED segment's screen center (the road:
+   * red end → blue end). Allocates (probe calls only, never per frame).
+   */
+  pulseProbe(): PulseProbe;
+  /**
+   * 2D-3 drive seam: the last drawn state furniture per cord + the live
+   * debris count. Allocates (probe calls only).
+   */
+  stateProbe(): StateProbe;
 }
 
 /**
@@ -128,6 +287,55 @@ export function createRenderer(
   const pool: Vec2[] = [];
   for (let i = 0; i < MAX_CORDS * MAX_POINTS; i += 1) pool.push({ x: 0, y: 0 });
   const scratch: Vec2 = { x: 0, y: 0 };
+  const scratchB: Vec2 = { x: 0, y: 0 };
+  /** Cumulative screen arc per point (the pulse road), reused per cord. */
+  const arcScratch = new Float64Array(MAX_POINTS);
+
+  // --- the debris pool ---------------------------------------------------------
+  const shards: Shard[] = [];
+  {
+    let seed = 0x9e3779b9;
+    const lcg = (): number => {
+      seed = (seed * 1664525 + 1013904223) >>> 0;
+      return seed / 4294967296;
+    };
+    for (let b = 0; b < SHARD_MAX_BURSTS; b += 1) {
+      for (let s = 0; s < SHARDS_PER_BURST; s += 1) {
+        const bandShard = s === 0 || s === SHARD_STEEL_COUNT; // the largest piece + one mid-scatter
+        // Scatter: a biased-up hemisphere spray around the impact.
+        const ang = -Math.PI / 2 + (lcg() - 0.5) * Math.PI * 1.7;
+        shards.push({
+          active: false,
+          x: 0, y: 0, vx: 0, vy: 0, rot: 0, vr: 0,
+          scale: bandShard
+            ? 1.45 + lcg() * 0.35 // the band shard reads FIRST (v1's law)
+            : 0.75 + lcg() * 1.05,
+          inkIndex: bandShard ? -1 : Math.floor(lcg() * SHARD_STEEL_INKS.length),
+          dirX: Math.cos(ang),
+          dirY: Math.sin(ang),
+          speed: 0.55 + lcg() * 1.75,
+          ax: 0, ay: 0, avx: 0, avy: 0, arot: 0, avr: 0,
+          bounces: 0,
+          birth: 0,
+          band: null,
+        });
+      }
+    }
+  }
+  let shardClock = 0; // the debris' own integration clock (sim seconds)
+  let liveShards = 0;
+
+  // --- the probes (last drawn reads; allocated on probe() only) ---------------
+  let probePhase = 0;
+  const probePulseCords: Array<{ id: number; gain: number; cx: number; cy: number }> = [];
+  const probeStateCords: Array<{
+    id: number;
+    tickGain: number;
+    dim: number;
+    fade: number | null;
+    jackHidden: boolean;
+    bandLit: [boolean, boolean];
+  }> = [];
 
   const roundRectPath = (
     c: CanvasRenderingContext2D,
@@ -291,10 +499,17 @@ export function createRenderer(
 
   // --- the cord: layered strokes through the sim's own points -----------------
   // pts = the pool (absolute index base for this cord), n points.
-  const drawCord = (c: CanvasRenderingContext2D, base: number, n: number, scale: number): void => {
+  const drawCord = (
+    c: CanvasRenderingContext2D,
+    base: number,
+    n: number,
+    scale: number,
+    alpha: number,
+  ): void => {
     if (n < 2) return;
     c.lineJoin = 'round';
     c.lineCap = 'round';
+    if (alpha < 1) c.globalAlpha = alpha;
     for (let pass = 0; pass < 3; pass += 1) {
       c.beginPath();
       c.moveTo(pool[base].x, pool[base].y);
@@ -317,6 +532,123 @@ export function createRenderer(
       }
       c.stroke();
     }
+    if (alpha < 1) c.globalAlpha = 1;
+  };
+
+  /**
+   * THE STRETCH TICKS — silkscreen graduation marks at every REST segment of
+   * MEASURED arc along the WORLD polyline (the marks spread as the cord
+   * straightens: the cord learning its length). Short neutral strokes
+   * perpendicular to the local tangent; ink gain from the pure law.
+   */
+  const drawTicks = (
+    c: CanvasRenderingContext2D,
+    points: ReadonlyArray<Vec2>,
+    n: number,
+    segmentRest: number,
+    gain: number,
+    scale: number,
+    alpha: number,
+    v: View,
+  ): void => {
+    if (gain <= 0 || n < 2) return;
+    c.strokeStyle = TICK_INK;
+    c.lineWidth = 1.2;
+    c.globalAlpha = gain * alpha;
+    const halfLen = 0.052 * scale;
+    let measured = 0;
+    let nextMark = segmentRest;
+    c.beginPath();
+    for (let i = 0; i < n - 1 && measured < 1e9; i += 1) {
+      const a = points[i];
+      const b = points[i + 1];
+      const dx = b.x - a.x;
+      const dy = b.y - a.y;
+      const len = Math.sqrt(dx * dx + dy * dy);
+      if (len <= 0) continue;
+      while (nextMark <= measured + len) {
+        const t = (nextMark - measured) / len;
+        v.toScreen(a.x + dx * t, a.y + dy * t, scratch);
+        // Screen tangent (dx, −dy) → screen normal (dy, dx), normalized by len.
+        const nx = (dy / len) * halfLen;
+        const ny = (dx / len) * halfLen;
+        c.moveTo(scratch.x - nx, scratch.y - ny);
+        c.lineTo(scratch.x + nx, scratch.y + ny);
+        nextMark += segmentRest;
+      }
+      measured += len;
+    }
+    c.stroke();
+    c.globalAlpha = 1;
+  };
+
+  /**
+   * THE CHASE PULSE — the one glow. A sulfur-amber LED segment overdrawn on
+   * the DRAWN curve, centered at `phase` of the MEASURED screen arc (red end
+   * 0 → blue end 1), half-width σ ≈ 5% of the arc, its alpha ramping in as
+   * it leaves the red jack and out as it sinks into the blue one.
+   * Returns whether the LED was painted and, through `out`, its screen center.
+   */
+  const drawPulse = (
+    c: CanvasRenderingContext2D,
+    base: number,
+    n: number,
+    phase: number,
+    scale: number,
+    out: Vec2,
+  ): boolean => {
+    if (n < 2 || !Number.isFinite(phase)) {
+      out.x = 0;
+      out.y = 0;
+      return false;
+    }
+    arcScratch[0] = 0;
+    for (let i = 1; i < n; i += 1) {
+      const dx = pool[base + i].x - pool[base + i - 1].x;
+      const dy = pool[base + i].y - pool[base + i - 1].y;
+      arcScratch[i] = arcScratch[i - 1] + Math.sqrt(dx * dx + dy * dy);
+    }
+    const total = arcScratch[n - 1];
+    if (total <= 0) {
+      out.x = pool[base].x;
+      out.y = pool[base].y;
+      return false;
+    }
+    const target = phase * total;
+    // The LED's center (for the probe road).
+    let j = 0;
+    while (j < n - 2 && arcScratch[j + 1] < target) j += 1;
+    const span = arcScratch[j + 1] - arcScratch[j];
+    const f = span > 0 ? Math.min(1, Math.max(0, (target - arcScratch[j]) / span)) : 0;
+    out.x = pool[base + j].x + (pool[base + j + 1].x - pool[base + j].x) * f;
+    out.y = pool[base + j].y + (pool[base + j + 1].y - pool[base + j].y) * f;
+    // The segment window [target − σ, target + σ] clamped to the curve.
+    const sigma = 0.05 * total;
+    let i0 = 0;
+    while (i0 < n - 1 && arcScratch[i0] < target - sigma) i0 += 1;
+    let i1 = n - 1;
+    while (i1 > 0 && arcScratch[i1] > target + sigma) i1 -= 1;
+    if (i1 <= i0) i1 = Math.min(n - 1, i0 + 1);
+    // Brightness envelope: ramp in/out over the first/last 12% of the road.
+    const u = target / total;
+    const env = Math.min(1, Math.min(u, 1 - u) / 0.12);
+    if (env <= 0) return false;
+    c.beginPath();
+    c.moveTo(pool[base + i0].x, pool[base + i0].y);
+    for (let i = i0 + 1; i < i1; i += 1) {
+      const mx = (pool[base + i].x + pool[base + i + 1].x) / 2;
+      const my = (pool[base + i].y + pool[base + i + 1].y) / 2;
+      c.quadraticCurveTo(pool[base + i].x, pool[base + i].y, mx, my);
+    }
+    c.lineTo(pool[base + i1].x, pool[base + i1].y);
+    c.lineJoin = 'round';
+    c.lineCap = 'round';
+    c.strokeStyle = PULSE_INK;
+    c.lineWidth = 0.042 * scale;
+    c.globalAlpha = env;
+    c.stroke();
+    c.globalAlpha = 1;
+    return true;
   };
 
   // --- the 1/4″ jack: tip at the sim pin, body extending along +axis ----------
@@ -326,9 +658,11 @@ export function createRenderer(
     sy: number,
     ax: number,
     ay: number,
-    color: string,
+    bandInk: string,
+    bootInk: string,
     scale: number,
     socket: Vec2 | null,
+    alpha: number,
   ): void => {
     const s = scale;
     // The machined port a seated plug enters: a dark inset slot on the edge
@@ -349,6 +683,7 @@ export function createRenderer(
       c.restore();
     }
     c.save();
+    if (alpha < 1) c.globalAlpha = alpha;
     c.translate(sx, sy);
     c.rotate(Math.atan2(ay, ax));
     // Tapered tip (chrome) — a cone widening to shaft half-width, with the
@@ -385,8 +720,9 @@ export function createRenderer(
       (JACK_SHAFT - JACK_GROOVE) * s,
       SHAFT_HW * s * 0.65,
     );
-    // Color sleeve band — the wide polarity collar.
-    c.fillStyle = color;
+    // Color sleeve band — the wide polarity collar (blink: the band's own
+    // dark rubber ink — the low-battery LED's off-half reads as unlit plastic).
+    c.fillStyle = bandInk;
     c.fillRect(JACK_SHAFT * s, -BAND_HW * s, (JACK_BAND - JACK_SHAFT) * s, BAND_HW * 2 * s);
     c.strokeStyle = ZONE_KEYLINE;
     c.lineWidth = 1;
@@ -415,7 +751,7 @@ export function createRenderer(
     c.lineTo((JACK_GRIP + 0.02) * s, BAND_HW * s * 1.12);
     c.lineTo(JACK_GRIP * s, GRIP_HW * s);
     c.closePath();
-    c.fillStyle = color;
+    c.fillStyle = bootInk;
     c.fill();
     c.strokeStyle = ZONE_KEYLINE;
     c.lineWidth = 1;
@@ -429,6 +765,90 @@ export function createRenderer(
     c.closePath();
     c.fill();
     c.restore();
+  };
+
+  // --- the debris: step + paint -------------------------------------------------
+  const stepShards = (now: number): void => {
+    if (now < shardClock) {
+      // The sim went backward (RESET): the debris dies with its world.
+      for (const s of shards) s.active = false;
+      liveShards = 0;
+      shardClock = now;
+      return;
+    }
+    let steps = 0;
+    while (shardClock + SHARD_DT <= now && steps < SHARD_DT_MAX_STEPS) {
+      shardClock += SHARD_DT;
+      steps += 1;
+      for (let i = 0; i < shards.length; i += 1) {
+        const s = shards[i];
+        if (!s.active) continue;
+        if (now - s.birth >= SHARD_LIFE) {
+          s.active = false;
+          liveShards -= 1;
+          continue;
+        }
+        s.avy -= SHARD_G * SHARD_DT;
+        s.ax += s.avx * SHARD_DT;
+        s.ay += s.avy * SHARD_DT;
+        s.arot += s.avr * SHARD_DT;
+        if (s.ay < SHARD_REST_Y) {
+          s.ay = SHARD_REST_Y;
+          if (s.bounces < 2) {
+            s.avy = -s.avy * (s.bounces === 0 ? 0.4 : 0.22);
+            s.avx *= 0.7;
+            s.avr *= 0.7;
+            s.bounces += 1;
+          } else {
+            s.avy = 0;
+            // The friction slide (9/s exponential, dt-honest).
+            const keep = Math.exp(-9 * SHARD_DT);
+            s.avx *= keep;
+            s.avr *= keep;
+          }
+        }
+      }
+    }
+    if (steps === SHARD_DT_MAX_STEPS) shardClock = now; // bounded; the law holds
+  };
+
+  const drawShards = (c: CanvasRenderingContext2D, now: number, v: View): void => {
+    let drawn = 0;
+    for (let i = 0; i < shards.length; i += 1) {
+      const s = shards[i];
+      if (!s.active) continue;
+      const age = now - s.birth;
+      if (age >= SHARD_LIFE) continue;
+      const outFactor = age > SHARD_LIFE - SHARD_LIFE_OUT
+        ? (SHARD_LIFE - age) / SHARD_LIFE_OUT
+        : 1;
+      const k = s.scale * outFactor;
+      if (k <= 0) continue;
+      v.toScreen(s.ax, s.ay, scratch);
+      c.save();
+      c.translate(scratch.x, scratch.y);
+      c.rotate(s.arot);
+      if (s.band !== null) {
+        // The failing band's own shard — a flat chip of the polarity ink.
+        const w = 0.052 * k * v.scale;
+        const h = 0.02 * k * v.scale;
+        c.fillStyle = s.band === 'red' ? PLUG_RED : PLUG_BLUE;
+        c.fillRect(-w / 2, -h / 2, w, h);
+      } else {
+        // A dark cool-steel triangle (base 0.03 world, scaled).
+        const b = 0.03 * k * v.scale;
+        c.beginPath();
+        c.moveTo(-b * 0.5, -b * 0.38);
+        c.lineTo(b * 0.58, -b * 0.12);
+        c.lineTo(-b * 0.08, b * 0.46);
+        c.closePath();
+        c.fillStyle = SHARD_STEEL_INKS[s.inkIndex] ?? SHARD_STEEL_INKS[0];
+        c.fill();
+      }
+      c.restore();
+      drawn += 1;
+    }
+    liveShards = drawn;
   };
 
   return {
@@ -451,10 +871,73 @@ export function createRenderer(
         === 'string';
     },
 
+    burst(at, band, simTime): void {
+      // Find this burst's slots: prefer inactive ones; if the pool is full,
+      // recycle the OLDEST live shards until there is room (rapid-fire
+      // failures — a fresh death always reads over a stale one).
+      const base: number[] = [];
+      for (let i = 0; i < shards.length && base.length < SHARDS_PER_BURST; i += 1) {
+        if (!shards[i].active) base.push(i);
+      }
+      while (base.length < SHARDS_PER_BURST) {
+        let oldestTime = Number.POSITIVE_INFINITY;
+        let oldest = -1;
+        for (let i = 0; i < shards.length; i += 1) {
+          if (shards[i].active && shards[i].birth < oldestTime) {
+            oldestTime = shards[i].birth;
+            oldest = i;
+          }
+        }
+        if (oldest < 0) break;
+        shards[oldest].active = false;
+        liveShards -= 1;
+        base.push(oldest);
+      }
+      for (let k = 0; k < base.length; k += 1) {
+        const s = shards[base[k]];
+        s.active = true;
+        s.ax = at.x;
+        s.ay = Math.max(at.y, SHARD_REST_Y);
+        s.avx = s.dirX * s.speed;
+        s.avy = s.dirY * s.speed;
+        s.arot = 0;
+        s.avr = s.scale * 10 * (s.inkIndex % 2 === 0 ? 1 : -1);
+        s.bounces = 0;
+        s.birth = simTime;
+        s.band = s.inkIndex === -1 ? band : null;
+      }
+      liveShards += base.length;
+    },
+
+    clearFragments(): void {
+      for (const s of shards) s.active = false;
+      liveShards = 0;
+    },
+
+    pulseProbe(): PulseProbe {
+      return {
+        phase: probePhase,
+        cords: probePulseCords.map((p) => ({ ...p })),
+      };
+    },
+
+    stateProbe(): StateProbe {
+      return {
+        cords: probeStateCords.map((p) => ({
+          ...p,
+          bandLit: [p.bandLit[0], p.bandLit[1]] as [boolean, boolean],
+        })),
+        shards: liveShards,
+      };
+    },
+
     draw(frame: FrameInput): void {
       if (view === null) return;
       const c = ctx;
       const v = view;
+      const paints = frame.paint ?? null;
+      const phase = typeof frame.pulsePhase === 'number' ? frame.pulsePhase : null;
+      const reduced = frame.reducedMotion === true;
       c.setTransform(dpr, 0, 0, dpr, 0, 0);
       c.drawImage(bgCanvas as unknown as CanvasImageSource, 0, 0, v.width, v.height);
       // Modules first (the live stage — they drag).
@@ -465,6 +948,9 @@ export function createRenderer(
       }
       // Cords, then jacks on top (a seated jack's tip plugs into the face).
       const cords = frame.state.cords;
+      probePhase = phase ?? 0;
+      probePulseCords.length = 0;
+      probeStateCords.length = 0;
       for (let k = 0; k < cords.length && k < MAX_CORDS; k += 1) {
         const cord = cords[k];
         const n = Math.min(cord.points.length, MAX_POINTS);
@@ -472,21 +958,67 @@ export function createRenderer(
         for (let i = 0; i < n; i += 1) {
           v.toScreen(cord.points[i].x, cord.points[i].y, pool[base + i]);
         }
-        drawCord(c, base, n, v.scale);
+        // --- the 2D-3 state furniture (the composition's per-cord reads) ----
+        const p = paints !== null && k < paints.length ? paints[k] : null;
+        const state: LifecycleState | 'none' = p?.state ?? 'none';
+        const graceRemaining = p?.graceRemaining ?? null;
+        const fade = p?.fade ?? null;
+        const failingEnd = p?.failingEnd ?? null;
+        const hiddenEnd = p?.jackHiddenEnd ?? null;
+        // The cord's opacity: the grace dim (the visible countdown) composed
+        // MULTIPLICATIVELY with the vanish fade — expiry never flashes back.
+        const dim = graceRemaining !== null ? graceDimming(graceRemaining) : 1;
+        const cordAlpha = dim * (fade !== null ? Math.max(0, 1 - fade) : 1);
+        drawCord(c, base, n, v.scale, cordAlpha);
+        // Stretch ticks — carried/awaiting-plug only (linked is the pulse's
+        // state; popped/vanishing are the dim's), appearing with tautness.
+        const tickGain =
+          p !== null && (state === 'carried' || state === 'awaiting-plug')
+            ? stretchTickGain(p.tautness)
+            : 0;
+        if (tickGain > 0) {
+          drawTicks(
+            c,
+            cord.points,
+            n,
+            REST_SEGMENT,
+            tickGain,
+            v.scale,
+            cordAlpha,
+            v,
+          );
+        }
+        // The chase pulse — exactly `linked`, the one glow.
+        let pulseGain = 0;
+        if (state === 'linked' && phase !== null) {
+          const painted = drawPulse(c, base, n, phase, v.scale, scratchB);
+          pulseGain = painted ? 1 : 0;
+          probePulseCords.push({
+            id: cord.id,
+            gain: pulseGain,
+            cx: scratchB.x,
+            cy: scratchB.y,
+          });
+        }
         // End 0 = red input jack; end n−1 = blue output jack. Seated ends
         // draw perpendicular to their socket (pose from the interaction
         // layer); free ends continue the cord's own tangent.
-        for (const [pi, color] of [
-          [0, PLUG_RED],
-          [n - 1, PLUG_BLUE],
+        const bandLit: [boolean, boolean] = [true, true];
+        const jackAlpha = fade !== null ? Math.max(0, 1 - fade) : 1;
+        for (const [pi, color, litColor] of [
+          [0, PLUG_RED, LIT_RED],
+          [n - 1, PLUG_BLUE, LIT_BLUE],
         ] as const) {
+          const endIndex = pi === 0 ? 0 : cord.points.length - 1;
+          if (hiddenEnd === endIndex) continue; // shattered — the debris owns it
           const px = pool[base + pi].x;
           const py = pool[base + pi].y;
-          const pose = frame.seatPoseOf(cord.id, pi === 0 ? 0 : cord.points.length - 1);
+          const pose = frame.seatPoseOf(cord.id, endIndex);
+          const seated = pose !== null;
           let ax: number;
           let ay: number;
           let socket: Vec2 | null = null;
-          if (pose !== null) {
+          if (seated) {
             // The pose's normal is in WORLD space (y up); screen y is down.
             ax = pose.nx;
             ay = -pose.ny;
@@ -507,9 +1039,31 @@ export function createRenderer(
               ay /= len;
             }
           }
-          drawJack(c, px, py, ax, ay, color, v.scale, socket);
+          // The failing band blinks dark through the grace's final window
+          // (steady under reduced motion); a linked seated band lifts ×1.5
+          // within its own hue (the lit-ink accent).
+          let bandInk: string = color;
+          if (failingEnd === endIndex && graceRemaining !== null) {
+            const lit = graceBlinkOn(graceRemaining, { reduced });
+            bandLit[pi === 0 ? 0 : 1] = lit;
+            if (!lit) bandInk = GRIP_RUBBER; // the LED's off-half: unlit plastic
+          } else if (state === 'linked' && seated) {
+            bandInk = litColor;
+          }
+          drawJack(c, px, py, ax, ay, bandInk, color, v.scale, socket, jackAlpha);
         }
+        probeStateCords.push({
+          id: cord.id,
+          tickGain,
+          dim,
+          fade,
+          jackHidden: hiddenEnd !== null,
+          bandLit,
+        });
       }
+      // The debris — after the cords, before the deny ring.
+      stepShards(frame.simTime);
+      drawShards(c, frame.simTime, v);
       // The deny ring — flat Plug Red paint, fading on the sim clock.
       if (frame.deny !== null) {
         const age = frame.simTime - frame.deny.t;

@@ -8,6 +8,8 @@
  *                     law (edge-perpendicular, deterministic corners), the
  *                     world↔screen projection
  *   src/render/       the Canvas 2D painter — panel, modules, cords, jacks
+ *                     + 2D-3's state furniture (ticks, grace dim/blink,
+ *                     shatter debris, the chase pulse) from the pure laws
  *   src/interaction/  pointer → intents: pick jack>rect>cord, drag/carry,
  *                     seat/deny/release, the brush, N/R
  *   src/hud/          the surviving DOM faceplate (rewired here)
@@ -16,7 +18,10 @@
  * substeps, backlog discarded): compose ONE SimInput from the interaction
  * layer, advance the driver, paint the renderer, update the HUD from the
  * sim's own lifecycle reads. Motion is sim-driven; a frozen sim paints a
- * frozen picture.
+ * frozen picture. 2D-3 restores v1 LIFE-3's FRAME GATE on top: a HIDDEN page
+ * pauses sim + paint (a skipped frame advances nothing), and the first frame
+ * back draws with delta ZERO — the pause consumes no wall-clock work, so
+ * there is no backlog to burn (the driver's own clamp stays the second belt).
  *
  * THE OPENING (v1's REFINE-3 staging, translated): one patch cord is spawned
  * coiled on module 08 with its RED end SEATED on the module's top edge
@@ -25,8 +30,10 @@
  * module away from a completed link). No invisible anchors exist anywhere.
  *
  * Seams for drives and review (window.cords): lifecycle(), ends() (screen
- * px), rects() (screen px), probe() (frame timing), spawn()/reset() mirror
- * the HUD buttons exactly.
+ * px), rects() (screen px), probe() (frame timing), pulse() (the chase
+ * clock + the renderer's own gate read), statePaint() (the state furniture's
+ * live numbers), motion() (the brush probe), gate() (the frame-gate
+ * counters), spawn()/reset() mirror the HUD buttons exactly.
  */
 import {
   DEFAULT_GRACE_SECONDS,
@@ -40,7 +47,9 @@ import { createStage, seatPose } from './world/stage';
 import { createView } from './world/view';
 import type { View } from './world/view';
 import { createRenderer } from './render/renderer';
-import type { FrameInput } from './render/renderer';
+import type { CordPaint, FrameInput } from './render/renderer';
+import { DEFAULT_PULSE_SPEED, pulsePhase, resolvePulseSpeed } from './render/pulse';
+import { createFrameGate } from './render/frameGate';
 import { createInteractionController } from './interaction/controller';
 import type { InteractionController } from './interaction/controller';
 import { createHudPanel } from './hud/panel';
@@ -108,6 +117,10 @@ interface Session {
   /** Deaths begun since the last HUD update, by vocabulary (REFINE-1/4). */
   shattered: number;
   putAway: number;
+  /** 2D-3: the latched failing end per cord (the blinking band / dim read). */
+  readonly failingEnds: Map<number, number>;
+  /** 2D-3: the end whose jack already shattered (shards replaced it). */
+  readonly hiddenJacks: Map<number, number>;
 }
 
 let session: Session;
@@ -120,6 +133,8 @@ const createSession = (withOpening: boolean): Session => {
     state: { time: 0, cords: [] },
     shattered: 0,
     putAway: 0,
+    failingEnds: new Map(),
+    hiddenJacks: new Map(),
   };
   next.world = createCordWorldStep({
     cord: { segmentCount: CORD_SEGMENTS, floorY: FLOOR_Y },
@@ -128,6 +143,16 @@ const createSession = (withOpening: boolean): Session => {
     vanish: {
       onEvent: (event) => {
         next.controller.onVanishEvent(event);
+        // 2D-3 — the shatter's render half: the failing jack despawns into
+        // the debris burst (the polarity shard names WHICH end died; the red
+        // end leads an abandoned decay by convention). Reduced motion skips
+        // the burst (A11Y-1); the fade sequence itself runs unchanged.
+        if (event.kind === 'shatter' && event.at !== null && event.end !== null) {
+          next.hiddenJacks.set(event.cordId, event.end);
+          if (!reducedMotion()) {
+            renderer.burst(event.at, event.end === RED ? 'red' : 'blue', event.time);
+          }
+        }
       },
     },
     brush: BRUSH,
@@ -138,6 +163,18 @@ const createSession = (withOpening: boolean): Session => {
         if (event.to === 'vanishing') {
           if (event.reason === 'abandoned') next.putAway += 1;
           else next.shattered += 1;
+          // Latch the failing end: the pop names it; an abandoned decay's
+          // red end leads by convention (the machine's own derivation).
+          if (event.end !== null) next.failingEnds.set(event.cordId, event.end);
+          else if (!next.failingEnds.has(event.cordId)) next.failingEnds.set(event.cordId, RED);
+        }
+        if (event.to === 'popped' && event.end !== null) {
+          next.failingEnds.set(event.cordId, event.end);
+        }
+        if (event.to === 'linked') next.failingEnds.delete(event.cordId); // the re-seat rescue
+        if (event.to === 'gone') {
+          next.failingEnds.delete(event.cordId);
+          next.hiddenJacks.delete(event.cordId);
         }
       },
       onRejected: (rejection) => {
@@ -205,8 +242,55 @@ function resetScene(): void {
     r.x = r.homeX;
     r.y = r.homeY;
   }
+  renderer.clearFragments();
   session = createSession(false);
 }
+
+// --- 2D-3: the per-frame paint composition + the chase clock -------------------
+/** One cord's rest total (world units) — the tautness denominator. */
+const REST_TOTAL = CORD_SEGMENTS * 0.1;
+/** The per-cord lifecycle paint reads, parallel to state.cords (pooled). */
+const paints: CordPaint[] = [];
+for (let i = 0; i < MAX_CORDS; i += 1) {
+  paints.push({
+    state: 'none',
+    tautness: 0,
+    graceRemaining: null,
+    failingEnd: null,
+    fade: null,
+    jackHiddenEnd: null,
+  });
+}
+
+/** Fills the paint pool from the machine's own reads (zero allocation). */
+function fillPaints(): void {
+  const cords = session.state.cords;
+  for (let k = 0; k < cords.length && k < paints.length; k += 1) {
+    const cord = cords[k];
+    const p = paints[k];
+    const st = session.world.lifecycle.stateOf(cord.id) ?? 'none';
+    p.state = st;
+    const a = cord.points[0];
+    const b = cord.points[cord.points.length - 1];
+    p.tautness =
+      a !== undefined && b !== undefined
+        ? Math.hypot(b.x - a.x, b.y - a.y) / REST_TOTAL
+        : 0;
+    if (st === 'popped') p.graceRemaining = session.world.lifecycle.graceRemaining(cord.id) ?? 0;
+    else if (st === 'vanishing') p.graceRemaining = 0; // the dim holds its floor through the fade
+    else p.graceRemaining = null;
+    p.failingEnd = session.failingEnds.get(cord.id) ?? null;
+    const info = st === 'vanishing' ? session.world.lifecycle.vanishInfo(cord.id) : null;
+    p.fade = info !== null ? info.progress : null;
+    p.jackHiddenEnd = session.hiddenJacks.get(cord.id) ?? null;
+  }
+}
+
+// --- 2D-3: the frame gate (v1 LIFE-3's visibility law, restored) ----------------
+const gate = createFrameGate();
+document.addEventListener('visibilitychange', () => {
+  gate.setHidden(document.hidden);
+});
 
 // --- pointer wiring -------------------------------------------------------------
 const lastPointerScratch: Vec2 = { x: 0, y: 0 };
@@ -310,11 +394,22 @@ const frameInput: FrameInput = {
   seatPoseOf: (cordId, index) => session.controller.seatPoseOf(cordId, index),
   deny: null,
   simTime: 0,
+  paint: paints,
+  pulsePhase: null,
+  reducedMotion: false,
 };
 
 let prevNow = 0;
 const tick = (now: number): void => {
-  const dt = prevNow === 0 ? 1 / 60 : (now - prevNow) / 1000;
+  // The frame gate: a hidden page pauses sim + paint; the first frame back
+  // draws with delta ZERO (no backlog — the pause consumed no sim work).
+  const verdict = gate.beginFrame();
+  if (verdict === 'skip') {
+    requestAnimationFrame(tick);
+    return;
+  }
+  const dt =
+    prevNow === 0 ? 1 / 60 : verdict === 'draw-zero-delta' ? 0 : (now - prevNow) / 1000;
   prevNow = now;
   const frameStart = probeOn ? performance.now() : 0;
 
@@ -323,9 +418,13 @@ const tick = (now: number): void => {
   session.state = advanced.state;
   session.controller.noteSimTime(session.state.time);
 
+  const reduced = reducedMotion();
+  fillPaints();
   frameInput.state = session.state;
   frameInput.deny = session.controller.deny;
   frameInput.simTime = session.state.time;
+  frameInput.pulsePhase = pulsePhase(session.state.time, { reduced });
+  frameInput.reducedMotion = reduced;
   renderer.draw(frameInput);
 
   // HUD: honest counts + the deaths' one spoken lines (consumed here).
@@ -380,6 +479,12 @@ declare global {
       }>;
       /** Every jack's screen position + seatedness (drive targeting). */
       ends(): CordsEnd[];
+      /**
+       * 2D-3 — every cord's full polyline in screen px (drive targeting:
+       * the brush corridors and capture crops read REAL cord geometry, not
+       * endpoint extrapolation).
+       */
+      points(): Array<{ cordId: number; pts: Array<{ x: number; y: number }> }>;
       /** The modules' screen quads (drive targeting). */
       rects(): Array<{ id: number; x: number; y: number; w: number; h: number }>;
       /** The live view's numbers (scale, floor line — for drive math). */
@@ -392,10 +497,61 @@ declare global {
       held(): { cordId: number; index: number } | null;
       /** Perf probe snapshot (or null when ?probe=1 is absent). */
       probe(): { frames: number; avgMs: number; maxMs: number; cords: number } | null;
+      /**
+       * 2D-3 — the chase pulse: the pure clock math AND the renderer's own
+       * live read (the phase drawn + per-cord gate gain + the LED segment's
+       * screen center, the red→blue road).
+       */
+      pulse(): {
+        time: number;
+        phase: number;
+        baseSpeed: number;
+        speed: number;
+        reduced: boolean;
+        linked: number[];
+        renderPhase: number;
+        renderCords: Array<{ id: number; gain: number; cx: number; cy: number }>;
+      };
+      /**
+       * 2D-3 — the state furniture's live numbers: per cord the renderer's
+       * own paint reads (tickGain / dim / fade / jackHidden / bandLit) plus
+       * the machine's grace read; globally the live shard count + reduced.
+       */
+      statePaint(): {
+        reduced: boolean;
+        shards: number;
+        cords: Array<{
+          id: number;
+          state: string;
+          grace: number | null;
+          paint: {
+            tickGain: number;
+            dim: number;
+            fade: number | null;
+            jackHidden: boolean;
+            bandLit: [boolean, boolean];
+          } | null;
+        }>;
+      };
+      /**
+       * 2D-3 — the motion probe: the max per-point speed across every cord
+       * since the previous call (u/s of sim space) — the brush DoD's read.
+       */
+      motion(): { maxSpeed: number };
+      /** 2D-3 — the frame gate's counters (the resilience probe). */
+      gate(): {
+        framesDrawn: number;
+        framesSkipped: number;
+        pauses: number;
+        resumes: number;
+        paused: boolean;
+      };
     };
   }
 }
 const endsScratch: Vec2 = { x: 0, y: 0 };
+/** The motion probe's previous snapshot (drive-only state). */
+let motionPrev: { t: number; pts: Float64Array } | null = null;
 window.cords = {
   lifecycle: () =>
     session.state.cords.map((cord) => ({
@@ -423,6 +579,14 @@ window.cords = {
     }
     return out;
   },
+  points: () =>
+    session.state.cords.map((cord) => ({
+      cordId: cord.id,
+      pts: cord.points.map((p) => {
+        view.toScreen(p.x, p.y, endsScratch);
+        return { x: endsScratch.x, y: endsScratch.y };
+      }),
+    })),
   rects: () =>
     stage.map((r) => {
       view.toScreen(r.x, r.y, endsScratch);
@@ -447,4 +611,55 @@ window.cords = {
           cords: session.state.cords.length,
         }
       : null,
+  pulse: () => {
+    const reduced = reducedMotion();
+    const probePulse = renderer.pulseProbe();
+    return {
+      time: session.state.time,
+      phase: pulsePhase(session.state.time, { reduced }),
+      baseSpeed: DEFAULT_PULSE_SPEED,
+      speed: resolvePulseSpeed({ reduced }),
+      reduced,
+      linked: session.state.cords
+        .filter((cord) => session.world.lifecycle.stateOf(cord.id) === 'linked')
+        .map((cord) => cord.id),
+      renderPhase: probePulse.phase,
+      renderCords: probePulse.cords,
+    };
+  },
+  statePaint: () => {
+    const probeState = renderer.stateProbe();
+    return {
+      reduced: reducedMotion(),
+      shards: probeState.shards,
+      cords: session.state.cords.map((cord, k) => ({
+        id: cord.id,
+        state: session.world.lifecycle.stateOf(cord.id) ?? 'gone',
+        grace: session.world.lifecycle.graceRemaining(cord.id),
+        paint: probeState.cords[k] ?? null,
+      })),
+    };
+  },
+  motion: () => {
+    const flat: number[] = [];
+    for (const cord of session.state.cords) {
+      for (const p of cord.points) flat.push(p.x, p.y);
+    }
+    const now = performance.now();
+    if (motionPrev === null || motionPrev.pts.length !== flat.length) {
+      motionPrev = { t: now, pts: Float64Array.from(flat) };
+      return { maxSpeed: 0 };
+    }
+    let maxD2 = 0;
+    for (let i = 0; i < flat.length; i += 2) {
+      const dx = flat[i] - motionPrev.pts[i];
+      const dy = flat[i + 1] - motionPrev.pts[i + 1];
+      const d2 = dx * dx + dy * dy;
+      if (d2 > maxD2) maxD2 = d2;
+    }
+    const dt = Math.max(1e-3, (now - motionPrev.t) / 1000);
+    motionPrev = { t: now, pts: Float64Array.from(flat) };
+    return { maxSpeed: Math.sqrt(maxD2) / dt };
+  },
+  gate: () => ({ ...gate.counters(), paused: gate.paused() }),
 };
