@@ -13,11 +13,22 @@
  * when the machine allows it (v1's law: not vanishing, and not a popped
  * cord's surviving socket — the pop must not be dodgeable by hand).
  *
- * DRAG — a rectangle translates (clamped above the panel floor by the stage
- * law) and every plug seated on it RIDES the delta through the seat latch
- * (INT-3 transport). A carried jack's pin target follows the cursor EXACTLY
- * (2D — no plane math); the SIM-2 leash and the fixed-timestep driver own
- * every ounce of feel after that.
+ * DRAG — 2D-5's LATCH LAW first: once a jack is grabbed, the grab is
+ * LATCHED until pointerup/pointercancel — no re-picking mid-drag, no
+ * "pointer still near jack" checks, no drop when the cursor outruns the
+ * rendered jack (the SIM-2 pin chases with bounded velocity BY DESIGN;
+ * the latch does not care where the jack is, only where the pointer
+ * speaks). pointerleave NEVER releases (capture makes the canvas the sole
+ * listener for the gesture; browsers that leak boundary events mid-capture
+ * hit the no-op above). The composition sets pointer capture on
+ * pointerdown (main.ts); pointerup/pointercancel are the ONLY release
+ * signals. A rectangle translates (clamped above the panel floor by the
+ * stage law) and every plug seated on it RIDES the delta through the seat
+ * latch (INT-3 transport). A carried jack's pin target follows the cursor
+ * EXACTLY (2D — no plane math); the SIM-2 leash and the fixed-timestep
+ * driver own every ounce of feel after that. The jack PICK is a capsule
+ * over the drawn body (tip → boot, `JACK_PICK_BODY` + `JACK_PICK_RADIUS`)
+ * — the visible plastic is the grabbable thing.
  *
  * RELEASE — over a rectangle's edge region: SEAT through the stage law
  * (perpendicular to the nearest edge, insertion depth inside the perimeter,
@@ -53,15 +64,34 @@ import type {
 } from '../sim';
 import {
   EDGE_REGION_MARGIN,
+  SEAT_DEPTH,
   clampRectCenter,
+  pointInRect,
   rectAt,
   seatPoseInto,
 } from '../world/stage';
 import type { SeatPose, StageRect } from '../world/stage';
 import type { View } from '../world/view';
 
-/** Generous jack hit radius (world units) — v1's proxy halo, translated. */
-export const JACK_PICK_RADIUS = 0.16;
+/**
+ * Generous jack hit radius (world units) — v1's proxy halo, translated.
+ * 2D-5: 0.19 — ≈33 px of halo at the drives' 1600×1000 default view
+ * (scale ≈ 173.9 px/unit), the mid-band of the 28–40 px comfort target;
+ * world-space by design so the halo scales with the drawn jack at any
+ * window size (a smaller window shrinks the jack AND its halo together).
+ */
+export const JACK_PICK_RADIUS = 0.19;
+/**
+ * 2D-5 — the jack pick is a CAPSULE, not a tip halo: from the end point
+ * (the tip — the renderer's anchor) along the jack's drawn axis for the
+ * length of the VISIBLE body. The renderer draws JACK_LEN = 0.415 of
+ * plastic (tip → boot tail) behind the anchor along exactly the axis
+ * `jackAxis` derives; 0.42 covers it with a hair for the boot's tail
+ * flare. The grabbable target is the jack the user SEES — a press on the
+ * fat boot is as good as one on the tip (the original tip-only halo left
+ * the rear two-thirds of the drawn jack unclickable).
+ */
+export const JACK_PICK_BODY = 0.42;
 /** Cord-body hover distance (world units) — cursor feedback only. */
 export const CORD_HOVER_RADIUS = 0.06;
 /** v1's soft plug cap per rectangle — a perf guard, not a rule (deny ring). */
@@ -116,6 +146,13 @@ export interface InteractionController {
   pointerDown(px: number, py: number): void;
   pointerMove(px: number, py: number): void;
   pointerUp(px: number, py: number): void;
+  /**
+   * 2D-5 — the pointer system ended the gesture (pointercancel): the drag
+   * ends here, routed exactly like a normal release at the last known
+   * pointer position. Garbage coordinates route at the last VALID one.
+   */
+  pointerCancel(px: number, py: number): void;
+  /** Passive leave (hover/brush only) — never releases a drag. */
   pointerLeave(): void;
   hoverCursor(): string;
   /** What the pointer is over (jack pick, rect pick, cord hover). */
@@ -215,7 +252,18 @@ export function createInteractionController(deps: InteractionDeps): InteractionC
     return true;
   };
 
-  /** The jack pick: nearest end within the halo (world order breaks ties). */
+  /**
+   * The jack pick (2D-5: a CAPSULE over the drawn body).
+   * - FREE end: the segment runs from the tip back along the cord (the
+   *   renderer's own axis rule — previous point direction), so the whole
+   *   visible plastic, tip to boot tail, is grabbable.
+   * - SEATED end: the segment runs from the SOCKET (the edge line) OUT
+   *   along the seat normal — the visible plug — and only the EDGE BAND
+   *   (EDGE_REGION_MARGIN) inboard of the perimeter counts: deeper inside
+   *   the face the RECT drag owns the press (the seat law's own band, so
+   *   "grab the plug" and "drop onto the plug zone" read the same strip).
+   * Nearest end wins (world order breaks ties).
+   */
   const pickJack = (wx: number, wy: number): { cordId: number; index: number } | null => {
     const r2limit = JACK_PICK_RADIUS * JACK_PICK_RADIUS;
     let best: { cordId: number; index: number } | null = null;
@@ -226,8 +274,41 @@ export function createInteractionController(deps: InteractionDeps): InteractionC
       const last = cord.points.length - 1;
       for (const index of [0, last] as const) {
         const p = cord.points[index];
-        const dx = p.x - wx;
-        const dy = p.y - wy;
+        let ox = p.x;
+        let oy = p.y;
+        let ux = 0;
+        let uy = -1; // degenerate dangle: tip-down, halo alone carries it
+        const record = seatRecords.get(seatKey(cord.id, index));
+        if (record !== undefined) {
+          const rect = stage[record.rectId];
+          if (rect !== undefined && pointInRect(wx, wy, rect, -EDGE_REGION_MARGIN)) {
+            continue; // deep inside the face: the rectangle owns this press
+          }
+          ox = record.position.x + record.nx * SEAT_DEPTH; // the socket line
+          oy = record.position.y + record.ny * SEAT_DEPTH;
+          ux = record.nx;
+          uy = record.ny;
+        } else {
+          const prevIndex = index === 0 ? 1 : last - 1;
+          const prev = cord.points[prevIndex];
+          if (prev !== undefined) {
+            const dx = prev.x - p.x;
+            const dy = prev.y - p.y;
+            const len = Math.hypot(dx, dy);
+            if (len >= 1e-6) {
+              ux = dx / len;
+              uy = dy / len;
+            }
+          }
+        }
+        // Distance² to the capsule's segment [origin, origin + axis × body].
+        const abx = ux * JACK_PICK_BODY;
+        const aby = uy * JACK_PICK_BODY;
+        const len2 = abx * abx + aby * aby;
+        let t = len2 > 0 ? ((wx - ox) * abx + (wy - oy) * aby) / len2 : 0;
+        t = t < 0 ? 0 : t > 1 ? 1 : t;
+        const dx = wx - (ox + abx * t);
+        const dy = wy - (oy + aby * t);
         const d2 = dx * dx + dy * dy;
         if (d2 <= r2limit && d2 < bestD2 && grabbable(cord.id, index)) {
           best = { cordId: cord.id, index };
@@ -333,6 +414,29 @@ export function createInteractionController(deps: InteractionDeps): InteractionC
     });
   };
 
+  /**
+   * 2D-5 — the ONE release routing (pointerUp and pointerCancel share it):
+   * over a rectangle's edge region → seat (or deny at the soft cap);
+   * otherwise the approved failure path. Honest by construction: the
+   * shatter fires only when the release position is genuinely off-module.
+   */
+  const routeReleaseAt = (wx: number, wy: number): void => {
+    if (held === null) return;
+    const { cordId, index, target } = held;
+    const rectId = rectAt(wx, wy, stage, EDGE_REGION_MARGIN);
+    if (rectId >= 0) {
+      if (controller.seatsOnRect(rectId) >= PLUG_CAP_PER_RECT) {
+        held = null;
+        controller.denySeat(rectId, { x: wx, y: wy });
+        return;
+      }
+      if (seatHeldOn(rectId, { x: wx, y: wy })) return; // clears held itself
+    }
+    held = null;
+    failureReleaseFrom(cordId, index, target);
+    refreshHover();
+  };
+
   const controller: InteractionController = {
     pointerDown(px, py) {
       const view = deps.view();
@@ -407,29 +511,50 @@ export function createInteractionController(deps: InteractionDeps): InteractionC
       view.toWorld(px, py, pointerWorldScratch);
       pointerWorld = pointerWorldScratch;
       rectDrag = null;
-      if (held === null) return;
-      const { cordId, index, target } = held;
-      const wx = pointerWorldScratch.x;
-      const wy = pointerWorldScratch.y;
-      // Over a rectangle's edge region → seat (or deny at the soft cap).
-      const rectId = rectAt(wx, wy, stage, EDGE_REGION_MARGIN);
-      if (rectId >= 0) {
-        if (controller.seatsOnRect(rectId) >= PLUG_CAP_PER_RECT) {
-          held = null;
-          controller.denySeat(rectId, { x: wx, y: wy });
-          return;
-        }
-        if (seatHeldOn(rectId, { x: wx, y: wy })) return; // clears held itself
-      }
-      held = null;
-      failureReleaseFrom(cordId, index, target);
-      refreshHover();
+      routeReleaseAt(pointerWorldScratch.x, pointerWorldScratch.y);
     },
 
-    pointerLeave() {
-      pointerWorld = null;
-      brush = null;
+    /**
+     * 2D-5 — pointercancel's honest semantic: the POINTER SYSTEM ended the
+     * gesture (capture lost, OS takeover, element teardown) — the button's
+     * physical state is unknowable from here. The drag ends NOW, judged at
+     * the last known pointer position with the IDENTICAL routing a normal
+     * release takes (seat over an edge region, deny at the cap, the approved
+     * failure path off-module). The one alternative — leaving the latch
+     * wedged — turns the NEXT click into an accidental off-module release
+     * of a cord the user believes they are still holding (the reported
+     * "spontaneous release then shatter"). A rect drag simply stops (the
+     * rectangle stands where it was dropped).
+     */
+    pointerCancel(px, py) {
+      if (Number.isFinite(px) && Number.isFinite(py)) {
+        const view = deps.view();
+        view.toWorld(px, py, pointerWorldScratch);
+        pointerWorld = pointerWorldScratch;
+      }
+      // else: the last valid pointer world position stands (garbage
+      // coordinates must not invent a release position).
       rectDrag = null;
+      if (pointerWorld === null) {
+        held = null; // nothing was ever known about the pointer: drop the bookkeeping
+        return;
+      }
+      routeReleaseAt(pointerWorld.x, pointerWorld.y);
+    },
+
+    /**
+     * 2D-5 — THE LATCH LAW: a drag is latched from pointerDown until
+     * pointerUp/pointercancel; pointerleave NEVER releases. Leave only
+     * retires PASSIVE pointer state (hover, the brush, the pointer read)
+     * and only when NO drag is live — during a captured drag some browsers
+     * still dispatch boundary events, and a mid-drag leave must be a no-op
+     * for the carry (the last valid target stands until the button speaks).
+     */
+    pointerLeave() {
+      if (held === null && rectDrag === null) {
+        pointerWorld = null;
+        brush = null;
+      }
       refreshHover();
     },
 

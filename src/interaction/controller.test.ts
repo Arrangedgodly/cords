@@ -19,7 +19,7 @@ import type { CordWorldStep, FixedTimestepDriver, SimInput, SimState } from '../
 import { createStage, seatPose } from '../world/stage';
 import { createView } from '../world/view';
 import type { View } from '../world/view';
-import { createInteractionController } from './controller';
+import { JACK_PICK_BODY, JACK_PICK_RADIUS, createInteractionController } from './controller';
 import type { InteractionController } from './controller';
 
 const DT = 1 / 120;
@@ -570,5 +570,210 @@ describe('2D-2 interaction — spawn seams (N / HUD)', () => {
     }
     expect(new Set(ids).size).toBe(18);
     expect(app.state().cords.length).toBeLessThanOrEqual(16);
+  });
+});
+
+describe('2D-5 interaction — the jack pick capsule (grab reliability)', () => {
+  it('the pick constants: 0.19 halo, capsule covering the drawn jack (≥ renderer JACK_LEN)', () => {
+    expect(JACK_PICK_RADIUS).toBe(0.19); // ≈33 px at the 1600×1000 drive view
+    expect(JACK_PICK_BODY).toBeGreaterThanOrEqual(0.415); // the renderer's JACK_LEN
+  });
+
+  it('the VISIBLE body is grabbable: a press on the drawn jack behind the tip lands', () => {
+    const app = makeApp();
+    app.controller.spawnCoilAt({ x: 0, y: 1.5 });
+    app.frame(240); // settle: the jack lies along the cord on the floor
+    const pts = app.state().cords.find((c) => c.id === 1)!.points;
+    const tip = pts[0];
+    const prev = pts[1];
+    const ax = prev.x - tip.x;
+    const ay = prev.y - tip.y;
+    const len = Math.hypot(ax, ay) || 1;
+    // 0.35 u behind the tip along the axis: squarely on the drawn grip/boot
+    // (the fat part a user aims for) — outside the OLD 0.16 tip-only halo.
+    const p = app.sx(tip.x + (ax / len) * 0.35, tip.y + (ay / len) * 0.35);
+    app.controller.pointerMove(p.x, p.y);
+    expect(app.controller.hover()).toBe('jack');
+    app.controller.pointerDown(p.x, p.y);
+    expect(app.controller.heldEnd()).toEqual({ cordId: 1, index: RED });
+  });
+
+  it('the capsule has honest bounds: past the boot tail plus the halo, nothing grabs', () => {
+    const app = makeApp();
+    app.controller.spawnCoilAt({ x: 0, y: 1.5 });
+    app.frame(240);
+    const pts = app.state().cords.find((c) => c.id === 1)!.points;
+    const tip = pts[0];
+    const prev = pts[1];
+    const ax = prev.x - tip.x;
+    const ay = prev.y - tip.y;
+    const len = Math.hypot(ax, ay) || 1;
+    const ux = ax / len;
+    const uy = ay / len;
+    // Along the axis beyond capsule + halo: cord-body territory — hover-only.
+    const far = app.sx(tip.x + ux * (JACK_PICK_BODY + JACK_PICK_RADIUS + 0.05), tip.y + uy * (JACK_PICK_BODY + JACK_PICK_RADIUS + 0.05));
+    app.controller.pointerDown(far.x, far.y);
+    expect(app.controller.heldEnd()).toBeNull();
+    // Perpendicular to the capsule's mid-body, just outside the halo.
+    const side = app.sx(tip.x + ux * 0.2 - uy * (JACK_PICK_RADIUS + 0.03), tip.y + uy * 0.2 + ux * (JACK_PICK_RADIUS + 0.03));
+    app.controller.pointerDown(side.x, side.y);
+    expect(app.controller.heldEnd()).toBeNull();
+  });
+
+  it('a seated jack is grabbable in its edge band; the module face belongs to the rect drag', () => {
+    const app = makeApp();
+    const m = app.stage[4];
+    app.controller.spawnCoilAt({ x: m.x, y: m.y + 1.0 });
+    app.frame(4);
+    const pose = seatPose(m.x, m.y + m.h / 2, m);
+    app.controller.seatEndOn(1, BLUE, m.id, { x: pose.socketX, y: pose.socketY });
+    app.frame(2);
+    expect(app.world.lifecycle.endMode(1, BLUE)).toBe('seated');
+    // The visible plug (socket outward) and the pin band both grab.
+    const plug = app.sx(pose.x + pose.nx * 0.25, pose.y + pose.ny * 0.25);
+    app.controller.pointerDown(plug.x, plug.y);
+    expect(app.controller.heldEnd()).toEqual({ cordId: 1, index: BLUE });
+    const band = app.sx(pose.x + pose.nx * 0.05, pose.y + pose.ny * 0.05); // inside the edge halo
+    app.controller.pointerUp(band.x, band.y); // back down over the module: re-seats
+    app.frame(2);
+    expect(app.world.lifecycle.endMode(1, BLUE)).toBe('seated');
+    // The module's face center: a RECT drag, never a jack yank.
+    const center = app.sx(m.x, m.y);
+    app.controller.pointerMove(center.x, center.y);
+    expect(app.controller.hover()).toBe('rect');
+    app.controller.pointerDown(center.x, center.y);
+    expect(app.controller.heldEnd()).toBeNull();
+  });
+});
+
+describe('2D-5 interaction — the latch law (a drag holds until up/cancel)', () => {
+  it('a fast fling of big-delta moves never drops the grab, wherever the jack is', () => {
+    const app = makeApp({ opening: true });
+    const blue = app.end(1, BLUE);
+    const start = app.sx(blue.x, blue.y);
+    app.controller.pointerDown(start.x, start.y);
+    expect(app.controller.heldEnd()).toEqual({ cordId: 1, index: BLUE });
+    // 400 violent moves, several per frame (coalesced like a real fling):
+    // ±5-world jumps, way beyond the pin's bounded chase speed.
+    for (let i = 0; i < 400; i += 1) {
+      const px = 720 + Math.sin(i * 0.7) * 700;
+      const py = 300 + Math.cos(i * 1.1) * 240;
+      app.controller.pointerMove(px, py);
+      if (i % 20 === 0) {
+        app.frame(1);
+        expect(app.controller.heldEnd()).toEqual({ cordId: 1, index: BLUE });
+        expect(app.world.lifecycle.stateOf(1)).toBe('awaiting-plug');
+      }
+    }
+    app.frame(6);
+    expect(app.controller.heldEnd()).toEqual({ cordId: 1, index: BLUE });
+    // The latch ends exactly once: a release over a module edge seats (a
+    // module within the opening cord's reach — m08's red seat is ~2.2 away).
+    const m = app.stage[6];
+    const seatAt = app.sx(m.x, m.y + m.h / 2 + 0.02);
+    app.controller.pointerUp(seatAt.x, seatAt.y);
+    app.frame(3);
+    expect(app.controller.heldEnd()).toBeNull();
+    expect(app.world.lifecycle.stateOf(1)).toBe('linked');
+  });
+
+  it('pointerLeave mid-drag never releases: the carry target stands, the rect drag survives', () => {
+    const app = makeApp({ opening: true });
+    const blue = app.end(1, BLUE);
+    const start = app.sx(blue.x, blue.y);
+    app.controller.pointerDown(start.x, start.y);
+    app.controller.pointerMove(start.x + 80, start.y - 60);
+    app.frame(2);
+    app.controller.pointerLeave(); // a browser leaking boundary events mid-capture
+    expect(app.controller.heldEnd()).toEqual({ cordId: 1, index: BLUE });
+    app.frame(4);
+    expect(app.controller.heldEnd()).toEqual({ cordId: 1, index: BLUE });
+    // The pointer returns and the drag is STILL alive (same cord, no re-pick).
+    const back = app.sx(-1.2, 1.6);
+    app.controller.pointerMove(back.x, back.y);
+    app.frame(2);
+    expect(app.controller.heldEnd()).toEqual({ cordId: 1, index: BLUE });
+    app.controller.pointerUp(back.x, back.y);
+    app.frame(3);
+    expect(app.controller.heldEnd()).toBeNull();
+
+    // A rect drag survives a leave too: the rect keeps translating after.
+    const app2 = makeApp();
+    const m = app2.stage[3];
+    const homeX = m.x;
+    const grab = app2.sx(m.x, m.y);
+    app2.controller.pointerDown(grab.x, grab.y);
+    app2.controller.pointerMove(grab.x + 40, grab.y - 30);
+    app2.frame(2);
+    app2.controller.pointerLeave();
+    app2.controller.pointerMove(grab.x + 120, grab.y - 90);
+    app2.frame(2);
+    expect(app2.stage[3].x).toBeGreaterThan(homeX + 0.3); // it kept moving
+    app2.controller.pointerUp(grab.x + 120, grab.y - 90);
+    const xAfterUp = app2.stage[3].x;
+    app2.controller.pointerMove(grab.x + 240, grab.y - 200);
+    app2.frame(2);
+    expect(app2.stage[3].x).toBeCloseTo(xAfterUp, 9); // dead after up
+  });
+});
+
+describe('2D-5 interaction — pointercancel: the honest release', () => {
+  it('cancel over a module edge seats (identical routing to pointerup)', () => {
+    const app = makeApp({ opening: true });
+    const blue = app.end(1, BLUE);
+    const start = app.sx(blue.x, blue.y);
+    app.controller.pointerDown(start.x, start.y);
+    const m = app.stage[6];
+    const at = app.sx(m.x, m.y + m.h / 2 + 0.02);
+    app.controller.pointerMove(at.x, at.y);
+    app.frame(2);
+    app.controller.pointerCancel(at.x, at.y);
+    app.frame(3);
+    expect(app.controller.heldEnd()).toBeNull(); // no wedged latch…
+    expect(app.world.lifecycle.endMode(1, BLUE)).toBe('seated'); // …it seated
+    expect(app.world.lifecycle.stateOf(1)).toBe('linked');
+  });
+
+  it('cancel off-module fires the approved failure path (a deliberate-looking release)', () => {
+    const app = makeApp({ opening: true });
+    const blue = app.end(1, BLUE);
+    const start = app.sx(blue.x, blue.y);
+    app.controller.pointerDown(start.x, start.y);
+    const off = app.sx(-3.6, 0.4); // open floor, far from every module
+    app.controller.pointerMove(off.x, off.y);
+    app.frame(2);
+    app.controller.pointerCancel(off.x, off.y);
+    app.frame(6);
+    expect(app.controller.heldEnd()).toBeNull();
+    expect(app.world.lifecycle.stateOf(1)).toBe('vanishing');
+  });
+
+  it('cancel with garbage coordinates routes at the last valid pointer position', () => {
+    const app = makeApp({ opening: true });
+    const blue = app.end(1, BLUE);
+    const start = app.sx(blue.x, blue.y);
+    app.controller.pointerDown(start.x, start.y);
+    const m = app.stage[5];
+    const at = app.sx(m.x, m.y + m.h / 2 + 0.02);
+    app.controller.pointerMove(at.x, at.y);
+    app.frame(2);
+    app.controller.pointerCancel(Number.NaN, Number.NaN);
+    app.frame(3);
+    expect(app.controller.heldEnd()).toBeNull();
+    expect(app.world.lifecycle.endMode(1, BLUE)).toBe('seated'); // last valid: the module edge
+  });
+
+  it('cancel ends a rect drag where it stands; later moves translate nothing', () => {
+    const app = makeApp();
+    const m = app.stage[2];
+    const grab = app.sx(m.x, m.y);
+    app.controller.pointerDown(grab.x, grab.y);
+    app.controller.pointerMove(grab.x + 60, grab.y - 40);
+    app.frame(2);
+    const xAtCancel = app.stage[2].x;
+    app.controller.pointerCancel(grab.x + 60, grab.y - 40);
+    app.controller.pointerMove(grab.x + 200, grab.y - 150);
+    app.frame(3);
+    expect(app.stage[2].x).toBeCloseTo(xAtCancel, 9);
   });
 });

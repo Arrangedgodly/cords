@@ -293,6 +293,11 @@ document.addEventListener('visibilitychange', () => {
 });
 
 // --- pointer wiring -------------------------------------------------------------
+// 2D-5 — THE GRAB CONTRACT: the canvas takes POINTER CAPTURE on pointerdown,
+// so the canvas is the sole listener for the whole gesture (HUD crossings,
+// window-edge excursions, fast flings — every move/up lands here, never on
+// the faceplate). pointerup and pointercancel are the ONLY release signals;
+// pointerleave is passive (the controller's latch law ignores it mid-drag).
 const lastPointerScratch: Vec2 = { x: 0, y: 0 };
 const pointerOut: Vec2 = { x: 0, y: 0 };
 let pointerOnStage = false;
@@ -303,7 +308,12 @@ function lastPointerWorld(): Vec2 | null {
 }
 
 canvas.addEventListener('pointerdown', (e) => {
-  canvas.setPointerCapture(e.pointerId);
+  try {
+    canvas.setPointerCapture(e.pointerId);
+  } catch {
+    // A failed capture (stale/unknown pointer id) must not kill the grab:
+    // the controller's latch owns the drag either way.
+  }
   pointerOnStage = true;
   lastPointerScratch.x = e.clientX;
   lastPointerScratch.y = e.clientY;
@@ -321,6 +331,15 @@ canvas.addEventListener('pointerup', (e) => {
   lastPointerScratch.x = e.clientX;
   lastPointerScratch.y = e.clientY;
   session.controller.pointerUp(e.clientX, e.clientY);
+  canvas.style.cursor = session.controller.hoverCursor();
+});
+canvas.addEventListener('pointercancel', (e) => {
+  // 2D-5 — the pointer system ended the gesture: release honestly, at the
+  // last known position, exactly like a pointerup (a wedged latch would
+  // turn the next click into an accidental off-module shatter).
+  lastPointerScratch.x = e.clientX;
+  lastPointerScratch.y = e.clientY;
+  session.controller.pointerCancel(e.clientX, e.clientY);
   canvas.style.cursor = session.controller.hoverCursor();
 });
 canvas.addEventListener('pointerleave', () => {
