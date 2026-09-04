@@ -141,6 +141,17 @@ describe('INT-4 — cord world: spawn', () => {
     expect(world.getState().cords.length).toBe(3); // at cap: ignored
     expectFinite(world.getState(), 'cap totality');
   });
+
+  it('2D-7: the default registry cap is 48 — the 48th cord stands, the next spawn is the honest no-op', () => {
+    const world = makeWorld(); // no explicit maxCords: the DEFAULT must be 48
+    for (let id = 1; id <= 47; id += 1) {
+      world.advance(1, { pointerPoint: null, spawnCord: { cordId: id, at: { x: -1.5 + (id % 10) * 0.3, y: 1.0 } } });
+    }
+    expect(world.getState().cords.length).toBe(48); // the anchor + 47 spawns
+    world.advance(2, { pointerPoint: null, spawnCord: { cordId: 48, at: { x: 0, y: 1.0 } } });
+    expect(world.getState().cords.length).toBe(48); // past the default cap: ignored
+    expectFinite(world.getState(), 'default cap totality');
+  });
 });
 
 describe('INT-4 — cord world: ends pluggable in ANY order', () => {

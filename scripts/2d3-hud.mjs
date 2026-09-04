@@ -84,8 +84,9 @@ run('2D3_HUD', async () => {
     throw new Error('canvas accessible name missing/short');
   }
   if (structure.canvasTabIndex !== -1) throw new Error('canvas must not be a tab stop');
-  if (structure.focusableCount !== 2) {
-    throw new Error(`expected exactly 2 focusables, got ${structure.focusableCount}`);
+  if (structure.focusableCount !== 3) {
+    // 2D-6: the faceplate owns THREE controls now (NEW CORD, NEW MODULE, RESET).
+    throw new Error(`expected exactly 3 focusables, got ${structure.focusableCount}`);
   }
   if (structure.summaryRole !== 'status' || structure.summaryLive !== 'polite') {
     throw new Error('summary is not a polite status region');
@@ -104,7 +105,7 @@ run('2D3_HUD', async () => {
   }));
   const hasMain = axNodes.some((n) => n.role === 'main');
   const hasImage = axNodes.some((n) => n.role === 'image' && n.name.toLowerCase().includes('cable patch panel'));
-  const axButtons = axNodes.filter((n) => n.role === 'button' && /NEW CORD|RESET/.test(n.name));
+  const axButtons = axNodes.filter((n) => n.role === 'button' && /NEW CORD|NEW MODULE|RESET/.test(n.name));
   const axStatus = axNodes.filter((n) => n.role === 'status');
   const interactives = axNodes.filter((n) =>
     ['button', 'link', 'textbox', 'combobox', 'checkbox', 'radio', 'slider'].includes(String(n.role)),
@@ -113,9 +114,9 @@ run('2D3_HUD', async () => {
     `AX tree: main=${hasMain} image=${hasImage} buttons=${axButtons.length} status=${axStatus.length} interactives=${interactives.length}`,
   );
   if (!hasMain || !hasImage) throw new Error('AX tree missing the main landmark or the labeled image');
-  if (axButtons.length !== 2) throw new Error(`AX tree exposes ${axButtons.length} buttons`);
+  if (axButtons.length !== 3) throw new Error(`AX tree exposes ${axButtons.length} buttons`);
   if (axStatus.length !== 1) throw new Error('AX tree missing the single status (live) region');
-  if (interactives.length !== 2) throw new Error(`AX tree shows ${interactives.length} interactive nodes`);
+  if (interactives.length !== 3) throw new Error(`AX tree shows ${interactives.length} interactive nodes`);
 
   // --- the keyboard ring ------------------------------------------------------------
   await evalJs(cdp, 'document.body.focus()');
@@ -135,7 +136,10 @@ run('2D3_HUD', async () => {
   }
   await key(cdp, 'Tab', 'Tab', 9);
   const focus2 = await evalJs(cdp, 'document.activeElement.querySelector(".hud-btn-label")?.textContent');
-  if (focus2 !== 'RESET') throw new Error(`second Tab landed on ${focus2}`);
+  if (focus2 !== 'NEW MODULE') throw new Error(`second Tab landed on ${focus2}`);
+  await key(cdp, 'Tab', 'Tab', 9);
+  const focus3 = await evalJs(cdp, 'document.activeElement.querySelector(".hud-btn-label")?.textContent');
+  if (focus3 !== 'RESET') throw new Error(`third Tab landed on ${focus3}`);
   // Reverse traversal + escape: real Shift-modified key events (a synthetic
   // keydown never triggers the browser's default focus navigation).
   await cdp.send('Input.dispatchKeyEvent', {
@@ -146,9 +150,9 @@ run('2D3_HUD', async () => {
   });
   await sleep(150);
   const reverse = await evalJs(cdp, 'document.activeElement.querySelector(".hud-btn-label")?.textContent ?? document.activeElement.tagName');
-  if (reverse !== 'NEW CORD') throw new Error(`Shift+Tab from RESET landed on ${reverse}`);
-  // (From NEW CORD, reverse WRAPS the ring back to RESET in Chrome — the
-  // two-button ring is circular; v1's drive documented the same navigation.)
+  if (reverse !== 'NEW MODULE') throw new Error(`Shift+Tab from RESET landed on ${reverse}`);
+  // (The three-button ring is circular; v1's drive documented the same
+  // navigation on the two-button faceplate it had.)
   await cdp.send('Input.dispatchKeyEvent', {
     type: 'keyDown', key: 'Tab', code: 'Tab', windowsVirtualKeyCode: 9, nativeVirtualKeyCode: 9, modifiers: 8,
   });
@@ -157,9 +161,8 @@ run('2D3_HUD', async () => {
   });
   await sleep(250);
   const wrap = await evalJs(cdp, 'document.activeElement.querySelector(".hud-btn-label")?.textContent ?? document.activeElement.tagName');
-  console.log(`  reverse wraps within the two-button ring: ${wrap} (no trap: a button, never a dead end)`);
-  console.log('keyboard ring: body → NEW CORD → RESET; amber bracket ✓; Shift+Tab reverses ✓');
-  console.log('keyboard ring: body → NEW CORD → RESET; amber bracket ✓; Shift+Tab reverses and escapes ✓');
+  console.log(`  reverse wraps within the three-button ring: ${wrap} (no trap: a button, never a dead end)`);
+  console.log('keyboard ring: body → NEW CORD → NEW MODULE → RESET; amber bracket ✓; Shift+Tab reverses ✓');
 
   // --- Enter / Space activate the focused button ------------------------------------
   await evalJs(cdp, 'document.querySelector("[data-hud=\\"new-cord\\"]").focus()');
@@ -169,6 +172,36 @@ run('2D3_HUD', async () => {
   await cdp.send('Input.dispatchKeyEvent', { type: 'keyUp', key: 'Enter', code: 'Enter', windowsVirtualKeyCode: 13 });
   await waitForState(cdp, (l) => l.length === 2, 'Enter on NEW CORD');
   console.log('Enter on NEW CORD spawns ✓');
+  // 2D-6 — the module control activates the same way: focus NEW MODULE,
+  // press Enter (keydown WITH text — button activation needs it), and the
+  // module roster grows by one through the B-key's own seam.
+  // The ring is circular — Tab (at most a full turn) until NEW MODULE holds
+  // focus, wherever the previous activation left it.
+  let focusModule = '';
+  for (let tab = 0; tab < 4 && focusModule !== 'NEW MODULE'; tab += 1) {
+    await key(cdp, 'Tab', 'Tab', 9);
+    focusModule = await evalJs(cdp, 'document.activeElement.querySelector(".hud-btn-label")?.textContent');
+  }
+  if (focusModule !== 'NEW MODULE') throw new Error(`focus for NEW MODULE landed on ${focusModule}`);
+  const modulesBefore = (await rects(cdp)).length;
+  await cdp.send('Input.dispatchKeyEvent', {
+    type: 'keyDown', key: 'Enter', code: 'Enter', windowsVirtualKeyCode: 13, nativeVirtualKeyCode: 13,
+    text: '\r',
+  });
+  await cdp.send('Input.dispatchKeyEvent', {
+    type: 'keyUp', key: 'Enter', code: 'Enter', windowsVirtualKeyCode: 13, nativeVirtualKeyCode: 13,
+  });
+  const modulesAfter = await waitFor(
+    async () => (await rects(cdp)).length > modulesBefore,
+    'Enter on NEW MODULE',
+    4000,
+  )
+    .then(async () => (await rects(cdp)).length)
+    .catch(() => -1);
+  if (modulesAfter !== modulesBefore + 1) {
+    throw new Error(`Enter on NEW MODULE grew the roster to ${modulesAfter}, expected ${modulesBefore + 1}`);
+  }
+  console.log(`Enter on NEW MODULE spawns module ${String(modulesAfter).padStart(2, '0')} ✓`);
   const spawnedId = (await lifecycle(cdp)).find((c) => c.id !== 0)?.id;
   if (spawnedId === undefined) throw new Error('spawned cord id missing');
   await expectSummary(cdp, 'spawn', '2 cords');

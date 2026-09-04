@@ -72,6 +72,11 @@ export interface HudDocumentLike {
 export interface HudOptions {
   /** NEW CORD — routes through the spawn seam (the N key's own function). */
   onNewCord(): void;
+  /**
+   * 2D-6 — NEW MODULE: routes through the module spawn seam (the B key's
+   * own function); an honest no-op at the module soft cap.
+   */
+  onNewModule(): void;
   /** RESET — clears every cord to the empty scene (the R key's own function). */
   onReset(): void;
   /** Meter segment count per readout. Default HUD_SEGMENTS. */
@@ -180,6 +185,7 @@ export function createHudPanel(
     actions.appendChild(btn);
   };
   makeButton('new-cord', 'NEW CORD', 'N', options.onNewCord);
+  makeButton('new-module', 'NEW MODULE', 'B', options.onNewModule);
   makeButton('reset', 'RESET', 'R', options.onReset);
   root.appendChild(actions);
 
@@ -217,6 +223,7 @@ export function createHudPanel(
       last.linked = counts.linked;
       last.popped = counts.popped;
       last.vanishing = counts.vanishing;
+      last.modules = counts.modules; // 2D-7 — the roster gates too (B must re-speak)
       lastInitialized.value = true;
       setMeter(cordsMeter, counts.cords);
       setMeter(linkedMeter, counts.linked);

@@ -19,7 +19,7 @@ Open the printed URL (default `http://localhost:5173`). The scene loads with one
 
 - **Spawn** — press <kbd>N</kbd> (or the NEW CORD keycap on the faceplate). A coiled cord appears at your cursor with the red input jack in hand; the uncoil is physics, not an animation. One press, one cord.
 - **Carry** — drag either jack. Both ends are grabbable, seated ends included — grabbing a seated plug simply pulls it out. The cord stretches, dangles, and leashes behind you; a violent cursor teleport drags it rather than ripping it.
-- **Plug** — release a held jack over any module and it seats perpendicular to the nearest edge. Plug both ends (two modules, two edges of one module — even the same module twice) and the cord is **linked**: an amber signal pulse chases down it, red end to blue end. Each module takes up to 12 plugs; the next attempt draws a red deny ring.
+- **Plug** — release a held jack over any module and it seats perpendicular to the nearest edge. Plug both ends (two modules, two edges of one module — even the same module twice) and the cord is **linked**: an amber signal pulse chases down it, red end to blue end. Each module takes up to 32 plugs; the 33rd attempt draws a red deny ring.
 - **Drag modules** — grab a module anywhere and move it (translate only). Seated plugs ride along and their cords go taut.
 - **Brush** — sweep the cursor across a hanging cord, no button held, and it sways away from you.
 
@@ -68,7 +68,7 @@ Modifier chords stay with the browser — <kbd>Cmd</kbd>+<kbd>R</kbd> still relo
 
 - **Sim-purity gate** (`scripts/check-sim-purity.mjs`) — scans every file under `src/sim/` for renderer imports and DOM/canvas API usage (three.js, `document`, `window`, canvas contexts, `requestAnimationFrame`) and fails the build on any hit, keeping the physics core renderer-agnostic and headless. It runs as part of `build` and `test`.
 - **Tests** — Vitest unit suites cover the sim, world, interaction, render, and HUD layers; the fuzz harness replays adversarial patterns (drag storms, delta spikes, spawn/despawn churn, over-stretch pulls) with per-frame invariants and bitwise determinism. Set `CORDS_FUZZ_SEED=<n>` to explore a single seed.
-- **Frame-time probe** — load the page with `?probe=1` to stage twelve live cords and log measured frame timings (avg/p95/max against the 16.7 ms budget); `window.cords.probe()` reads the same counters on demand.
+- **Frame-time probe** — load the page with `?probe=1` to stage a dense bench (16 modules, 48 live cords, 12 of them linked and pulsing) and log measured frame timings (avg/p95/max against the 16.7 ms budget); `window.cords.probe()` reads the same counters on demand.
 - **Debug seams** — in the running page, `window.cords` exposes read-only probes (`lifecycle()`, `pulse()`, `statePaint()`, `motion()`, `gate()`, plus geometry readers `ends()`, `points()`, `rects()`, `view()`) and `spawn()`/`reset()` mirroring the HUD buttons.
 
 ## Deploy (Cloudflare)
@@ -87,7 +87,7 @@ To deploy from your machine instead: `npm run build && npx wrangler deploy`.
 ## Troubleshooting
 
 - **Blank page** — Cords draws with Canvas 2D, which every modern browser ships enabled. Try another desktop browser or check that JavaScript is allowed on the page.
-- **<kbd>N</kbd> did nothing** — the bench holds at most 16 cords; spawning at the cap is a deliberate no-op. Press <kbd>R</kbd> and try again.
+- **<kbd>N</kbd> did nothing** — the bench holds at most 48 cords; spawning at the cap is a deliberate no-op. Press <kbd>R</kbd> and try again.
 - **My cord vanished** — that was one of the three exits: an over-stretched pop whose grace expired, a half-plugged cord's jack released off-module, or an abandoned coil (10 s untouched) putting itself away. Spawn another.
 - **Touch devices** — not supported; this is a desktop, mouse-driven sandbox.
 

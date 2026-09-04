@@ -11,10 +11,11 @@
  *     LINKED segmented readouts and the scene summary.
  *   litSegments(count, segments) — how many meter segments light (a level
  *     meter pegs at its last segment; the numeral carries the exact value).
- *   sceneSummary(counts, notice?) — the aria-live sentence ("3 cords, 1
- *     awaiting plug, 2 linked" + the N/R action hint; total over every
- *     lifecycle transition — the A11Y-1 audit), optionally led by the
- *     one-shot failure line (REFINE-1, see vanishNotice).
+ *   sceneSummary(counts, notice?) — the aria-live sentence ("9 modules,
+ *     3 cords, 1 awaiting plug, 2 linked" + the N/R action hint; total over
+ *     every lifecycle transition — the A11Y-1 audit — and over the module
+ *     roster, 2D-7), optionally led by the one-shot failure line (REFINE-1,
+ *     see vanishNotice).
  *   vanishNotice(count) — the failure's one spoken line ("Cord shattered —
  *     unplugged."), prepended to exactly one summary repaint per death.
  *
@@ -27,8 +28,10 @@ import type { LifecycleState } from '../sim';
 /**
  * The live-cord readout's segment count. 12 is the DoD's live-cord floor
  * ("60fps with 8 cubes + 12 live cords"), so the meter spans the approved
- * operating range exactly; the world's hard cap (16) pegs the meter and the
- * numeral tells the truth.
+ * operating range exactly; past it the level meter PEGS at its last segment
+ * and the numeral tells the truth (hardware honesty — logged 2D-7, kept at
+ * 12 when the cord ceiling rose to 48: the meter is an operating-range
+ * indicator, the numeral is the tally).
  */
 export const HUD_SEGMENTS = 12;
 
@@ -36,6 +39,15 @@ export const HUD_SEGMENTS = 12;
 export interface HudCounts {
   /** Every cord alive in the world (any lifecycle state incl. vanishing). */
   cords: number;
+  /**
+   * 2D-7 — the module roster's size (the stage the cords live on; an honest
+   * world state, spoken AHEAD of the cord counts). NOT a lifecycle read, so
+   * `readHudCountsInto` does not fill it: the composition sets it from the
+   * stage each frame (spawns are the only mutation — reset keeps modules).
+   * Optional only so pure-callers (tests, old shapes) may omit it; the
+   * production panel always provides it.
+   */
+  modules?: number;
   /**
    * A11Y-1 — cords with EXACTLY ONE end seated (the awaiting-plug state).
    * The meters do not show it (the panel's two rows are CORDS/LINKED), but
@@ -110,7 +122,7 @@ export function readHudCounts(
 /** Structural equality — the panel's "nothing changed, touch nothing" gate. */
 export function sameHudCounts(a: Readonly<HudCounts>, b: Readonly<HudCounts>): boolean {
   return a.cords === b.cords && a.awaitingPlug === b.awaitingPlug && a.linked === b.linked
-    && a.popped === b.popped && a.vanishing === b.vanishing;
+    && a.popped === b.popped && a.vanishing === b.vanishing && a.modules === b.modules;
 }
 
 /**
@@ -129,16 +141,21 @@ export function litSegments(count: number, segments: number = HUD_SEGMENTS): num
 /**
  * The scene summary sentence (aria-live, Daredevil's floor; A11Y-1's audit
  * made it total over the lifecycle): counts in the task's own grammar —
- * "3 cords, 1 awaiting plug, 2 linked, 1 popped" — naming only the non-zero
- * states, in lifecycle-progression order, pluralized honestly, plus the
- * ONE-LINE HINT of the actions the page owns (N/R). Every approved
- * transition moves at least one named count, so the live region speaks at
- * every lifecycle change: spawn (cords), first seat (awaiting plug), second
- * seat (linked), hand-pulled plug (linked→awaiting), pop (popped), grace
- * expiry / off-cube release (vanishing), and the vanish completion's despawn
- * (cords drop). The empty scene states itself and the one honest action —
- * R is omitted there on purpose: resetting an empty bench does nothing, and
- * the summary does not advertise no-ops.
+ * "9 modules, 3 cords, 1 awaiting plug, 2 linked, 1 popped" — naming only
+ * the non-zero states, in lifecycle-progression order, pluralized honestly,
+ * plus the ONE-LINE HINT of the actions the page owns (N/R). 2D-7: the
+ * MODULE COUNT rides ahead of the cord counts when `counts.modules` is
+ * provided (the production composition always provides it — the stage is
+ * the world the cords live on, and B changes it; without the clause a
+ * module spawn on an otherwise-quiet bench would move no spoken word). Every
+ * approved transition moves at least one named count, so the live region
+ * speaks at every lifecycle change: spawn (cords), first seat (awaiting
+ * plug), second seat (linked), hand-pulled plug (linked→awaiting), pop
+ * (popped), grace expiry / off-cube release (vanishing), the vanish
+ * completion's despawn (cords drop), and B / module spawn (modules). The
+ * empty scene states itself and the one honest action — R is omitted there
+ * on purpose: resetting an empty bench does nothing, and the summary does
+ * not advertise no-ops.
  *
  * REFINE-1 — `notice` (the critique's "why did it die"): a ONE-SHOT event
  * line the composition prepends when a cord's vanish BEGINS (see
@@ -152,10 +169,22 @@ export function litSegments(count: number, segments: number = HUD_SEGMENTS): num
  * actually complete.
  */
 export function sceneSummary(counts: Readonly<HudCounts>, notice?: string | null): string {
-  const body =
-    counts.cords <= 0
-      ? 'No cords on the bench. Press N for a new cord.'
-      : `${summaryParts(counts).join(', ')}. Press N for a new cord, R to reset.`;
+  const modules = typeof counts.modules === 'number' && Number.isFinite(counts.modules)
+    && counts.modules > 0
+    ? Math.floor(counts.modules)
+    : null;
+  const moduleClause = modules === null ? '' : `${modules} module${modules === 1 ? '' : 's'}`;
+  let body: string;
+  if (counts.cords <= 0) {
+    body =
+      modules === null
+        ? 'No cords on the bench. Press N for a new cord.'
+        : `No cords on the bench. ${moduleClause} standing. Press N for a new cord.`;
+  } else {
+    const parts = summaryParts(counts);
+    if (modules !== null) parts.unshift(moduleClause);
+    body = `${parts.join(', ')}. Press N for a new cord, R to reset.`;
+  }
   return typeof notice === 'string' && notice.length > 0 ? `${notice} ${body}` : body;
 }
 

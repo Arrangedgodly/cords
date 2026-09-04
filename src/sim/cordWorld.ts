@@ -198,7 +198,11 @@ export interface CordWorldConfig {
    * (segment count/length, gravity, damping, floor) applies to every spawn.
    */
   cord?: Partial<RopeConfig>;
-  /** Registry cap. Spawning past it is ignored. Default 16 (the render pool's capacity). */
+  /**
+   * Registry cap. Spawning past it is ignored. Default 48 (2D-7's raised
+   * ceiling; v1's "render pool capacity" rationale was a 3D leftover — Canvas
+   * 2D has no such pool, so 16 was an inherited number, now honest at 48).
+   */
   maxCords?: number;
   /**
    * T-LIFE-1 — options for the world's lifecycle machine: grace window,
@@ -266,7 +270,7 @@ interface CordEntry {
 }
 
 export function createCordWorldStep(config: CordWorldConfig = {}): CordWorldStep {
-  const maxCords = config.maxCords ?? 16;
+  const maxCords = config.maxCords ?? 48;
   if (!Number.isInteger(maxCords) || maxCords < 1) {
     throw new Error(`cordWorld: maxCords must be an integer >= 1, got ${maxCords}`);
   }

@@ -266,14 +266,14 @@ describe('2D-2 renderer — the deny ring', () => {
 });
 
 describe('2D-2 renderer — pool bounds (the world cap paints without throwing)', () => {
-  it('16 cords × 25 points draw cleanly (the pool covers the cap)', () => {
+  it('48 cords × 25 points draw cleanly (the pool covers 2D-7\'s raised cap)', () => {
     const canvas = makeCanvas();
     const renderer = createRenderer(canvas, makeCanvas);
     renderer.setView(VIEW, 1);
     const cords: Array<{ id: number; points: Vec2[] }> = [];
-    for (let c = 0; c < 16; c += 1) {
+    for (let c = 0; c < 48; c += 1) {
       const points: Vec2[] = [];
-      for (let i = 0; i <= 24; i += 1) points.push({ x: -1 + c * 0.13 + i * 0.02, y: 2.2 - i * 0.08 });
+      for (let i = 0; i <= 24; i += 1) points.push({ x: -2.6 + c * 0.11 + i * 0.02, y: 2.2 - i * 0.08 });
       cords.push({ id: c + 1, points });
     }
     expect(() =>
@@ -285,7 +285,7 @@ describe('2D-2 renderer — pool bounds (the world cap paints without throwing)'
         simTime: 0,
       }),
     ).not.toThrow();
-    expect(canvas.ctx.calls.filter((c) => c.op === 'rotate')).toHaveLength(32);
+    expect(canvas.ctx.calls.filter((c) => c.op === 'rotate')).toHaveLength(96);
   });
 });
 
@@ -718,5 +718,75 @@ describe('2D-3 renderer — the shatter debris (pooled)', () => {
     renderer.clearFragments();
     renderer.draw(burstFrame(1.05));
     expect(renderer.stateProbe().shards).toBe(0);
+  });
+});
+
+describe('2D-6 renderer — the corner handles (honest furniture, state-gated)', () => {
+  const drawOnce = (handlesFor: number | null | undefined) => {
+    const canvas = makeCanvas();
+    const renderer = createRenderer(canvas, makeCanvas);
+    renderer.setView(VIEW, 1);
+    canvas.ctx.calls.length = 0;
+    renderer.draw({
+      state: { time: 0, cords: [] },
+      modules: createStage(),
+      seatPoseOf: () => null,
+      deny: null,
+      simTime: 0,
+      ...(handlesFor === undefined ? {} : { handlesFor }),
+    });
+    return canvas.ctx.calls;
+  };
+
+  it('absent handlesFor draws no notches; a module id draws exactly 4, at its corners', () => {
+    for (const absent of [undefined, null, -1]) {
+      const calls = drawOnce(absent);
+      // The notch is the only 7px FASTENER_INK square in the frame.
+      const notches = calls.filter(
+        (c) => c.op === 'fillRect' && c.args[2] === 7 && c.args[3] === 7,
+      );
+      expect(notches).toHaveLength(0);
+    }
+    const stage = createStage();
+    const target = stage[4];
+    const calls = drawOnce(target.id);
+    const notches = calls.filter(
+      (c) => c.op === 'fillRect' && c.args[2] === 7 && c.args[3] === 7,
+    );
+    expect(notches).toHaveLength(4);
+    // Each notch centers on a corner of the target module (screen px).
+    const corners = [
+      [target.x - target.w / 2, target.y + target.h / 2],
+      [target.x + target.w / 2, target.y + target.h / 2],
+      [target.x + target.w / 2, target.y - target.h / 2],
+      [target.x - target.w / 2, target.y - target.h / 2],
+    ];
+    for (const [wx, wy] of corners) {
+      const sx = VIEW.width / 2 + wx * VIEW.scale;
+      const sy = VIEW.floorScreenY - wy * VIEW.scale;
+      const hit = notches.some(
+        (c) => Math.abs((c.args[0] as number) - (sx - 3.5)) < 1e-6
+          && Math.abs((c.args[1] as number) - (sy - 3.5)) < 1e-6,
+      );
+      expect(hit).toBe(true);
+    }
+  });
+
+  it('the notch is machined furniture, not a lamp: fastener ink + rim + bevel, no glow', () => {
+    const calls = drawOnce(3);
+    const notchIdx = calls.findIndex(
+      (c) => c.op === 'fillRect' && c.args[2] === 7 && c.args[3] === 7,
+    );
+    expect(notchIdx).toBeGreaterThan(-1);
+    // FASTENER_INK fill precedes the 7px square…
+    const fillBefore = calls.slice(0, notchIdx + 1).filter((c) => c.op === 'set:fillStyle');
+    expect(fillBefore[fillBefore.length - 1]?.args[0]).toBe('#101215');
+    // …and the rim stroke + a bevel highlight follow each notch.
+    expect(calls.slice(notchIdx + 1, notchIdx + 8).some((c) => c.op === 'strokeRect')).toBe(true);
+    expect(
+      calls.slice(notchIdx + 1, notchIdx + 10).some(
+        (c) => c.op === 'set:strokeStyle' && String(c.args[0]).startsWith('rgba(255,255,255'),
+      ),
+    ).toBe(true);
   });
 });

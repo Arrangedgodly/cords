@@ -451,15 +451,14 @@ run('2D3_FULLARC', async () => {
   if (errors > 0) throw new Error(`${errors} page errors during the drive`);
   if (page.rejections() > 0) throw new Error(`${page.rejections()} lifecycle rejections`);
 
-  // --- the perf coda: ?probe=1 at 12 cords (6 linked + pulsing), brush sweeping --------------------
+  // --- the perf coda: ?probe=1 at 2D-7's ceiling stage (48 cords, 12 linked
+  // --- + pulsing — every cord seated, so the stage stands), brush sweeping --
   const probePage = await openPage(`${base}?probe=1`);
   await waitFor(
-    () => evalJs(probePage.cdp, 'window.cords.probe()').then((p) => p !== null && p.frames > 20),
+    () => evalJs(probePage.cdp, 'window.cords.probe()').then((p) => p !== null && p.frames > 5),
     'the perf probe',
     25000,
   );
-  // Read the STAGED load first (the resting coils self-clean on the idle
-  // window after ~10 s of sim time — read before they can).
   const probe0 = await evalJs(probePage.cdp, 'window.cords.probe()');
   const linked0 = await evalJs(probePage.cdp, 'window.cords.pulse()').then((p) => p.linked.length);
   console.log(`perf probe staged load: ${JSON.stringify(probe0)} · linked+pulsing ${linked0}`);

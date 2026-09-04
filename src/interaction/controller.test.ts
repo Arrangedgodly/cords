@@ -52,7 +52,7 @@ function makeApp(options: { opening?: boolean; reduced?: boolean } = {}): App {
   let state: SimState = { time: 0, cords: [] };
   world = createCordWorldStep({
     cord: { segmentCount: SEGMENTS, floorY: 0 },
-    maxCords: 16,
+    maxCords: 48,
     overStretch: { threshold: DEFAULT_OVERSTRETCH_THRESHOLD },
     vanish: {
       onEvent: (event) => {
@@ -438,19 +438,19 @@ describe('2D-2 interaction — rectangle drag transports seated plugs (INT-3)', 
   });
 });
 
-describe('2D-2 interaction — the soft cap + deny ring', () => {
-  it('the 13th plug on one rectangle is denied: no seat, deny ring set, ordinary release', () => {
+describe('2D-2 interaction — the soft cap + deny ring (2D-7 boundary: 32)', () => {
+  it('the 33rd plug on one rectangle is denied: no seat, deny ring set, ordinary release', () => {
     const app = makeApp();
     const m = app.stage[3];
     // Fill the module to the cap through the production seat op.
-    for (let i = 0; i < 12; i += 1) {
+    for (let i = 0; i < 32; i += 1) {
       const id = app.controller.spawnCoilAt({ x: m.x, y: m.y + m.h / 2 + 0.03 });
       const pose = seatPose(m.x, m.y + m.h / 2, m);
       expect(app.controller.seatEndOn(id, RED, m.id, { x: pose.socketX, y: pose.socketY })).toBe(true);
       app.frame(1);
     }
-    expect(app.controller.seatsOnRect(m.id)).toBe(12);
-    // The 13th: hold a fresh cord's blue end over the module and release.
+    expect(app.controller.seatsOnRect(m.id)).toBe(32);
+    // The 33rd: hold a fresh cord's red end over the module and release.
     const id = app.controller.spawnAt({ x: m.x - 1.0, y: m.y + 1.2 });
     app.frame(4);
     expect(app.world.lifecycle.stateOf(id)).toBe('carried');
@@ -459,7 +459,7 @@ describe('2D-2 interaction — the soft cap + deny ring', () => {
     const at = app.sx(m.x, m.y + m.h / 2 + 0.04);
     app.controller.pointerUp(at.x, at.y);
     // Denied: never seated, ring recorded, the jack never entered the machine.
-    expect(app.controller.seatsOnRect(m.id)).toBe(12);
+    expect(app.controller.seatsOnRect(m.id)).toBe(32);
     expect(app.world.lifecycle.endMode(id, RED)).not.toBe('seated');
     expect(app.controller.deny).not.toBeNull();
     expect(app.controller.deny?.t).toBeGreaterThanOrEqual(0);
@@ -472,12 +472,13 @@ describe('2D-2 interaction — the soft cap + deny ring', () => {
     const app = makeApp();
     const m = app.stage[3];
     const n = app.stage[4];
-    for (let i = 0; i < 12; i += 1) {
+    for (let i = 0; i < 32; i += 1) {
       const id = app.controller.spawnCoilAt({ x: m.x, y: m.y + m.h / 2 + 0.03 });
       const pose = seatPose(m.x, m.y + m.h / 2, m);
       app.controller.seatEndOn(id, RED, m.id, { x: pose.socketX, y: pose.socketY });
       app.frame(1);
     }
+    expect(app.controller.seatsOnRect(m.id)).toBe(32);
     const id = app.controller.spawnAt({ x: n.x - 1.0, y: n.y + 1.2 });
     app.frame(4);
     const end = app.end(id, RED);
@@ -561,15 +562,15 @@ describe('2D-2 interaction — spawn seams (N / HUD)', () => {
     expect(Math.hypot(end.x + 1.0, end.y - 1.8)).toBeLessThan(0.2);
   });
 
-  it('ids are unique across the session; the world cap ignores spawn 17', () => {
+  it('ids are unique across the session; the world cap ignores spawn 49 (48 stand)', () => {
     const app = makeApp();
     const ids: number[] = [];
-    for (let i = 0; i < 18; i += 1) {
-      ids.push(app.controller.spawnCoilAt({ x: -1.5 + i * 0.15, y: 2.6 }));
+    for (let i = 0; i < 49; i += 1) {
+      ids.push(app.controller.spawnCoilAt({ x: -1.5 + i * 0.05, y: 2.6 }));
       app.frame(1);
     }
-    expect(new Set(ids).size).toBe(18);
-    expect(app.state().cords.length).toBeLessThanOrEqual(16);
+    expect(new Set(ids).size).toBe(49);
+    expect(app.state().cords.length).toBe(48); // the 49th: the honest no-op
   });
 });
 
@@ -775,5 +776,285 @@ describe('2D-5 interaction — pointercancel: the honest release', () => {
     app.controller.pointerMove(grab.x + 200, grab.y - 150);
     app.frame(3);
     expect(app.stage[2].x).toBeCloseTo(xAtCancel, 9);
+  });
+});
+
+describe('2D-6 interaction — module spawn (B / HUD NEW MODULE)', () => {
+  it('spawnModule appends an ordinary module at the cursor: id/label/palette continue', () => {
+    const app = makeApp();
+    const m = app.controller.spawnModule({ x: 0, y: 0.5 });
+    expect(m).not.toBeNull();
+    expect(app.stage).toHaveLength(9);
+    expect(m!.id).toBe(8); // id === array index (the stage indexing law)
+    expect(m!.label).toBe('09');
+    expect(m!.zone).toBe('#e8433f'); // the palette cycles from the roster's top
+    expect(m!.w).toBe(0.66);
+    expect(m!.y - m!.h / 2).toBeGreaterThanOrEqual(0);
+  });
+
+  it('a spawned module is immediately ordinary: draggable, pluggable, its plugs ride', () => {
+    const app = makeApp();
+    const m = app.controller.spawnModule({ x: 0, y: 0.5 })!;
+    // Seat a cord's red end on it through the production op.
+    const id = app.controller.spawnCoilAt({ x: m.x, y: m.y + m.h / 2 + 0.03 });
+    expect(app.controller.seatEndOn(id, RED, m.id, { x: m.x, y: m.y + m.h / 2 })).toBe(true);
+    app.frame(80); // the coil drapes clear of the module's lower-left quadrant
+    expect(app.world.lifecycle.stateOf(id)).toBe('awaiting-plug');
+    const f0 = app.controller.seatList().find((s) => s.cordId === id && s.index === RED)!.fraction;
+    // DRAG the spawned module: the plug rides the exact delta, fraction kept.
+    const poseBefore = app.controller.seatPoseOf(id, RED)!;
+    const bx = poseBefore.x;
+    const by = poseBefore.y;
+    const homeX = m.x;
+    const homeY = m.y;
+    const grab = app.sx(m.x - 0.2, m.y - 0.12); // lower-left: clear of the drape
+    app.controller.pointerDown(grab.x, grab.y);
+    expect(app.controller.heldEnd()).toBeNull(); // a RECT drag, not a jack grab
+    const to = app.sx(homeX + 0.4, homeY + 0.25);
+    for (let i = 1; i <= 6; i += 1) {
+      app.controller.pointerMove(grab.x + ((to.x - grab.x) * i) / 6, grab.y + ((to.y - grab.y) * i) / 6);
+      app.frame(1);
+    }
+    app.controller.pointerUp(to.x, to.y);
+    app.frame(3);
+    // The drag keeps its grab offset (press 0.2 left / 0.12 below center).
+    expect(m.x).toBeCloseTo(homeX + 0.6, 9); // the module translated
+    expect(m.y).toBeCloseTo(homeY + 0.37, 9);
+    const poseAfter = app.controller.seatPoseOf(id, RED)!;
+    expect(poseAfter.x).toBeCloseTo(bx + 0.6, 9);
+    expect(poseAfter.y).toBeCloseTo(by + 0.37, 9);
+    const seat = app.controller.seatList().find((s) => s.cordId === id && s.index === RED)!;
+    expect(seat.fraction).toBe(f0); // translation is fraction-invariant
+    expect(app.world.lifecycle.stateOf(id)).toBe('awaiting-plug');
+  });
+
+  it('the module cap is an honest no-op: 32 stand, the 33rd spawns nothing', () => {
+    const app = makeApp();
+    let last = null as ReturnType<typeof app.controller.spawnModule>;
+    for (let i = 0; i < 24; i += 1) {
+      last = app.controller.spawnModule({ x: 0, y: 0.5 });
+      expect(last).not.toBeNull();
+    }
+    expect(app.stage).toHaveLength(32);
+    expect(last!.label).toBe('32');
+    expect(app.controller.spawnModule({ x: 0, y: 0.5 })).toBeNull();
+    expect(app.stage).toHaveLength(32);
+    // Ids stayed dense (id === index through the whole roster).
+    app.stage.forEach((r, i) => expect(r.id).toBe(i));
+  });
+});
+
+describe('2D-6 interaction — corner handles: picking priority handle > jack > body > cord', () => {
+  it('hovering a corner reads handle with the diagonal resize cursor; the body stays move', () => {
+    const app = makeApp();
+    const m = app.controller.spawnModule({ x: 0, y: 0.5 })!;
+    const tl = app.sx(m.x - m.w / 2, m.y + m.h / 2); // top-left: nwse
+    app.controller.pointerMove(tl.x, tl.y);
+    expect(app.controller.hover()).toBe('handle');
+    expect(app.controller.hoverCursor()).toBe('nwse-resize');
+    const tr = app.sx(m.x + m.w / 2, m.y + m.h / 2); // top-right: nesw
+    app.controller.pointerMove(tr.x, tr.y);
+    expect(app.controller.hoverCursor()).toBe('nesw-resize');
+    // Mid-body is still the rect drag's.
+    const mid = app.sx(m.x, m.y - 0.1);
+    app.controller.pointerMove(mid.x, mid.y);
+    expect(app.controller.hover()).toBe('rect');
+    expect(app.controller.hoverCursor()).toBe('move');
+  });
+
+  it('pressing a corner beats a seated plug whose capsule reaches the corner (the priority law)', () => {
+    const app = makeApp();
+    const m = app.controller.spawnModule({ x: 0, y: 0.5 })!;
+    // A plug seated almost AT the top-right corner (fraction ≈ 0.97).
+    const id = app.controller.spawnCoilAt({ x: m.x, y: m.y + m.h / 2 + 0.03 });
+    app.controller.seatEndOn(id, RED, m.id, { x: m.x + m.w / 2 - 0.02, y: m.y + m.h / 2 });
+    app.frame(3);
+    expect(app.world.lifecycle.endMode(id, RED)).toBe('seated');
+    const corner = app.sx(m.x + m.w / 2, m.y + m.h / 2);
+    app.controller.pointerDown(corner.x, corner.y);
+    expect(app.controller.heldEnd()).toBeNull(); // NOT a jack grab…
+    // …and it resizes: the pointer grows the rect without translating it.
+    const grow = app.sx(m.x + m.w / 2 + 0.3, m.y + m.h / 2 + 0.2);
+    app.controller.pointerMove(grow.x, grow.y);
+    app.frame(2);
+    expect(app.stage[m.id].w).toBeGreaterThan(0.66);
+    app.controller.pointerUp(grow.x, grow.y);
+  });
+
+  it('a press near — but not on — a corner is still the module body drag', () => {
+    const app = makeApp();
+    const m = app.controller.spawnModule({ x: 0, y: 0.5 })!;
+    const homeX = m.x;
+    // 0.2 world in from the top-left corner: body territory.
+    const p = app.sx(m.x - m.w / 2 + 0.2, m.y + m.h / 2 - 0.15);
+    app.controller.pointerDown(p.x, p.y);
+    const to = app.sx(homeX + 0.3, m.y);
+    app.controller.pointerMove(to.x, to.y);
+    app.frame(2);
+    const w = app.stage[m.id].w;
+    app.controller.pointerUp(to.x, to.y);
+    expect(app.stage[m.id].x).toBeGreaterThan(homeX + 0.2); // translated…
+    expect(app.stage[m.id].w).toBe(w); // …not resized
+  });
+
+  it('handlesFor: the hovered module while idle, the resizing one mid-drag, −1 off-stage', () => {
+    const app = makeApp();
+    const m = app.controller.spawnModule({ x: 0, y: 0.5 })!;
+    const tl = app.sx(m.x - m.w / 2, m.y + m.h / 2);
+    app.controller.pointerMove(tl.x, tl.y);
+    expect(app.controller.handlesFor()).toBe(m.id); // corner hover shows them
+    const mid = app.sx(m.x, m.y);
+    app.controller.pointerMove(mid.x, mid.y);
+    expect(app.controller.handlesFor()).toBe(m.id); // body hover shows them too
+    app.controller.pointerLeave();
+    expect(app.controller.handlesFor()).toBe(-1);
+    // Mid-resize the resizing rect owns the furniture wherever the pointer is.
+    app.controller.pointerDown(tl.x, tl.y);
+    const far = app.sx(m.x - 3.0, m.y + 1.2);
+    app.controller.pointerMove(far.x, far.y);
+    expect(app.controller.handlesFor()).toBe(m.id);
+    app.controller.pointerUp(far.x, far.y);
+  });
+});
+
+describe('2D-6 interaction — resize through the real pointer path', () => {
+  /** Screen point of rect `rectId`'s corner (0 TL, 1 TR, 2 BR, 3 BL). */
+  function cornerAt(app: App, rectId: number, corner: number): { x: number; y: number } {
+    const r = app.stage[rectId];
+    const sx = corner === 0 || corner === 3 ? -1 : 1;
+    const sy = corner === 0 || corner === 1 ? 1 : -1;
+    return app.sx(r.x + (sx * r.w) / 2, r.y + (sy * r.h) / 2);
+  }
+
+  it('a seated plug RIDES the resize: fraction preserved, pin at the recomputed edge point, opposite corner anchored', () => {
+    const app = makeApp();
+    const m = app.controller.spawnModule({ x: 0, y: 0.55 })!;
+    const id = app.controller.spawnCoilAt({ x: m.x, y: m.y + m.h / 2 + 0.03 });
+    app.controller.seatEndOn(id, RED, m.id, { x: m.x + 0.1, y: m.y + m.h / 2 }); // top edge
+    app.frame(3);
+    const seat = app.controller.seatList().find((s) => s.cordId === id && s.index === RED)!;
+    const f0 = seat.fraction;
+    expect(f0).toBeGreaterThan(0);
+    expect(f0).toBeLessThan(1);
+    // Grab the TOP-LEFT handle → anchor is the BOTTOM-RIGHT corner.
+    const anchorBefore = { x: m.x + m.w / 2, y: m.y - m.h / 2 };
+    const tl = cornerAt(app, m.id, 0);
+    app.controller.pointerDown(tl.x, tl.y);
+    // Grow to (−0.6, +0.25)-ish of the anchor: w 0.66→0.93, h 0.5→0.75.
+    const to = app.sx(anchorBefore.x - 0.93, anchorBefore.y + 0.75);
+    for (let i = 1; i <= 8; i += 1) {
+      app.controller.pointerMove(tl.x + ((to.x - tl.x) * i) / 8, tl.y + ((to.y - tl.y) * i) / 8);
+      app.frame(1);
+    }
+    app.controller.pointerUp(to.x, to.y);
+    app.frame(3);
+    const r = app.stage[m.id];
+    expect(r.w).toBeCloseTo(0.93, 6);
+    expect(r.h).toBeCloseTo(0.75, 6);
+    // The module stayed put at its opposite corner (bitwise the BR corner).
+    expect(r.x + r.w / 2).toBeCloseTo(anchorBefore.x, 9);
+    expect(r.y - r.h / 2).toBeCloseTo(anchorBefore.y, 9);
+    // THE LAW: the fraction survived verbatim, the pin recomputed onto the
+    // resized top edge, and the sim's own end point is bitwise that pin.
+    // (The pose shell carries x/y/nx/ny; the socket is pin + normal × depth.)
+    const after = app.controller.seatList().find((s) => s.cordId === id && s.index === RED)!;
+    expect(after.fraction).toBe(f0);
+    const pose = app.controller.seatPoseOf(id, RED)!;
+    expect(pose.ny).toBe(1); // still perpendicular to the (top) edge
+    expect(pose.y).toBeCloseTo(r.y + r.h / 2 - 0.082, 9); // ON the resized edge
+    expect(pose.x).toBeCloseTo(r.x - r.w / 2 + f0 * r.w, 9); // at the kept fraction
+    const seated = app.end(id, RED);
+    expect(seated.x).toBeCloseTo(pose.x, 6);
+    expect(seated.y).toBeCloseTo(pose.y, 6);
+    expect(app.world.lifecycle.endMode(id, RED)).toBe('seated'); // never popped off
+  });
+
+  it('a shrink slides a near-end seat inward along its edge (the clamp law)', () => {
+    const app = makeApp();
+    const m = app.controller.spawnModule({ x: 0, y: 0.55 })!;
+    const id = app.controller.spawnCoilAt({ x: m.x, y: m.y + m.h / 2 + 0.03 });
+    // Seat at the top edge's far-right end (fraction ≈ 1).
+    app.controller.seatEndOn(id, RED, m.id, { x: m.x + m.w / 2 - 0.01, y: m.y + m.h / 2 });
+    app.frame(3);
+    const f0 = app.controller.seatList().find((s) => s.cordId === id && s.index === RED)!.fraction;
+    expect(f0).toBeGreaterThan(0.9);
+    // Grab the TOP-RIGHT handle and pull it left/down: the top edge SHRINKS.
+    const anchor = { x: m.x - m.w / 2, y: m.y - m.h / 2 }; // the BL corner
+    const tr = cornerAt(app, m.id, 1);
+    app.controller.pointerDown(tr.x, tr.y);
+    const to = app.sx(anchor.x + 0.35, anchor.y + 0.55); // w → the 0.35 minimum
+    for (let i = 1; i <= 8; i += 1) {
+      app.controller.pointerMove(tr.x + ((to.x - tr.x) * i) / 8, tr.y + ((to.y - tr.y) * i) / 8);
+      app.frame(1);
+    }
+    app.controller.pointerUp(to.x, to.y);
+    app.frame(3);
+    const r = app.stage[m.id];
+    expect(r.w).toBeCloseTo(0.35, 6);
+    const after = app.controller.seatList().find((s) => s.cordId === id && s.index === RED)!;
+    expect(after.fraction).toBe(f0); // kept verbatim…
+    const pose = app.controller.seatPoseOf(id, RED)!;
+    // …so the socket sits at f0 of the NEW width — slid inward WITH the
+    // endpoint, still on the edge, never past it.
+    expect(pose.x).toBeCloseTo(r.x - r.w / 2 + f0 * r.w, 9);
+    expect(pose.x).toBeGreaterThan(r.x + r.w / 2 - 0.02); // hugging the new end
+    expect(pose.x).toBeLessThanOrEqual(r.x + r.w / 2 + 1e-9); // never off the edge
+    expect(app.world.lifecycle.endMode(id, RED)).toBe('seated'); // still in its socket
+  });
+
+  it('resizing a LINKED pair past the cord fires the existing over-stretch pop — no special case', () => {
+    const app = makeApp();
+    // Two spawned modules, outer-edge seats ~2.2 apart (linkable, taut).
+    const a = app.controller.spawnModule({ x: -1.1, y: 0.55 })!;
+    const b = app.controller.spawnModule({ x: 0.6, y: 0.55 })!;
+    const id = app.controller.spawnCoilAt({ x: a.x - a.w / 2, y: a.y });
+    app.controller.seatEndOn(id, RED, a.id, { x: a.x - a.w / 2 - 0.02, y: a.y }); // LEFT edge
+    app.controller.seatEndOn(id, BLUE, b.id, { x: b.x + b.w / 2 + 0.02, y: b.y }); // RIGHT edge
+    app.frame(4);
+    expect(app.world.lifecycle.stateOf(id)).toBe('linked');
+    // Grow A leftward from its top-left handle: the left-edge seat rides out.
+    const anchor = { x: a.x + a.w / 2, y: a.y - a.h / 2 }; // A's BR corner
+    const tl = cornerAt(app, a.id, 0);
+    app.controller.pointerDown(tl.x, tl.y);
+    const to = app.sx(anchor.x - 1.6, anchor.y + 0.5); // max width outward
+    for (let i = 1; i <= 10; i += 1) {
+      app.controller.pointerMove(tl.x + ((to.x - tl.x) * i) / 10, tl.y + ((to.y - tl.y) * i) / 10);
+      app.frame(1); // the detector runs every step — the crossing frame pops
+    }
+    app.frame(4);
+    expect(app.world.lifecycle.stateOf(id)).toBe('popped');
+    // The FAR end popped (the seat that moved less): blue, on module B.
+    expect(app.world.lifecycle.endMode(id, BLUE)).not.toBe('seated');
+    expect(app.world.lifecycle.endMode(id, RED)).toBe('seated');
+    app.controller.pointerUp(to.x, to.y);
+  });
+
+  it('deterministic: the same spawn+seat+resize script gives bitwise-identical geometry', () => {
+    const run = () => {
+      const app = makeApp();
+      const m = app.controller.spawnModule({ x: 0, y: 0.55 })!;
+      const id = app.controller.spawnCoilAt({ x: m.x, y: m.y + m.h / 2 + 0.03 });
+      app.controller.seatEndOn(id, RED, m.id, { x: m.x + 0.1, y: m.y + m.h / 2 });
+      app.frame(3);
+      const tl = cornerAt(app, m.id, 0);
+      app.controller.pointerDown(tl.x, tl.y);
+      const to = app.sx(0.33 - 0.93, 0.3 + 0.75);
+      for (let i = 1; i <= 8; i += 1) {
+        app.controller.pointerMove(tl.x + ((to.x - tl.x) * i) / 8, tl.y + ((to.y - tl.y) * i) / 8);
+        app.frame(1);
+      }
+      app.controller.pointerUp(to.x, to.y);
+      app.frame(3);
+      const pose = app.controller.seatPoseOf(id, RED)!;
+      const r = app.stage[m.id];
+      const seat = app.controller.seatList()[0];
+      return {
+        rect: `${r.x},${r.y},${r.w},${r.h}`,
+        pose: `${pose.x},${pose.y},${pose.nx},${pose.ny}`,
+        fraction: seat.fraction,
+        end: `${app.end(id, RED).x},${app.end(id, RED).y}`,
+      };
+    };
+    expect(run()).toEqual(run());
   });
 });

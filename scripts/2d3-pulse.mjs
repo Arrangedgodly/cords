@@ -193,9 +193,17 @@ run('2D3_PULSE', async () => {
   );
   if (!flipped) throw new Error('the poll never observed the grab flip');
   if (badSamples > 0) throw new Error(`${badSamples} samples showed awaiting-plug WITH gain`);
+  // The GRAB alone unlinks (the light dies the moment the plug leaves its
+  // socket) — assert it while still HELD, deterministically. The release at
+  // +40/+40 lands inside the module body, a legal re-seat (bottom edge) that
+  // returns the cord to linked; the re-seat below then moves the red back to
+  // 04's top. (The old form asserted after the release and passed only when
+  // a paused frame let the read race ahead of the re-seat.)
+  const whileHeld = await evalJs(cdp, 'window.cords.pulse()');
+  if (whileHeld.linked.length !== 0) {
+    throw new Error(`linked list while held: ${JSON.stringify(whileHeld.linked)}`);
+  }
   await release(cdp, seatedRed.x + 40, seatedRed.y + 40);
-  const after = await evalJs(cdp, 'window.cords.pulse()');
-  if (after.linked.length !== 0) throw new Error(`linked list after pull: ${JSON.stringify(after.linked)}`);
   console.log('same-frame gate: the pulled cord dark the moment it left linked ✓');
 
   // Re-seat the pulled end → linked → the light returns.

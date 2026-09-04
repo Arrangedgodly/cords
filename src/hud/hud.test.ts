@@ -191,9 +191,14 @@ describe('T-REN-3 — the pure meter/summary primitives', () => {
     expect(litSegments(1)).toBe(1);
     expect(litSegments(5)).toBe(5);
     expect(litSegments(HUD_SEGMENTS)).toBe(HUD_SEGMENTS);
-    expect(litSegments(HUD_SEGMENTS + 4)).toBe(HUD_SEGMENTS); // pegged: the numeral carries 16
+    expect(litSegments(HUD_SEGMENTS + 4)).toBe(HUD_SEGMENTS); // pegged: the numeral carries the value
     expect(litSegments(4, 4)).toBe(4);
     expect(litSegments(9, 4)).toBe(4);
+    // 2D-7 — the raised ceiling (48) pegs the 12-segment meter from 13 up;
+    // the numeral is the tally (verified live in the drives at 13+, 20+, 40+).
+    expect(litSegments(13)).toBe(12);
+    expect(litSegments(20)).toBe(12);
+    expect(litSegments(48)).toBe(12);
   });
 
   it('litSegments is total over garbage', () => {
@@ -455,6 +460,81 @@ describe('REFINE-1 — the panel speaks the notice ONCE (no spam, no swallowed l
   });
 });
 
+// --- 2D-7 — the module count rides the summary (honest world state) ----------
+
+describe('2D-7 — the summary speaks the module roster ahead of the cord counts', () => {
+  it('the counts clause gains the module lead ("9 modules, 3 cords, 1 linked")', () => {
+    expect(sceneSummary({ cords: 3, awaitingPlug: 0, linked: 1, popped: 0, vanishing: 0, modules: 9 }))
+      .toBe('9 modules, 3 cords, 1 linked. Press N for a new cord, R to reset.');
+    expect(sceneSummary({ cords: 1, awaitingPlug: 1, linked: 0, popped: 0, vanishing: 0, modules: 12 }))
+      .toBe('12 modules, 1 cord, 1 awaiting plug. Press N for a new cord, R to reset.');
+    // Pluralized honestly (a one-module world is legal).
+    expect(sceneSummary({ cords: 1, awaitingPlug: 0, linked: 0, popped: 0, vanishing: 0, modules: 1 }))
+      .toBe('1 module, 1 cord. Press N for a new cord, R to reset.');
+    // Without the field the sentence is exactly its pre-2D-7 shape (the
+    // pure primitive stays total over absence).
+    expect(sceneSummary({ cords: 3, awaitingPlug: 0, linked: 1, popped: 0, vanishing: 0 }))
+      .toBe('3 cords, 1 linked. Press N for a new cord, R to reset.');
+  });
+
+  it('the empty bench still names itself, then the standing modules (B on an empty bench is spoken)', () => {
+    expect(sceneSummary({ cords: 0, awaitingPlug: 0, linked: 0, popped: 0, vanishing: 0, modules: 8 }))
+      .toBe('No cords on the bench. 8 modules standing. Press N for a new cord.');
+    expect(sceneSummary({ cords: 0, awaitingPlug: 0, linked: 0, popped: 0, vanishing: 0 }))
+      .toBe('No cords on the bench. Press N for a new cord.');
+    // No reset advertised on the empty bench, modules or not.
+    expect(sceneSummary({ cords: 0, awaitingPlug: 0, linked: 0, popped: 0, vanishing: 0, modules: 9 }))
+      .not.toContain('R to reset');
+  });
+
+  it('sameHudCounts gates on modules too: a B-press repaints the summary', () => {
+    const a = { cords: 3, awaitingPlug: 0, linked: 1, popped: 0, vanishing: 0, modules: 8 };
+    expect(sameHudCounts(a, { cords: 3, awaitingPlug: 0, linked: 1, popped: 0, vanishing: 0, modules: 8 }))
+      .toBe(true);
+    // The module count alone opens the gate (the roster IS world state).
+    expect(sameHudCounts(a, { cords: 3, awaitingPlug: 0, linked: 1, popped: 0, vanishing: 0, modules: 9 }))
+      .toBe(false);
+    // Absence is absence (legacy shapes compare as before).
+    expect(sameHudCounts(a, { cords: 3, awaitingPlug: 0, linked: 1, popped: 0, vanishing: 0 }))
+      .toBe(false);
+  });
+
+  it('the panel speaks the module clause and repaints when only the roster grows', () => {
+    const { panel, fixture } = makePanel();
+    const f = fixture();
+    panel.update({ cords: 2, awaitingPlug: 1, linked: 0, popped: 0, vanishing: 0, modules: 8 });
+    expect(f.summary.textContent)
+      .toBe('8 modules, 2 cords, 1 awaiting plug. Press N for a new cord, R to reset.');
+    // The gate CLOSES on identical counts that carry the module clause (the
+    // snapshot must store modules — else every frame rewrites the region and
+    // a one-shot notice retires immediately; pinned 2D-7 after it bit the
+    // putaway drive first-hand).
+    const writes = classListWritesIn(f.root);
+    panel.update({ cords: 2, awaitingPlug: 1, linked: 0, popped: 0, vanishing: 0, modules: 8 });
+    expect(classListWritesIn(f.root)).toBe(writes); // nothing repainted
+    expect(f.summary.textContent)
+      .toBe('8 modules, 2 cords, 1 awaiting plug. Press N for a new cord, R to reset.');
+    // …and a module spawn rewrites the sentence with every cord count fixed.
+    panel.update({ cords: 2, awaitingPlug: 1, linked: 0, popped: 0, vanishing: 0, modules: 9 });
+    expect(f.summary.textContent)
+      .toBe('9 modules, 2 cords, 1 awaiting plug. Press N for a new cord, R to reset.');
+    // Meters are untouched by the module clause (there is no module meter).
+    expect(f.litCords()).toBe(2);
+    expect(f.countText('cords')).toBe('2');
+  });
+
+  it('the notice still leads, ahead of modules and cords alike', () => {
+    expect(
+      sceneSummary(
+        { cords: 2, awaitingPlug: 1, linked: 0, popped: 0, vanishing: 1, modules: 8 },
+        vanishNotice(1),
+      ),
+    ).toBe(
+      'Cord shattered — unplugged. 8 modules, 2 cords, 1 awaiting plug, 1 vanishing. Press N for a new cord, R to reset.',
+    );
+  });
+});
+
 // --- Part 2 — the panel against the structural DOM stub ------------------------
 
 /** The whole stub DOM seam the panel declares (see panel.ts). */
@@ -539,15 +619,18 @@ interface PanelFixture {
 
 function makePanel(options?: { segments?: number }): {
   panel: ReturnType<typeof createHudPanel>;
-  commands: { newCord: number; reset: number };
+  commands: { newCord: number; newModule: number; reset: number };
   host: StubElement;
   fixture(): PanelFixture;
 } {
-  const commands = { newCord: 0, reset: 0 };
+  const commands = { newCord: 0, newModule: 0, reset: 0 };
   const host = new StubElement('body');
   const panel = createHudPanel(host as unknown as HudElementLike, stubDoc, {
     onNewCord: () => {
       commands.newCord += 1;
+    },
+    onNewModule: () => {
+      commands.newModule += 1;
     },
     onReset: () => {
       commands.reset += 1;
@@ -591,14 +674,19 @@ describe('T-REN-3 — the panel: structure (labels name real things)', () => {
     }
     // Controls: real buttons, honest labels, keycap chips aria-hidden.
     const newCord = byAttr(f.root, 'data-hud', 'new-cord')[0];
+    const newModule = byAttr(f.root, 'data-hud', 'new-module')[0];
     const reset = byAttr(f.root, 'data-hud', 'reset')[0];
-    for (const btn of [newCord, reset]) {
+    for (const btn of [newCord, newModule, reset]) {
       expect(btn.tagName).toBe('button');
       expect(btn.attributes.get('type')).toBe('button');
     }
     expect(newCord.children[0].textContent).toBe('NEW CORD');
     expect(newCord.children[1].textContent).toBe('N');
     expect(newCord.children[1].attributes.get('aria-hidden')).toBe('true');
+    // 2D-6 — the module spawn control rides the same grammar (key B).
+    expect(newModule.children[0].textContent).toBe('NEW MODULE');
+    expect(newModule.children[1].textContent).toBe('B');
+    expect(newModule.children[1].attributes.get('aria-hidden')).toBe('true');
     expect(reset.children[0].textContent).toBe('RESET');
     expect(reset.children[1].textContent).toBe('R');
     expect(reset.children[1].attributes.get('aria-hidden')).toBe('true');
@@ -626,10 +714,18 @@ describe('T-REN-3 — the panel: wiring (buttons fire the commands)', () => {
     const { commands, fixture } = makePanel();
     const f = fixture();
     byAttr(f.root, 'data-hud', 'new-cord')[0].click();
-    expect(commands).toEqual({ newCord: 1, reset: 0 });
+    expect(commands).toEqual({ newCord: 1, newModule: 0, reset: 0 });
     byAttr(f.root, 'data-hud', 'reset')[0].click();
     byAttr(f.root, 'data-hud', 'reset')[0].click();
-    expect(commands).toEqual({ newCord: 1, reset: 2 });
+    expect(commands).toEqual({ newCord: 1, newModule: 0, reset: 2 });
+  });
+
+  it('2D-6 — clicking NEW MODULE calls onNewModule (the B key\'s own seam)', () => {
+    const { commands, fixture } = makePanel();
+    const f = fixture();
+    byAttr(f.root, 'data-hud', 'new-module')[0].click();
+    byAttr(f.root, 'data-hud', 'new-module')[0].click();
+    expect(commands).toEqual({ newCord: 0, newModule: 2, reset: 0 });
   });
 });
 
@@ -696,6 +792,17 @@ describe('T-REN-3 — the panel: honest painting + the update gate', () => {
     panel.update({ cords: HUD_SEGMENTS + 4, awaitingPlug: 0, linked: 0, popped: 0, vanishing: 0 });
     expect(f.litCords()).toBe(HUD_SEGMENTS);
     expect(f.countText('cords')).toBe(String(HUD_SEGMENTS + 4));
+    // 2D-7 — the tally at the raised boundary: 13, 20, and a full 48-cord
+    // bench all PEG the row at 12 while the numeral reads the exact count.
+    for (const n of [13, 20, 48]) {
+      panel.update({ cords: n, awaitingPlug: 0, linked: 0, popped: 0, vanishing: 0 });
+      expect(f.litCords()).toBe(12);
+      expect(f.countText('cords')).toBe(String(n));
+    }
+    // Below the peg the meter still fills one segment per cord.
+    panel.update({ cords: 9, awaitingPlug: 9, linked: 0, popped: 0, vanishing: 0 });
+    expect(f.litCords()).toBe(9);
+    expect(f.countText('cords')).toBe('9');
   });
 
   it('paints counts derived from the REAL world end to end (spawn → link)', () => {

@@ -10,13 +10,25 @@ import {
   EDGE_LEFT,
   EDGE_RIGHT,
   EDGE_TOP,
+  HANDLE_RADIUS,
+  MODULE_CAP,
+  MODULE_MAX_EDGE,
+  MODULE_MIN_EDGE,
+  MODULE_ZONES,
   SEAT_DEPTH,
+  applyRectResize,
   createStage,
   distToRectPerimeter2,
+  edgeFraction,
+  moduleLabel,
   nearestEdge,
+  oppositeCorner,
   pointInRect,
   rectAt,
+  rectCornerInto,
   seatPose,
+  seatPoseFromFraction,
+  spawnModuleInto,
   clampRectCenter,
 } from './stage';
 import { createView } from './view';
@@ -216,5 +228,256 @@ describe('2D-2 view — the shared projection', () => {
     const stage = createStage();
     const last = stage[7];
     expect(last.x + last.w).toBeLessThan(view.maxX);
+  });
+});
+
+describe('2D-6 stage — moduleLabel (the silkscreen sequence)', () => {
+  it('zero-pads through 99, then continues numerically — never rolls over', () => {
+    expect(moduleLabel(1)).toBe('01');
+    expect(moduleLabel(9)).toBe('09');
+    expect(moduleLabel(10)).toBe('10');
+    expect(moduleLabel(99)).toBe('99');
+    expect(moduleLabel(100)).toBe('100');
+    expect(moduleLabel(101)).toBe('101');
+    expect(moduleLabel(0)).toBe('00'); // garbage: total, never throws
+    expect(moduleLabel(Number.NaN)).toBe('00');
+  });
+});
+
+describe('2D-6 stage — spawnModuleInto (deterministic placement)', () => {
+  const view = createView(1440, 838);
+
+  it('continues the id/label/palette sequence with authored extents', () => {
+    const stage = createStage();
+    const a = spawnModuleInto(stage, { x: 0, y: 0.5 }, view.maxX, view.maxY);
+    const b = spawnModuleInto(stage, { x: 0, y: 0.5 }, view.maxX, view.maxY);
+    const c = spawnModuleInto(stage, { x: 0, y: 0.5 }, view.maxX, view.maxY);
+    expect(a).not.toBeNull();
+    expect(b).not.toBeNull();
+    expect(c).not.toBeNull();
+    expect(stage).toHaveLength(11);
+    expect([a!.id, b!.id, c!.id]).toEqual([8, 9, 10]);
+    expect([a!.label, b!.label, c!.label]).toEqual(['09', '10', '11']);
+    // The palette CYCLES the candy-zone roster from the top.
+    expect([a!.zone, b!.zone, c!.zone]).toEqual([
+      MODULE_ZONES[0], MODULE_ZONES[1], MODULE_ZONES[2],
+    ]);
+    for (const r of [a!, b!, c!]) {
+      expect(r.w).toBe(0.66);
+      expect(r.h).toBe(0.5);
+      expect(r.y - r.h / 2).toBeGreaterThanOrEqual(0); // above the floor
+    }
+  });
+
+  it('an honest overlap-avoidance attempt: a spawn inside an occupied spot lands clear', () => {
+    const stage = createStage();
+    const occupied = stage[3];
+    const spawned = spawnModuleInto(
+      stage,
+      { x: occupied.x, y: occupied.y },
+      view.maxX,
+      view.maxY,
+    );
+    expect(spawned).not.toBeNull();
+    const GAP = 0.001; // the ring clears by SPAWN_GAP; assert real clearance
+    for (const r of stage.slice(0, 8)) {
+      const dx = Math.abs(spawned!.x - r.x);
+      const dy = Math.abs(spawned!.y - r.y);
+      const needX = (spawned!.w + r.w) / 2;
+      const needY = (spawned!.h + r.h) / 2;
+      const overlaps = dx < needX + GAP && dy < needY + GAP;
+      expect(overlaps).toBe(false);
+    }
+  });
+
+  it('deterministic: identical inputs on fresh stages place bitwise-identically', () => {
+    const run = () => {
+      const stage = createStage();
+      const spots = [
+        { x: stage[2].x, y: stage[2].y },
+        { x: 0, y: 0.5 },
+        null,
+        { x: 2.5, y: 0.6 },
+      ];
+      return spots.map((at) => spawnModuleInto(stage, at, view.maxX, view.maxY))
+        .map((r) => (r === null ? 'null' : `${r.x},${r.y},${r.label}`));
+    };
+    expect(run()).toEqual(run());
+  });
+
+  it('no cursor: a free spot near stage center, above the floor, inside the view', () => {
+    const stage = createStage();
+    const spawned = spawnModuleInto(stage, null, view.maxX, view.maxY);
+    expect(spawned).not.toBeNull();
+    expect(Math.abs(spawned!.x)).toBeLessThan(2.6); // near the stage's center span
+    expect(spawned!.y - spawned!.h / 2).toBeGreaterThanOrEqual(0);
+    expect(Math.abs(spawned!.x) + spawned!.w / 2).toBeLessThanOrEqual(view.maxX + 1e-9);
+    // Clear of the authored eight (the ring search earned it).
+    for (const r of stage.slice(0, 8)) {
+      const overlaps =
+        Math.abs(spawned!.x - r.x) < (spawned!.w + r.w) / 2 + 0.001 &&
+        Math.abs(spawned!.y - r.y) < (spawned!.h + r.h) / 2 + 0.001;
+      expect(overlaps).toBe(false);
+    }
+  });
+
+  it('clamped like a drag: garbage-extreme spawn points land inside the view, above the floor', () => {
+    const stage = createStage();
+    const spawned = spawnModuleInto(stage, { x: 999, y: -5 }, view.maxX, view.maxY);
+    expect(spawned).not.toBeNull();
+    expect(spawned!.x).toBeLessThanOrEqual(view.maxX - spawned!.w / 2 + 1e-9);
+    expect(spawned!.y).toBeCloseTo(spawned!.h / 2, 12); // bottom edge on the floor
+  });
+
+  it('the soft cap: exactly 32 modules, the 33rd spawn is an honest no-op', () => {
+    const stage = createStage();
+    let last: ReturnType<typeof spawnModuleInto> = null;
+    for (let i = 0; i < MODULE_CAP - 8; i += 1) {
+      last = spawnModuleInto(stage, { x: 0, y: 0.5 }, view.maxX, view.maxY);
+      expect(last).not.toBeNull();
+    }
+    expect(stage).toHaveLength(MODULE_CAP);
+    expect(last!.label).toBe(moduleLabel(MODULE_CAP));
+    expect(spawnModuleInto(stage, { x: 0, y: 0.5 }, view.maxX, view.maxY)).toBeNull();
+    expect(stage).toHaveLength(MODULE_CAP); // untouched — the no-op changed nothing
+  });
+});
+
+describe('2D-6 stage — the resize law (bounded, opposite-corner anchored)', () => {
+  const view = createView(1440, 838);
+  /** A rect on open bench, with the corner/anchor conveniences. */
+  const bench = (w = 0.66, h = 0.5, x = 0, y = 1.0) =>
+    ({ id: 0, x, y, w, h, zone: '#000000', label: '00', homeX: x, homeY: y });
+
+  it('grows to the pointer, anchored bitwise at the opposite corner', () => {
+    const r = bench();
+    // Grab the BOTTOM-RIGHT corner: anchor = top-left.
+    const anchor = rectCornerInto(r, oppositeCorner(2), { x: 0, y: 0 });
+    expect(anchor.x).toBeCloseTo(r.x - r.w / 2, 12);
+    expect(anchor.y).toBeCloseTo(r.y + r.h / 2, 12);
+    applyRectResize(r, { anchorX: anchor.x, anchorY: anchor.y, signX: 1, signY: -1 },
+      anchor.x + 1.0, anchor.y - 0.9, view.maxX, view.maxY);
+    expect(r.w).toBeCloseTo(1.0, 12);
+    expect(r.h).toBeCloseTo(0.9, 12);
+    // The anchor stays a bitwise corner (the standard resize feel).
+    expect(r.x - r.w / 2).toBe(anchor.x);
+    expect(r.y + r.h / 2).toBe(anchor.y);
+  });
+
+  it('bounds: min 0.35 / max 1.6 per edge, on both axes independently', () => {
+    const r = bench();
+    const anchor = { x: r.x - r.w / 2, y: r.y + r.h / 2 };
+    // Pointer AT the anchor: both axes clamp to the minimum.
+    applyRectResize(r, { anchorX: anchor.x, anchorY: anchor.y, signX: 1, signY: -1 }, anchor.x, anchor.y, view.maxX, view.maxY);
+    expect(r.w).toBe(MODULE_MIN_EDGE);
+    expect(r.h).toBe(MODULE_MIN_EDGE);
+    // A huge drag clamps to the maximum (width; height stays min).
+    applyRectResize(r, { anchorX: anchor.x, anchorY: anchor.y, signX: 1, signY: -1 }, anchor.x + 99, anchor.y - 0.1, view.maxX, view.maxY);
+    expect(r.w).toBe(MODULE_MAX_EDGE);
+    expect(r.h).toBe(MODULE_MIN_EDGE);
+  });
+
+  it('crossing OVER the anchor clamps to the minimum — the corner never inverts', () => {
+    const r = bench();
+    const anchor = { x: r.x - r.w / 2, y: r.y + r.h / 2 };
+    // A slight cross past the anchor: both extents clamp to the minimum…
+    applyRectResize(r, { anchorX: anchor.x, anchorY: anchor.y, signX: 1, signY: -1 },
+      anchor.x - 0.05, anchor.y + 0.05, view.maxX, view.maxY);
+    expect(r.w).toBe(MODULE_MIN_EDGE);
+    expect(r.h).toBe(MODULE_MIN_EDGE);
+    // …still on the SAME side of the anchor (the signs froze at the grab).
+    expect(r.x).toBeCloseTo(anchor.x + MODULE_MIN_EDGE / 2, 12);
+    expect(r.y).toBeCloseTo(anchor.y - MODULE_MIN_EDGE / 2, 12);
+    // Even a FAR crossing keeps the side — the extent grows, never flips.
+    // (The tall result hits the floor law, which lifts the module — pinned
+    // in its own test below; here the horizontal side is the point.)
+    applyRectResize(r, { anchorX: anchor.x, anchorY: anchor.y, signX: 1, signY: -1 },
+      anchor.x - 5, anchor.y + 5, view.maxX, view.maxY);
+    expect(r.w).toBe(MODULE_MAX_EDGE);
+    expect(r.x).toBeCloseTo(anchor.x + MODULE_MAX_EDGE / 2, 12); // right of the anchor still
+    expect(r.y - r.h / 2).toBeGreaterThanOrEqual(-1e-12); // above the floor
+  });
+
+  it('the floor law wins over the anchor: growing down onto the floor lifts the module', () => {
+    const r = bench(0.66, 0.5, 0, 0.4); // bottom edge 0.15 above the floor
+    const anchor = { x: r.x - r.w / 2, y: r.y + r.h / 2 };
+    applyRectResize(r, { anchorX: anchor.x, anchorY: anchor.y, signX: 1, signY: -1 }, anchor.x + 0.5, anchor.y - 1.4, view.maxX, view.maxY);
+    expect(r.h).toBeGreaterThan(0.5); // it grew…
+    expect(r.y - r.h / 2).toBeGreaterThanOrEqual(-1e-12); // …but the bottom never crossed the floor
+  });
+
+  it('deterministic: the same grab + pointer sequence gives bitwise-identical geometry', () => {
+    const run = () => {
+      const r = bench();
+      const anchor = { x: r.x - r.w / 2, y: r.y + r.h / 2 };
+      const grab = { anchorX: anchor.x, anchorY: anchor.y, signX: 1, signY: -1 };
+      const out: number[] = [];
+      for (const [px, py] of [[0.3, 0.6], [1.2, 0.2], [-0.5, 1.4], [0.9, 0.55]] as const) {
+        applyRectResize(r, grab, px, py, view.maxX, view.maxY);
+        out.push(r.x, r.y, r.w, r.h);
+      }
+      return out;
+    };
+    expect(run()).toEqual(run());
+  });
+});
+
+describe('2D-6 stage — the EDGE-RELATIVE seat law (resize transport)', () => {
+  it('edgeFraction ↔ seatPoseFromFraction round-trip on every edge', () => {
+    const r = { id: 0, x: 0.3, y: 1.1, w: 1.2, h: 0.8, zone: '#000000', label: '00', homeX: 0, homeY: 0 };
+    for (const edge of [EDGE_TOP, EDGE_RIGHT, EDGE_BOTTOM, EDGE_LEFT]) {
+      for (const f of [0, 0.13, 0.5, 0.87, 1]) {
+        const pose = seatPoseFromFraction(r, edge, f, {
+          x: 0, y: 0, nx: 0, ny: 0, edge: 0, socketX: 0, socketY: 0,
+        });
+        expect(pose.edge).toBe(edge);
+        expect(edgeFraction(pose.socketX, pose.socketY, r, edge)).toBeCloseTo(f, 12);
+        // The pin sits SEAT_DEPTH inside the socket, along the edge normal.
+        expect(pose.x).toBeCloseTo(pose.socketX - pose.nx * SEAT_DEPTH, 12);
+        expect(pose.y).toBeCloseTo(pose.socketY - pose.ny * SEAT_DEPTH, 12);
+      }
+    }
+  });
+
+  it('THE SHRINK LAW: a near-end seat slides inward with its edge — never off', () => {
+    // Top-edge socket at fraction 0.9 of a 2.0-wide rect.
+    const wide = { id: 0, x: 1.0, y: 1.0, w: 2.0, h: 0.5, zone: '#000000', label: '00', homeX: 0, homeY: 0 };
+    const f = edgeFraction(1.8, 1.25, wide, EDGE_TOP);
+    expect(f).toBeCloseTo(0.9, 12);
+    // The rect's LEFT edge stays (an anchored shrink): w 2.0 → 0.5.
+    const shrunk = { ...wide, w: 0.5, x: 0.5 + 0.0 };
+    const pose = seatPoseFromFraction(shrunk, EDGE_TOP, f, {
+      x: 0, y: 0, nx: 0, ny: 0, edge: 0, socketX: 0, socketY: 0,
+    });
+    expect(pose.socketX).toBeCloseTo(0.25 + 0.45, 12); // left edge + 0.9 × the NEW width
+    expect(pose.socketY).toBeCloseTo(shrunk.y + shrunk.h / 2, 12); // still ON the edge
+    // The fraction survives verbatim.
+    expect(edgeFraction(pose.socketX, pose.socketY, shrunk, EDGE_TOP)).toBeCloseTo(0.9, 12);
+  });
+
+  it('fraction 1 rides the endpoint; garbage fractions clamp into [0, 1]', () => {
+    const r = { id: 0, x: 0, y: 1, w: 1.0, h: 1.0, zone: '#000000', label: '00', homeX: 0, homeY: 0 };
+    const corner = seatPoseFromFraction(r, EDGE_TOP, 1, { x: 0, y: 0, nx: 0, ny: 0, edge: 0, socketX: 0, socketY: 0 });
+    expect(corner.socketX).toBeCloseTo(0.5, 12); // the right endpoint
+    const over = seatPoseFromFraction(r, EDGE_TOP, 1.4, { x: 0, y: 0, nx: 0, ny: 0, edge: 0, socketX: 0, socketY: 0 });
+    expect(over.socketX).toBeCloseTo(0.5, 12); // clamped, total over garbage
+    const under = seatPoseFromFraction(r, EDGE_TOP, -3, { x: 0, y: 0, nx: 0, ny: 0, edge: 0, socketX: 0, socketY: 0 });
+    expect(under.socketX).toBeCloseTo(-0.5, 12);
+  });
+
+  it('translation is fraction-INVARIANT: the stored coordinate survives a drag untouched', () => {
+    const a = { id: 0, x: 0, y: 1, w: 1.0, h: 0.8, zone: '#000000', label: '00', homeX: 0, homeY: 0 };
+    const pose0 = seatPose(0.2, 1.5, a); // a top-edge seat
+    const f0 = edgeFraction(pose0.socketX, pose0.socketY, a, pose0.edge);
+    const b = { ...a, x: a.x + 0.7, y: a.y - 0.3 }; // the same rect, translated
+    const pose1 = seatPoseFromFraction(b, pose0.edge, f0, { x: 0, y: 0, nx: 0, ny: 0, edge: 0, socketX: 0, socketY: 0 });
+    // The recomputed pin rides the exact translation delta.
+    expect(pose1.x).toBeCloseTo(pose0.x + 0.7, 12);
+    expect(pose1.y).toBeCloseTo(pose0.y - 0.3, 12);
+  });
+
+  it('HANDLE_RADIUS: a small disc (~14 px at the drive view), inside the edge region', () => {
+    expect(HANDLE_RADIUS).toBe(0.08);
+    expect(HANDLE_RADIUS).toBeLessThan(0.1); // the seat law's EDGE_REGION_MARGIN
   });
 });

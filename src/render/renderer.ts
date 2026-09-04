@@ -122,6 +122,13 @@ export interface FrameInput {
   pulsePhase?: number | null;
   /** 2D-3: prefers-reduced-motion (the blink holds steady). */
   reducedMotion?: boolean;
+  /**
+   * 2D-6 — the module whose 4 corner handles are shown RIGHT NOW (the
+   * resizing one mid-drag, else the one under the pointer). −1/null/absent
+   * = none. Honest furniture: machined notches, no glow, only while the
+   * module is being worked on.
+   */
+  handlesFor?: number | null;
 }
 
 // --- Palette (DESIGN.md frontmatter; the shipped token values) ----------------
@@ -175,8 +182,8 @@ export const DENY_FADE_SECONDS = 0.35;
 
 const ID_FONT = '700 11px ui-monospace, "SF Mono", Menlo, Consolas, monospace';
 
-/** The pool sizes for the world's own caps: 16 cords × 25 points. */
-const MAX_CORDS = 16;
+/** The pool sizes for the world's own cap: 48 cords × 25 points (2D-7). */
+const MAX_CORDS = 48;
 const MAX_POINTS = 25;
 /** One segment's rest length (world units) — the production rope default. */
 const REST_SEGMENT = 0.1;
@@ -288,6 +295,13 @@ export function createRenderer(
   for (let i = 0; i < MAX_CORDS * MAX_POINTS; i += 1) pool.push({ x: 0, y: 0 });
   const scratch: Vec2 = { x: 0, y: 0 };
   const scratchB: Vec2 = { x: 0, y: 0 };
+  /** 2D-6 — the corner-handle screen points (reused per frame, 4 shells). */
+  const handlePts: Vec2[] = [
+    { x: 0, y: 0 },
+    { x: 0, y: 0 },
+    { x: 0, y: 0 },
+    { x: 0, y: 0 },
+  ];
   /** Cumulative screen arc per point (the pulse road), reused per cord. */
   const arcScratch = new Float64Array(MAX_POINTS);
 
@@ -495,6 +509,31 @@ export function createRenderer(
     c.textBaseline = 'top';
     c.fillText(label, x + 11, y + 8);
     if (letterSpacingOK) scoped.letterSpacing = '0em';
+  };
+
+  /**
+   * 2D-6 — THE CORNER HANDLES: four small machined notches, one centered on
+   * each corner of the module being worked on (hovered or mid-resize). The
+   * module's own furniture grammar — a dark inset square with a fastener rim
+   * and a 1px top bevel, exactly the corner-screw/bolt vocabulary, never a
+   * lit affordance: nothing glows unless the sim says so.
+   */
+  const drawHandles = (c: CanvasRenderingContext2D, corners: ReadonlyArray<Vec2>): void => {
+    const half = 3.5; // a 7px notch — machined furniture, not a handlebar
+    for (const p of corners) {
+      const x = p.x - half;
+      const y = p.y - half;
+      c.fillStyle = FASTENER_INK;
+      c.fillRect(x, y, half * 2, half * 2);
+      c.strokeStyle = FASTENER_RIM;
+      c.lineWidth = 1;
+      c.strokeRect(x + 0.5, y + 0.5, half * 2 - 1, half * 2 - 1);
+      c.strokeStyle = 'rgba(255,255,255,0.08)';
+      c.beginPath();
+      c.moveTo(x + 1.5, y + 1.5);
+      c.lineTo(x + half * 2 - 1.5, y + 1.5);
+      c.stroke();
+    }
   };
 
   // --- the cord: layered strokes through the sim's own points -----------------
@@ -945,6 +984,22 @@ export function createRenderer(
         const r = frame.modules[i];
         v.toScreen(r.x, r.y, scratch);
         drawModule(c, scratch.x, scratch.y, r.w * v.scale, r.h * v.scale, r.zone, r.label);
+      }
+      // 2D-6 — the corner handles of the module being worked on (the
+      // resizing one mid-drag, else the hovered one): drawn ON the module,
+      // under the cords and jacks — furniture, not chrome.
+      const handlesFor = typeof frame.handlesFor === 'number' ? frame.handlesFor : -1;
+      if (handlesFor >= 0) {
+        const r = frame.modules.find((m) => m.id === handlesFor);
+        if (r !== undefined) {
+          const hw = r.w / 2;
+          const hh = r.h / 2;
+          v.toScreen(r.x - hw, r.y + hh, handlePts[0]); // top-left
+          v.toScreen(r.x + hw, r.y + hh, handlePts[1]); // top-right
+          v.toScreen(r.x + hw, r.y - hh, handlePts[2]); // bottom-right
+          v.toScreen(r.x - hw, r.y - hh, handlePts[3]); // bottom-left
+          drawHandles(c, handlePts);
+        }
       }
       // Cords, then jacks on top (a seated jack's tip plugs into the face).
       const cords = frame.state.cords;

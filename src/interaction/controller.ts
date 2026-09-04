@@ -5,8 +5,9 @@
  * fuzz harness pinned (fuzzHarness.ts is the spec — the corpus is green
  * against exactly these laws):
  *
- * PICKING — priority jack > rectangle > cord body (town-hall decision #4).
- * A jack is a generous hit circle at its world position (the sim's own end
+ * PICKING — priority corner handle > jack > rectangle > cord body (2D-6 put
+ * the module's own furniture first; town-hall decision #4 is the rest). A
+ * jack is a generous hit circle at its world position (the sim's own end
  * point, screen-exact through the shared view); a rectangle is point-in-rect
  * (topmost wins); the cord body is a distance-to-polyline read that is
  * NEVER grabbable — hover cursor only. Only jacks are grabbable, and only
@@ -24,16 +25,21 @@
  * pointerdown (main.ts); pointerup/pointercancel are the ONLY release
  * signals. A rectangle translates (clamped above the panel floor by the
  * stage law) and every plug seated on it RIDES the delta through the seat
- * latch (INT-3 transport). A carried jack's pin target follows the cursor
- * EXACTLY (2D — no plane math); the SIM-2 leash and the fixed-timestep
- * driver own every ounce of feel after that. The jack PICK is a capsule
- * over the drawn body (tip → boot, `JACK_PICK_BODY` + `JACK_PICK_RADIUS`)
- * — the visible plastic is the grabbable thing.
+ * latch (INT-3 transport). 2D-6: a corner handle RESIZES through the stage
+ * law (bounded, opposite-corner anchored) and its seated plugs ride the
+ * EDGE-RELATIVE recompute — the stored (edge, fraction) against the live
+ * geometry, the fraction kept verbatim (a seat slides inward on a
+ * shrinking edge, never pops off); an over-stretched linked cord pops by
+ * the sim's own law, unspecial-cased. A carried jack's pin target follows
+ * the cursor EXACTLY (2D — no plane math); the SIM-2 leash and the
+ * fixed-timestep driver own every ounce of feel after that. The jack PICK
+ * is a capsule over the drawn body (tip → boot, `JACK_PICK_BODY` +
+ * `JACK_PICK_RADIUS`) — the visible plastic is the grabbable thing.
  *
  * RELEASE — over a rectangle's edge region: SEAT through the stage law
  * (perpendicular to the nearest edge, insertion depth inside the perimeter,
  * deterministic corner resolution), unless the rectangle is at its soft cap
- * (12) — then the DENY RING (never seats, ordinary release routing, the
+ * (32) — then the DENY RING (never seats, ordinary release routing, the
  * jack stays re-grabbable). Off-rectangle: the approved failure routing via
  * the sim's own seams (`releaseJack` — awaiting-plug/popped → vanishing,
  * carried → the ordinary floor drop with an in-flight converge target).
@@ -64,13 +70,20 @@ import type {
 } from '../sim';
 import {
   EDGE_REGION_MARGIN,
+  HANDLE_RADIUS,
   SEAT_DEPTH,
+  applyRectResize,
   clampRectCenter,
+  edgeFraction,
+  oppositeCorner,
   pointInRect,
   rectAt,
+  rectCornerInto,
+  seatPoseFromFraction,
   seatPoseInto,
+  spawnModuleInto,
 } from '../world/stage';
-import type { SeatPose, StageRect } from '../world/stage';
+import type { RectResizeGrab, SeatPose, StageRect } from '../world/stage';
 import type { View } from '../world/view';
 
 /**
@@ -94,27 +107,41 @@ export const JACK_PICK_RADIUS = 0.19;
 export const JACK_PICK_BODY = 0.42;
 /** Cord-body hover distance (world units) — cursor feedback only. */
 export const CORD_HOVER_RADIUS = 0.06;
-/** v1's soft plug cap per rectangle — a perf guard, not a rule (deny ring). */
-export const PLUG_CAP_PER_RECT = 12;
+/**
+ * The soft plug cap per rectangle — a perf guard, not a rule (deny ring).
+ * 2D-7 raised v1's 12 → 32 (town-hall Revision 3's dense-network ceiling);
+ * the 33rd attempt on one module draws the deny ring.
+ */
+export const PLUG_CAP_PER_RECT = 32;
 /** The floor-rest height a released coil converges to (FLOOR_REST_Y). */
 export const FLOOR_REST_Y = 0.055;
 /** In-flight drop budget: frames of converge targets before the stub freezes. */
 const DROP_FRAMES = 90;
 const DROP_CONVERGE_DIST = 0.03;
 
-export type HoverKind = 'none' | 'jack' | 'rect' | 'cord';
+export type HoverKind = 'none' | 'jack' | 'rect' | 'cord' | 'handle';
 
 /** One seated end — the composition's mirror of the sim's seat. */
 interface SeatRecord {
   readonly cordId: number;
   readonly index: number;
   readonly rectId: number;
+  /**
+   * 2D-6 — THE EDGE-RELATIVE COORDINATE (the load-bearing law): which edge
+   * the socket sits on + the fraction along it. Stored at seat time, NEVER
+   * mutated by transport: a translation is fraction-invariant (both edges of
+   * a rect move together), and a resize recomputes the absolute pin from
+   * these (see transportSeatsOnRect) — the fraction rides the resize, so a
+   * seat near the end of a shrinking edge slides inward, never pops off.
+   */
+  readonly edge: number;
+  readonly fraction: number;
   /** Rect center at seat time (transports ride center deltas from here). */
-  readonly baseCX: number;
-  readonly baseCY: number;
-  /** Pin at seat time. */
-  readonly basePX: number;
-  readonly basePY: number;
+  baseCX: number;
+  baseCY: number;
+  /** Pin at seat time (refreshed by resizes — the drag's absolute law). */
+  basePX: number;
+  basePY: number;
   /** LIVE pin — aliases `seatInput.position`; transports mutate in place. */
   readonly position: Vec2;
   /** Outward edge normal at seat time (the jack's drawn axis). */
@@ -130,8 +157,11 @@ export interface InteractionDeps {
   readonly state: () => SimState;
   /** The live view (resize-safe — read per call). */
   readonly view: () => View;
-  /** The live stage (drag mutates rect centers in place). */
-  readonly stage: readonly StageRect[];
+  /**
+   * The live stage (drag mutates rect centers in place; 2D-6's spawn APPENDS
+   * — the array itself is the world's module roster).
+   */
+  readonly stage: StageRect[];
   /** prefers-reduced-motion (A11Y-1's brush seam — input, never config). */
   readonly reducedMotion: () => boolean;
 }
@@ -165,6 +195,12 @@ export interface InteractionController {
   spawnAt(at: Vec2): number;
   /** A coil spawn without holding it (the opening stage, the perf probe). */
   spawnCoilAt(at: Vec2): number;
+  /**
+   * 2D-6 — B / HUD NEW MODULE: appends an ordinary module (deterministic
+   * placement, palette cycling, silkscreen sequence; soft cap 32 → null).
+   * `at` is the cursor point, or null for a free spot near stage center.
+   */
+  spawnModule(at: Vec2 | null): StageRect | null;
   /** Seats a cord end on a rectangle through the stage law. Cap-checked. */
   seatEndOn(cordId: number, index: number, rectId: number, at: Vec2): boolean;
   /** The release routing for a held end not landing on a rectangle. */
@@ -183,6 +219,17 @@ export interface InteractionController {
   noteSimTime(t: number): void;
   /** Live per-rect seat counts (cap + tests). */
   seatsOnRect(rectId: number): number;
+  /**
+   * 2D-6 — the rect whose 4 corner handles are shown RIGHT NOW: the resizing
+   * one mid-drag, else the one under the pointer (hover furniture). −1/absent
+   * = none. The renderer reads this once per frame.
+   */
+  handlesFor(): number;
+  /**
+   * 2D-6 — every live seat's edge-relative coordinate (drive/probe read:
+   * the resize law's evidence). Allocates; never called per frame.
+   */
+  seatList(): Array<{ cordId: number; index: number; rectId: number; edge: number; fraction: number }>;
 }
 
 export function createInteractionController(deps: InteractionDeps): InteractionController {
@@ -215,9 +262,23 @@ export function createInteractionController(deps: InteractionDeps): InteractionC
   let deny: { x: number; y: number; t: number } | null = null;
   let simTime = 0;
   let rectDrag: { rectId: number; dx: number; dy: number } | null = null;
+  /**
+   * 2D-6 — a live corner-handle resize: the rect, the corner grabbed, and
+   * the frozen grab (anchor + side signs) the stage law resizes against.
+   * Latched like every drag: pointerup/pointercancel end it, pointerleave is
+   * a no-op mid-resize.
+   */
+  let resizeDrag: {
+    rectId: number;
+    corner: number;
+    grab: RectResizeGrab;
+  } | null = null;
+  /** The corner under the pointer (hover reads: the resize cursor). */
+  let hoverCorner = -1;
   let pointerWorld: Vec2 | null = null;
   let hover: HoverKind = 'none';
   const pointerWorldScratch: Vec2 = { x: 0, y: 0 };
+  const cornerScratch: Vec2 = { x: 0, y: 0 };
   const input: SimInput = { pointerPoint: null };
 
   const seatKey = (cordId: number, index: number): string => `${cordId}:${index}`;
@@ -344,9 +405,64 @@ export function createInteractionController(deps: InteractionDeps): InteractionC
     return best;
   };
 
+  /**
+   * 2D-6 — THE CORNER-HANDLE PICK: the topmost rect with a corner within
+   * HANDLE_RADIUS of the point (reverse scan, first hit wins — the rectAt
+   * discipline). Checked BEFORE the jack in every pick order: the priority
+   * law is HANDLE > JACK > RECT BODY > CORD.
+   */
+  const pickHandle = (wx: number, wy: number): { rectId: number; corner: number } | null => {
+    if (!Number.isFinite(wx) || !Number.isFinite(wy)) return null;
+    const r2limit = HANDLE_RADIUS * HANDLE_RADIUS;
+    for (let i = stage.length - 1; i >= 0; i -= 1) {
+      const rect = stage[i];
+      for (let corner = 0; corner < 4; corner += 1) {
+        rectCornerInto(rect, corner, cornerScratch);
+        const dx = wx - cornerScratch.x;
+        const dy = wy - cornerScratch.y;
+        if (dx * dx + dy * dy <= r2limit) return { rectId: rect.id, corner };
+      }
+    }
+    return null;
+  };
+
+  /**
+   * 2D-6 — THE RESIZE TRANSPORT: every seat on `rectId` recomputes its
+   * absolute pin from the stored EDGE-RELATIVE coordinate and the rect's
+   * CURRENT geometry (seatPoseFromFraction — the fraction kept verbatim, the
+   * socket slides with the edge). The drag bases refresh so a subsequent
+   * translate continues from the recomputed pose (the two transport laws
+   * compose: translation is fraction-invariant). The seat latch aliases
+   * `position`, so the next composeInput re-sends the new transform and the
+   * sim's pins hard-follow bitwise — the same INT-3 discipline a drag uses.
+   */
+  const transportSeatsOnRect = (rectId: number): void => {
+    const rect = stage[rectId];
+    if (rect === undefined) return;
+    for (const record of seatRecords.values()) {
+      if (record.rectId !== rectId) continue;
+      seatPoseFromFraction(rect, record.edge, record.fraction, poseScratch);
+      record.position.x = poseScratch.x;
+      record.position.y = poseScratch.y;
+      record.nx = poseScratch.nx;
+      record.ny = poseScratch.ny;
+      record.baseCX = rect.x;
+      record.baseCY = rect.y;
+      record.basePX = poseScratch.x;
+      record.basePY = poseScratch.y;
+    }
+  };
+
   const refreshHover = (): void => {
     hover = 'none';
+    hoverCorner = -1;
     if (pointerWorld === null) return;
+    const handle = pickHandle(pointerWorld.x, pointerWorld.y);
+    if (handle !== null) {
+      hover = 'handle';
+      hoverCorner = handle.corner;
+      return;
+    }
     if (pickJack(pointerWorld.x, pointerWorld.y) !== null) {
       hover = 'jack';
       return;
@@ -372,6 +488,11 @@ export function createInteractionController(deps: InteractionDeps): InteractionC
       cordId,
       index,
       rectId,
+      edge: poseScratch.edge,
+      // THE STORED RELATIVE COORDINATE — from the resolved SOCKET (already
+      // clamped onto the edge by the seat law), so the fraction rides every
+      // later transform of this rect.
+      fraction: edgeFraction(poseScratch.socketX, poseScratch.socketY, rect, poseScratch.edge),
       baseCX: rect.x,
       baseCY: rect.y,
       basePX: position.x,
@@ -444,6 +565,30 @@ export function createInteractionController(deps: InteractionDeps): InteractionC
       pointerWorld = pointerWorldScratch;
       const wx = pointerWorld.x;
       const wy = pointerWorld.y;
+      // PRIORITY 0 — a corner handle (2D-6): the resize grip wins over the
+      // jack, the body, and the cord (the panel's own furniture).
+      const handle = pickHandle(wx, wy);
+      if (handle !== null) {
+        if (held !== null) return; // one pointer, one drag
+        const rect = stage[handle.rectId];
+        if (rect !== undefined) {
+          rectCornerInto(rect, oppositeCorner(handle.corner), cornerScratch);
+          resizeDrag = {
+            rectId: handle.rectId,
+            corner: handle.corner,
+            grab: {
+              anchorX: cornerScratch.x,
+              anchorY: cornerScratch.y,
+              // The grabbed corner's side of the anchor, FROZEN at the grab:
+              // the rect stays on this side for the whole drag (crossing the
+              // anchor clamps to the min edge, never inverts).
+              signX: handle.corner === 0 || handle.corner === 3 ? -1 : 1,
+              signY: handle.corner === 0 || handle.corner === 1 ? 1 : -1,
+            },
+          };
+        }
+        return;
+      }
       // PRIORITY 1 — a jack (the only grabbable thing on the stage).
       const jack = pickJack(wx, wy);
       if (jack !== null) {
@@ -503,6 +648,18 @@ export function createInteractionController(deps: InteractionDeps): InteractionC
           }
         }
       }
+      // 2D-6 — a live corner-handle RESIZE: the stage law's bounded,
+      // opposite-corner-anchored rewrite, then every seated plug on the rect
+      // rides it through the EDGE-RELATIVE recompute (the fraction kept, the
+      // socket sliding with its edge; over-stretched cords pop by the sim's
+      // own law — nothing here special-cases it).
+      if (resizeDrag !== null) {
+        const rect = stage[resizeDrag.rectId];
+        if (rect !== undefined) {
+          applyRectResize(rect, resizeDrag.grab, pointerWorldScratch.x, pointerWorldScratch.y, view.maxX, view.maxY);
+          transportSeatsOnRect(resizeDrag.rectId);
+        }
+      }
       refreshHover();
     },
 
@@ -511,6 +668,7 @@ export function createInteractionController(deps: InteractionDeps): InteractionC
       view.toWorld(px, py, pointerWorldScratch);
       pointerWorld = pointerWorldScratch;
       rectDrag = null;
+      resizeDrag = null;
       routeReleaseAt(pointerWorldScratch.x, pointerWorldScratch.y);
     },
 
@@ -535,6 +693,7 @@ export function createInteractionController(deps: InteractionDeps): InteractionC
       // else: the last valid pointer world position stands (garbage
       // coordinates must not invent a release position).
       rectDrag = null;
+      resizeDrag = null;
       if (pointerWorld === null) {
         held = null; // nothing was ever known about the pointer: drop the bookkeeping
         return;
@@ -551,7 +710,7 @@ export function createInteractionController(deps: InteractionDeps): InteractionC
      * for the carry (the last valid target stands until the button speaks).
      */
     pointerLeave() {
-      if (held === null && rectDrag === null) {
+      if (held === null && rectDrag === null && resizeDrag === null) {
         pointerWorld = null;
         brush = null;
       }
@@ -559,7 +718,14 @@ export function createInteractionController(deps: InteractionDeps): InteractionC
     },
 
     hoverCursor() {
-      if (held !== null || rectDrag !== null) return 'grabbing';
+      if (held !== null) return 'grabbing';
+      if (resizeDrag !== null) return resizeDrag.corner === 0 || resizeDrag.corner === 2
+        ? 'nwse-resize'
+        : 'nesw-resize';
+      if (rectDrag !== null) return 'grabbing';
+      if (hover === 'handle') {
+        return hoverCorner === 0 || hoverCorner === 2 ? 'nwse-resize' : 'nesw-resize';
+      }
       if (hover === 'jack') return 'grab';
       if (hover === 'rect') return 'move';
       if (hover === 'cord') return 'crosshair';
@@ -654,6 +820,11 @@ export function createInteractionController(deps: InteractionDeps): InteractionC
       return cordId;
     },
 
+    spawnModule(at) {
+      const view = deps.view();
+      return spawnModuleInto(stage, at, view.maxX, view.maxY);
+    },
+
     seatEndOn(cordId, index, rectId, at) {
       const rect = stage[rectId];
       if (rect === undefined) return false;
@@ -735,6 +906,29 @@ export function createInteractionController(deps: InteractionDeps): InteractionC
       let count = 0;
       for (const record of seatRecords.values()) if (record.rectId === rectId) count += 1;
       return count;
+    },
+
+    handlesFor() {
+      if (resizeDrag !== null) return resizeDrag.rectId;
+      if (pointerWorld === null) return -1;
+      // The hover generosity a release gets (EDGE_REGION_MARGIN): hovering
+      // the module — or its immediate halo — shows the furniture; an exact
+      // corner press round-trips to an epsilon outside the rect otherwise.
+      return rectAt(pointerWorld.x, pointerWorld.y, stage, EDGE_REGION_MARGIN);
+    },
+
+    seatList() {
+      const out: Array<{ cordId: number; index: number; rectId: number; edge: number; fraction: number }> = [];
+      for (const record of seatRecords.values()) {
+        out.push({
+          cordId: record.cordId,
+          index: record.index,
+          rectId: record.rectId,
+          edge: record.edge,
+          fraction: record.fraction,
+        });
+      }
+      return out;
     },
   };
   return controller;

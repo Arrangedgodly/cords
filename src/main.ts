@@ -30,10 +30,12 @@
  * module away from a completed link). No invisible anchors exist anywhere.
  *
  * Seams for drives and review (window.cords): lifecycle(), ends() (screen
- * px), rects() (screen px), probe() (frame timing), pulse() (the chase
- * clock + the renderer's own gate read), statePaint() (the state furniture's
- * live numbers), motion() (the brush probe), gate() (the frame-gate
- * counters), spawn()/reset() mirror the HUD buttons exactly.
+ * px), rects() (screen px + silkscreen label), probe() (frame timing),
+ * pulse() (the chase clock + the renderer's own gate read), statePaint()
+ * (the state furniture's live numbers), motion() (the brush probe), gate()
+ * (the frame-gate counters), seats() (2D-6's edge-relative seat evidence),
+ * handlesFor() (2D-6's live handle furniture), spawn()/reset() and
+ * spawnModule() (2D-6) mirror the HUD buttons exactly.
  */
 import {
   DEFAULT_GRACE_SECONDS,
@@ -70,7 +72,8 @@ const SIM_TIMESTEP = 1 / 120;
 const MAX_SUBSTEPS_PER_FRAME = 5;
 const CORD_SEGMENTS = 24;
 const FLOOR_Y = 0;
-const MAX_CORDS = 16;
+/** 2D-7 — the raised cord ceiling (v1's 16 was a 3D render-pool leftover). */
+const MAX_CORDS = 48;
 const BRUSH = { radiusRestLengths: 1.5, strength: 1.0 } as const;
 const RED = 0;
 const BLUE = CORD_SEGMENTS;
@@ -90,9 +93,9 @@ canvas.style.display = 'block';
 canvas.setAttribute('role', 'img');
 canvas.setAttribute(
   'aria-label',
-  'Cords — a 2D cable patch panel. Eight steel modules on a dark machined ' +
+  'Cords — a 2D cable patch panel. Steel modules on a dark machined ' +
     'panel; grab a cord jack to plug it into any module edge. Press N for a ' +
-    'new cord, R to reset.',
+    'new cord, B for a new module, R to reset.',
 );
 app.appendChild(canvas);
 
@@ -225,10 +228,10 @@ session = createSession(true);
 // --- the HUD (v1's DOM faceplate, rewired to this world) ----------------------
 const hud = createHudPanel(mainLandmark, document, {
   onNewCord: () => spawnNewCord(),
+  onNewModule: () => spawnNewModule(),
   onReset: () => resetScene(),
 });
 const hudCounts: HudCounts = { cords: 0, awaitingPlug: 0, linked: 0, popped: 0, vanishing: 0 };
-
 /** N / HUD NEW CORD — a coil springs into hand at the cursor. */
 function spawnNewCord(): void {
   const pointer = lastPointerWorld();
@@ -236,12 +239,22 @@ function spawnNewCord(): void {
   session.controller.spawnAt({ x: at.x, y: at.y });
 }
 
-/** R / HUD RESET — a fresh empty bench (the hint returns; modules go home). */
+/**
+ * 2D-6 — B / HUD NEW MODULE: an ordinary module at the cursor (deterministic
+ * placement with honest overlap avoidance), or a free spot near stage center
+ * when the pointer is unknown. At the soft cap (32) the spawn is a no-op —
+ * the cord-cap discipline.
+ */
+function spawnNewModule(): void {
+  session.controller.spawnModule(lastPointerWorld());
+}
+
+/**
+ * R / HUD RESET — the reset-cords-only law: a fresh empty bench, MODULES
+ * STAND AS LEFT (positions AND sizes persist; spawned modules survive —
+ * the arrangement is the user's bench, not the cords').
+ */
 function resetScene(): void {
-  for (const r of stage) {
-    r.x = r.homeX;
-    r.y = r.homeY;
-  }
   renderer.clearFragments();
   session = createSession(false);
 }
@@ -355,9 +368,10 @@ window.addEventListener('keydown', (e) => {
   const key = e.key.toLowerCase();
   if (key === 'n') spawnNewCord();
   else if (key === 'r') resetScene();
+  else if (key === 'b') spawnNewModule();
 });
 
-// --- perf probe (?probe=1): frame-time log at 12 live cords --------------------
+// --- perf probe (?probe=1): frame-time log at the 2D-7 ceilings -----------------
 const probeOn = new URLSearchParams(window.location.search).has('probe');
 const probe = {
   frames: 0,
@@ -371,22 +385,31 @@ const probeLog = (): void => {
   const sorted = [...probe.samples].sort((a, b) => a - b);
   const p95 = sorted[Math.floor(sorted.length * 0.95)] ?? avg;
   console.log(
-    `[cords probe] ${probe.frames} frames · avg ${avg.toFixed(3)} ms · p95 ${p95.toFixed(3)} ms · max ${probe.maxMs.toFixed(3)} ms · cords ${session.state.cords.length} (cap 16) — 16.7 ms budget`,
+    `[cords probe] ${probe.frames} frames · avg ${avg.toFixed(3)} ms · p95 ${p95.toFixed(3)} ms · max ${probe.maxMs.toFixed(3)} ms · cords ${session.state.cords.length}/48 · modules ${stage.length} — 16.7 ms budget`,
   );
 };
 if (probeOn) {
-  // Twelve live cords through the production seams: six linked pairs strung
-  // across neighboring modules + six resting coils, staged the way the
-  // composition actually composes — one explicit step between intents (a
-  // spawn's one-shot slot must FLOW before the next spawn overwrites it,
-  // exactly as frames interleave in the harness).
+  // 2D-7 — THE CEILING STAGE: 16 modules + 48 live cords (12 linked cords —
+  // the chase pulse's twelve amber segments — plus 35 awaiting-plug singles,
+  // the opening cord among them), staged through the production seams the
+  // way the composition actually composes — one explicit step between one
+  // -shot intents (a spawn's slot must FLOW before the next spawn
+  // overwrites it, exactly as frames interleave in the harness). Seated
+  // cords never idle, so the stage stands for the whole probe run.
   const stepOnce = (): void => {
     const input = session.controller.composeInput();
     session.state = session.driver.advance(session.state, 1 / 60, input).state;
     session.controller.noteSimTime(session.state.time);
   };
+  // Eight spawned modules on a lower row (ids 8..15): a 16-module bench.
+  for (const x of [-2.8, -1.9, -1.0, -0.1, 0.8, 1.7, 2.6, 3.4]) {
+    session.controller.spawnModule({ x, y: 0.55 });
+    stepOnce();
+  }
+  // Twelve linked pairs: authored neighbors above, spawned neighbors below.
   const pairs: ReadonlyArray<readonly [number, number]> = [
-    [0, 1], [1, 2], [2, 3], [3, 4], [4, 5], [5, 6],
+    [0, 1], [1, 2], [2, 3], [3, 4], [4, 5], [5, 6], [6, 7],
+    [8, 9], [9, 10], [10, 11], [12, 13], [14, 15],
   ];
   for (const [a, b] of pairs) {
     const ra = stage[a];
@@ -398,10 +421,15 @@ if (probeOn) {
     session.controller.seatEndOn(id, BLUE, b, { x: rb.x, y: rb.y + rb.h / 2 });
     stepOnce();
   }
-  for (let i = 0; i < 6; i += 1) {
-    const r = stage[i];
+  // 35 awaiting-plug singles (the opening cord is the 48th live cord), one
+  // seated end each, spread along every module's top edge.
+  for (let i = 0; i < 35; i += 1) {
+    const r = stage[i % stage.length];
     if (r === undefined) break;
-    session.controller.spawnCoilAt({ x: r.x - 0.5, y: 0.6 });
+    const x = r.x + (((i % 4) - 1.5) / 4) * r.w;
+    const id = session.controller.spawnCoilAt({ x, y: r.y + r.h / 2 + 0.03 });
+    stepOnce();
+    session.controller.seatEndOn(id, RED, r.id, { x, y: r.y + r.h / 2 });
     stepOnce();
   }
 }
@@ -416,6 +444,7 @@ const frameInput: FrameInput = {
   paint: paints,
   pulsePhase: null,
   reducedMotion: false,
+  handlesFor: -1,
 };
 
 let prevNow = 0;
@@ -444,10 +473,12 @@ const tick = (now: number): void => {
   frameInput.simTime = session.state.time;
   frameInput.pulsePhase = pulsePhase(session.state.time, { reduced });
   frameInput.reducedMotion = reduced;
+  frameInput.handlesFor = session.controller.handlesFor();
   renderer.draw(frameInput);
 
   // HUD: honest counts + the deaths' one spoken lines (consumed here).
   readHudCountsInto(session.state.cords, session.world.lifecycle.stateOf, hudCounts);
+  hudCounts.modules = stage.length; // 2D-7 — the roster is world state; B moves it
   let notice: string | null = null;
   if (session.shattered > 0 || session.putAway > 0) {
     const parts: string[] = [];
@@ -505,11 +536,32 @@ declare global {
        */
       points(): Array<{ cordId: number; pts: Array<{ x: number; y: number }> }>;
       /** The modules' screen quads (drive targeting). */
-      rects(): Array<{ id: number; x: number; y: number; w: number; h: number }>;
+      rects(): Array<{ id: number; x: number; y: number; w: number; h: number; label: string }>;
       /** The live view's numbers (scale, floor line — for drive math). */
       view(): { scale: number; floorScreenY: number; width: number; height: number };
       /** N / HUD NEW CORD (the same seam the keyboard uses). */
       spawn(): void;
+      /**
+       * 2D-6 — B / HUD NEW MODULE (the same seam the keyboard uses; an
+       * honest no-op at the 32-module soft cap).
+       */
+      spawnModule(): void;
+      /**
+       * 2D-6 — every live seat's edge-relative coordinate + world pin (the
+       * resize law's evidence: the fraction is preserved through resizes,
+       * the pin sits at the recomputed edge point).
+       */
+      seats(): Array<{
+        cordId: number;
+        index: number;
+        rectId: number;
+        edge: number;
+        fraction: number;
+        x: number;
+        y: number;
+      }>;
+      /** 2D-6 — the module whose corner handles are shown right now (−1 = none). */
+      handlesFor(): number;
       /** R / HUD RESET. */
       reset(): void;
       /** The held end (drive-side verification of a grab), or null. */
@@ -615,10 +667,33 @@ window.cords = {
         y: endsScratch.y - (r.h * view.scale) / 2,
         w: r.w * view.scale,
         h: r.h * view.scale,
+        label: r.label,
       };
     }),
   view: () => ({ scale: view.scale, floorScreenY: view.floorScreenY, width: view.width, height: view.height }),
   spawn: () => spawnNewCord(),
+  spawnModule: () => spawnNewModule(),
+  seats: () => {
+    const out: Array<{
+      cordId: number;
+      index: number;
+      rectId: number;
+      edge: number;
+      fraction: number;
+      x: number;
+      y: number;
+    }> = [];
+    for (const seat of session.controller.seatList()) {
+      const pose = session.controller.seatPoseOf(seat.cordId, seat.index);
+      out.push({
+        ...seat,
+        x: pose?.x ?? 0,
+        y: pose?.y ?? 0,
+      });
+    }
+    return out;
+  },
+  handlesFor: () => session.controller.handlesFor(),
   reset: () => resetScene(),
   held: () => session.controller.heldEnd(),
   probe: () =>
