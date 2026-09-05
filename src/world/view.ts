@@ -5,9 +5,20 @@
  * fixed margin above the HUD faceplate, scale fitted to the wider axis of
  * the stage (the v1 letterbox resize discipline, translated).
  *
+ * 2D-8 — the SAME contain law is the mobile fit: `scale = min(width / 9.2,
+ * floorScreenY / 4.4)` keeps the whole authored stage visible on ANY aspect
+ * (a 390-px portrait letterboxes vertically into the fog's void; an 844-px
+ * phone-landscape letterboxes horizontally into the bench's side bands —
+ * the panel grammar owns both margins, no module ever crops, the bench
+ * floor stays the floor). The floor margin is now a PARAMETER: the desktop
+ * default (72 px) reserves the one-row faceplate strip, and the composition
+ * passes the live HUD height when the faceplate wraps taller on narrow
+ * screens — the floor line always sits above the buttons.
+ *
  * The view is resize-safe by reconstruction: `createView` is cheap and pure;
- * the composition rebuilds it on resize and everything downstream
- * (background cache, picking, drawing) reads the same numbers.
+ * the composition rebuilds it on resize (and orientation change) and
+ * everything downstream (background cache, picking, drawing) reads the same
+ * numbers.
  */
 import type { Vec2 } from '../sim';
 
@@ -36,10 +47,16 @@ export interface View {
   toWorld(px: number, py: number, out: Vec2): Vec2;
 }
 
-export function createView(width: number, height: number): View {
+export function createView(
+  width: number,
+  height: number,
+  floorMarginPx: number = FLOOR_MARGIN_PX,
+): View {
   const w = Number.isFinite(width) && width > 0 ? width : 1;
   const h = Number.isFinite(height) && height > 0 ? height : 1;
-  const floorScreenY = h - FLOOR_MARGIN_PX;
+  const margin =
+    Number.isFinite(floorMarginPx) && floorMarginPx >= 0 ? floorMarginPx : FLOOR_MARGIN_PX;
+  const floorScreenY = Math.max(1, h - margin);
   const scale = Math.min(w / VIEW_WORLD_WIDTH, floorScreenY / VIEW_WORLD_HEIGHT);
   return {
     width: w,

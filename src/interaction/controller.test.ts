@@ -17,9 +17,19 @@ import {
 } from '../sim';
 import type { CordWorldStep, FixedTimestepDriver, SimInput, SimState } from '../sim';
 import { createStage, seatPose } from '../world/stage';
+import { HANDLE_RADIUS } from '../world/stage';
 import { createView } from '../world/view';
 import type { View } from '../world/view';
-import { JACK_PICK_BODY, JACK_PICK_RADIUS, createInteractionController } from './controller';
+import {
+  COARSE_HANDLE_PICK_MAX,
+  COARSE_JACK_PICK_MAX,
+  JACK_PICK_BODY,
+  JACK_PICK_RADIUS,
+  TOUCH_TARGET_PX,
+  coarseHandlePickRadius,
+  coarseJackPickRadius,
+  createInteractionController,
+} from './controller';
 import type { InteractionController } from './controller';
 
 const DT = 1 / 120;
@@ -44,9 +54,22 @@ interface App {
   end(cordId: number, index: number): { x: number; y: number };
 }
 
-function makeApp(options: { opening?: boolean; reduced?: boolean } = {}): App {
+function makeApp(
+  options: {
+    opening?: boolean;
+    reduced?: boolean;
+    /** 2D-8 — a phone-shaped view (contain fit + the wrapped-strip margin). */
+    viewport?: { width: number; height: number; margin?: number };
+    /** 2D-8 — emulated touch (the coarse-pointer laws). */
+    coarse?: boolean;
+  } = {},
+): App {
   const stage = createStage();
-  const view = createView(1440, 838);
+  const view = createView(
+    options.viewport?.width ?? 1440,
+    options.viewport?.height ?? 838,
+    options.viewport?.margin,
+  );
   let world: CordWorldStep;
   let controller: InteractionController;
   let state: SimState = { time: 0, cords: [] };
@@ -73,6 +96,7 @@ function makeApp(options: { opening?: boolean; reduced?: boolean } = {}): App {
     view: () => view,
     stage,
     reducedMotion: () => options.reduced ?? false,
+    coarsePointer: () => options.coarse ?? false,
   });
   const frameOne = (): SimState => {
     const input: SimInput = controller.composeInput();
@@ -1056,5 +1080,246 @@ describe('2D-6 interaction — resize through the real pointer path', () => {
       };
     };
     expect(run()).toEqual(run());
+  });
+});
+
+describe('2D-8 touch — the coarse-pointer radius laws (44-px-class targets)', () => {
+  it('coarseJackPickRadius: 22 px at the live scale, clamped [0.19, 0.55], garbage-proof', () => {
+    // A laptop-class scale (100 px/u): the raw 22-px radius lands mid-band.
+    expect(coarseJackPickRadius(100)).toBeCloseTo(22 / 100, 12);
+    // A Pixel-class landscape (≈63.4 px/u at 844×390 + the wrapped strip):
+    // still mid-band.
+    expect(coarseJackPickRadius(63.4)).toBeCloseTo(22 / 63.4, 12);
+    // An iPhone-class portrait (≈42.4 px/u): ≈0.52 world — a near-module-width
+    // halo, the honest price of a finger on a 390-px stage.
+    expect(coarseJackPickRadius(42.4)).toBeCloseTo(22 / 42.4, 12);
+    // A 320-px-class viewport (≈34.8 px/u): the CAP binds — past 0.55 world
+    // the halo would swallow neighboring furniture wholesale.
+    expect(coarseJackPickRadius(34.8)).toBe(COARSE_JACK_PICK_MAX);
+    // A tablet/monitor scale (≥ ~116 px/u): the desktop halo (0.19) is
+    // ALREADY a ≥22-px target — the fine floor binds, honestly.
+    expect(coarseJackPickRadius(128)).toBe(JACK_PICK_RADIUS);
+    expect(coarseJackPickRadius(300)).toBe(JACK_PICK_RADIUS);
+    // Degenerate scales fall back to the fine halo (total law).
+    expect(coarseJackPickRadius(0)).toBe(JACK_PICK_RADIUS);
+    expect(coarseJackPickRadius(Number.NaN)).toBe(JACK_PICK_RADIUS);
+    // Monotone in scale (bigger px/u ⇒ smaller world halo), clamped both ends.
+    let prev = coarseJackPickRadius(30);
+    for (const s of [40, 60, 90, 130, 200, 400]) {
+      const next = coarseJackPickRadius(s);
+      expect(next).toBeLessThanOrEqual(prev + 1e-12);
+      prev = next;
+    }
+    expect(TOUCH_TARGET_PX).toBe(44);
+  });
+
+  it('coarseHandlePickRadius: 22 px clamped [0.08, 0.17] — the four discs never merge', () => {
+    expect(coarseHandlePickRadius(300)).toBe(HANDLE_RADIUS); // fine floor
+    expect(coarseHandlePickRadius(1000)).toBe(HANDLE_RADIUS); // huge canvases: floor
+    expect(coarseHandlePickRadius(200)).toBeCloseTo(22 / 200, 12); // mid-band
+    expect(coarseHandlePickRadius(128)).toBe(COARSE_HANDLE_PICK_MAX); // cap binds at tablet scale
+    expect(coarseHandlePickRadius(60)).toBe(COARSE_HANDLE_PICK_MAX);
+    expect(coarseHandlePickRadius(42.4)).toBe(COARSE_HANDLE_PICK_MAX);
+    expect(coarseHandlePickRadius(Number.POSITIVE_INFINITY)).toBe(HANDLE_RADIUS);
+    // The cap is the no-merge guarantee on a smallest 0.35-edge module:
+    // adjacent corner discs (centers 0.35 apart) stay disjoint.
+    expect(2 * COARSE_HANDLE_PICK_MAX).toBeLessThanOrEqual(0.35);
+  });
+
+  it('through the real world: a phone-portrait press 20 px off the jack GRABS on coarse, misses on fine', () => {
+    // Phone portrait contain fit: scale ≈ 42.4 px/u (the 390-px width binds).
+    const make = (coarse: boolean) =>
+      makeApp({ viewport: { width: 390, height: 844, margin: 136 }, coarse });
+    const stageCoil = (app: ReturnType<typeof make>): { x: number; y: number } => {
+      app.controller.spawnCoilAt({ x: 0, y: 1.5 });
+      app.frame(120); // the coil relaxes onto the floor
+      return app.end(1, RED);
+    };
+    // A press 20 px perpendicular to the tip: 20 px ≈ 0.472 u of halo —
+    // inside the coarse capsule halo (0.55), outside the fine one (0.19).
+    const appC = make(true);
+    const tip = stageCoil(appC);
+    const perp = appC.sx(tip.x, tip.y + 20 / appC.view.scale); // 20 px above the tip
+    appC.controller.pointerDown(perp.x, perp.y);
+    expect(appC.controller.heldEnd()).toEqual({ cordId: 1, index: RED });
+    const appF = make(false);
+    const tipF = stageCoil(appF);
+    const perpF = appF.sx(tipF.x, tipF.y + 20 / appF.view.scale);
+    appF.controller.pointerDown(perpF.x, perpF.y);
+    expect(appF.controller.heldEnd()).toBeNull(); // the fine halo honestly misses
+    // The coarse halo has honest bounds too: 60 px off (≈1.41 u) grabs nothing.
+    appC.controller.pointerUp(perp.x, perp.y); // end the held carry cleanly
+    appC.frame(30);
+    const tip2 = appC.end(1, RED);
+    const farPress = appC.sx(tip2.x + 60 / appC.view.scale, tip2.y);
+    appC.controller.pointerDown(farPress.x, farPress.y);
+    expect(appC.controller.heldEnd()).toBeNull();
+  });
+
+  it('coarse grab carries and seats through the full touch path (down→move→up)', () => {
+    const app = makeApp({ viewport: { width: 390, height: 844, margin: 136 }, coarse: true });
+    app.controller.spawnAt({ x: 0, y: 1.5 });
+    app.frame(4);
+    const tip = app.end(1, RED);
+    // Press 18 px BELOW the tip (along the drape — the fat-finger offset).
+    const grab = app.sx(tip.x, tip.y - 18 / app.view.scale);
+    app.controller.pointerDown(grab.x, grab.y);
+    expect(app.controller.heldEnd()).toEqual({ cordId: 1, index: RED });
+    const m = app.stage[4];
+    const seatAt = app.sx(m.x, m.y + m.h / 2 + 0.02); // just above the top edge
+    drag(app, grab, seatAt, 10);
+    app.controller.pointerUp(seatAt.x, seatAt.y);
+    app.frame(4);
+    expect(app.world.lifecycle.stateOf(1)).toBe('awaiting-plug');
+    expect(app.world.lifecycle.endMode(1, RED)).toBe('seated');
+  });
+});
+
+describe('2D-8 touch — the hover-free handle law (last-touched module)', () => {
+  it('coarse: tapping a module shows ITS handles; tapping the floor dismisses; another module switches', () => {
+    const app = makeApp({ viewport: { width: 844, height: 390, margin: 111 }, coarse: true });
+    expect(app.controller.handlesFor()).toBe(-1); // nothing touched yet
+    const a = app.stage[2];
+    const pA = app.sx(a.x, a.y);
+    app.controller.pointerDown(pA.x, pA.y);
+    expect(app.controller.handlesFor()).toBe(a.id); // the tap made the furniture
+    app.controller.pointerUp(pA.x, pA.y);
+    expect(app.controller.handlesFor()).toBe(a.id); // and it STAYS (no hover to lose)
+    // A press on open floor dismisses.
+    const floor = app.sx(0, 0.15);
+    app.controller.pointerDown(floor.x, floor.y);
+    expect(app.controller.handlesFor()).toBe(-1);
+    app.controller.pointerUp(floor.x, floor.y);
+    // A press on ANOTHER module switches the furniture to it.
+    const b = app.stage[6];
+    const pB = app.sx(b.x, b.y);
+    app.controller.pointerDown(pB.x, pB.y);
+    expect(app.controller.handlesFor()).toBe(b.id);
+    app.controller.pointerUp(pB.x, pB.y);
+    // A hover-only move (touch never hovers, but the law must not chase it):
+    // moving the pointer read WITHOUT a press never changes the furniture.
+    const hoverPoint = app.sx(app.stage[3].x, app.stage[3].y);
+    app.controller.pointerMove(hoverPoint.x, hoverPoint.y);
+    expect(app.controller.handlesFor()).toBe(b.id);
+    // Grabbing a jack seated on a module is touching that module: the press
+    // lands in the module's edge band, so the furniture follows.
+    const m = app.stage[4];
+    app.controller.spawnCoilAt({ x: m.x, y: m.y + 1 });
+    app.frame(2);
+    app.controller.seatEndOn(1, RED, m.id, { x: m.x, y: m.y + m.h / 2 });
+    app.frame(2);
+    const plug = app.controller.seatPoseOf(1, RED)!;
+    const press = app.sx(plug.x + plug.nx * 0.02, plug.y + plug.ny * 0.02);
+    app.controller.pointerDown(press.x, press.y);
+    expect(app.controller.heldEnd()).toEqual({ cordId: 1, index: RED });
+    expect(app.controller.handlesFor()).toBe(m.id);
+    app.controller.pointerUp(press.x, press.y);
+  });
+
+  it('fine pointers keep the hover law byte-identically (no last-touched leakage)', () => {
+    const app = makeApp(); // fine, 1440×838 — the pre-2D-8 world
+    const a = app.stage[2];
+    const pA = app.sx(a.x, a.y);
+    app.controller.pointerDown(pA.x, pA.y);
+    app.controller.pointerUp(pA.x, pA.y);
+    // After the press, the pointer sits over module 02 — hover still drives.
+    expect(app.controller.handlesFor()).toBe(a.id);
+    // Moving onto another module switches (hover); moving to the floor clears.
+    const b = app.stage[6];
+    const pB = app.sx(b.x, b.y);
+    app.controller.pointerMove(pB.x, pB.y);
+    expect(app.controller.handlesFor()).toBe(b.id);
+    const floor = app.sx(0, 0.15);
+    app.controller.pointerMove(floor.x, floor.y);
+    expect(app.controller.handlesFor()).toBe(-1);
+  });
+
+  it('coarse: the handle disc is finger-grabbable — an off-corner press resizes', () => {
+    const app = makeApp({ viewport: { width: 844, height: 390, margin: 111 }, coarse: true });
+    // Landscape contain fit at 844×390 + a 111-px strip: scale ≈ 63.4 px/u,
+    // so the coarse handle disc is its 0.17 cap (≈10.8 px of halo).
+    const scale = app.view.scale;
+    expect(scale).toBeCloseTo((390 - 111) / 4.4, 9);
+    const m = app.stage[3];
+    const w0 = m.w;
+    // Show the furniture first (the last-touched law), then press 0.15 world
+    // (≈9.5 px) diagonally off the top-left corner — PAST the fine disc
+    // (0.08), inside the coarse one (0.17).
+    const center = app.sx(m.x, m.y);
+    app.controller.pointerDown(center.x, center.y);
+    app.controller.pointerUp(center.x, center.y);
+    expect(app.controller.handlesFor()).toBe(m.id);
+    const offDiag = 0.15 / Math.SQRT2;
+    const press = app.sx(m.x - m.w / 2 - offDiag, m.y + m.h / 2 + offDiag);
+    app.controller.pointerDown(press.x, press.y);
+    expect(app.controller.handlesFor()).toBe(m.id); // the resize owns the furniture
+    const to = app.sx(m.x - m.w / 2 - 0.25, m.y + m.h / 2 + 0.2);
+    for (let i = 1; i <= 8; i += 1) {
+      app.controller.pointerMove(
+        press.x + ((to.x - press.x) * i) / 8,
+        press.y + ((to.y - press.y) * i) / 8,
+      );
+      app.frame(1);
+    }
+    app.controller.pointerUp(to.x, to.y);
+    app.frame(2);
+    expect(m.w).toBeGreaterThan(w0 + 0.15); // the off-corner press RESIZED
+    // The same off-corner press on a FINE pointer at the same view misses
+    // the handle disc (0.08) and lands outside the rect: no resize.
+    const fine = makeApp({ viewport: { width: 844, height: 390, margin: 111 }, coarse: false });
+    const mf = fine.stage[3];
+    const pressF = fine.sx(mf.x - mf.w / 2 - offDiag, mf.y + mf.h / 2 + offDiag);
+    fine.controller.pointerDown(pressF.x, pressF.y);
+    const toF = fine.sx(mf.x - 0.2, mf.y + 0.1);
+    for (let i = 1; i <= 6; i += 1) {
+      fine.controller.pointerMove(
+        pressF.x + ((toF.x - pressF.x) * i) / 6,
+        pressF.y + ((toF.y - pressF.y) * i) / 6,
+      );
+      fine.frame(1);
+    }
+    fine.controller.pointerUp(toF.x, toF.y);
+    fine.frame(2);
+    expect(mf.w).toBeCloseTo(0.66, 12); // no resize on fine — the disc is 0.08
+  });
+
+  it('the brush law is already touch-honest: a drag with NO grab perturbs (pointermove composes the brush)', () => {
+    // Touch has no hover — the ONLY brush input is a finger drag. The
+    // controller fires the brush on every pointermove, held or not; this
+    // pins that a plain (buttonless, carry-less) move path still composes
+    // brush impulses — the desktop hover behavior IS the touch-drag one.
+    const app = makeApp({ viewport: { width: 390, height: 844, margin: 136 }, coarse: true });
+    app.controller.spawnCoilAt({ x: 0, y: 1.5 });
+    app.frame(240); // relax onto the floor, the drape settles calm
+    let maxSpeed = 0;
+    const speedAt = (): number => {
+      const before = app.end(1, 12);
+      app.frame(1);
+      const after = app.end(1, 12);
+      return Math.hypot(after.x - before.x, after.y - before.y) / FRAME;
+    };
+    for (let i = 0; i < 10; i += 1) maxSpeed = Math.max(maxSpeed, speedAt());
+    expect(maxSpeed).toBeLessThan(0.05); // calm
+    // A finger DRAG across the drape: down on open floor CLEAR of the fat
+    // coarse halo (0.52 world on this view — the down point sits 1.3 u
+    // left of the pile), then sweep THROUGH the cord's mid-body, up. No
+    // jack is grabbed (moves never pick; only the down does).
+    const mid = app.end(1, 12);
+    const from = app.sx(mid.x - 1.3, mid.y + 0.2);
+    const to = app.sx(mid.x + 1.3, mid.y);
+    app.controller.pointerDown(from.x, from.y);
+    expect(app.controller.heldEnd()).toBeNull();
+    let sweepPeak = 0;
+    for (let i = 1; i <= 14; i += 1) {
+      app.controller.pointerMove(
+        from.x + ((to.x - from.x) * i) / 14,
+        from.y + ((to.y - from.y) * i) / 14,
+      );
+      sweepPeak = Math.max(sweepPeak, speedAt());
+    }
+    app.controller.pointerUp(to.x, to.y);
+    expect(sweepPeak).toBeGreaterThan(0.2); // the finger visibly brushed it
+    expect(sweepPeak).toBeGreaterThan(maxSpeed * 4); // and by an order of calm
+    expect(app.controller.heldEnd()).toBeNull(); // and never grabbed a thing
   });
 });

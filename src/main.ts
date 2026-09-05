@@ -46,7 +46,7 @@ import {
 } from './sim';
 import type { CordWorldStep, FixedTimestepDriver, SimInput, SimState, Vec2 } from './sim';
 import { createStage, seatPose } from './world/stage';
-import { createView } from './world/view';
+import { FLOOR_MARGIN_PX, createView } from './world/view';
 import type { View } from './world/view';
 import { createRenderer } from './render/renderer';
 import type { CordPaint, FrameInput } from './render/renderer';
@@ -90,6 +90,10 @@ canvas.style.position = 'fixed';
 canvas.style.left = '0';
 canvas.style.top = '0';
 canvas.style.display = 'block';
+// 2D-8 — the canvas OWNS its gestures: no page scroll, no pinch-zoom, no
+// double-tap fight while a finger drags a jack (index.html carries the same
+// rule as CSS for #stage; this is the belt to that suspenders).
+canvas.style.touchAction = 'none';
 canvas.setAttribute('role', 'img');
 canvas.setAttribute(
   'aria-label',
@@ -100,16 +104,49 @@ canvas.setAttribute(
 app.appendChild(canvas);
 
 const renderer = createRenderer(canvas);
+
+// --- the HUD (v1's DOM faceplate, rewired to this world) ----------------------
+// 2D-8 — created BEFORE the first view fit: the faceplate's live height is
+// the view's floor margin (a wrapped phone strip pushes the floor line —
+// and the whole world — up above the buttons), so `fit` measures it.
+const hud = createHudPanel(mainLandmark, document, {
+  onNewCord: () => spawnNewCord(),
+  onNewModule: () => spawnNewModule(),
+  onReset: () => resetScene(),
+});
+
+// --- the responsive view (2D-8: contain on ANY viewport) -----------------------
 let view: View = createView(window.innerWidth, window.innerHeight);
 const fit = (): void => {
-  view = createView(window.innerWidth, window.innerHeight);
+  // The floor line sits above whatever the faceplate occupies: the desktop
+  // one-row strip stays under the classic 72-px margin; a wrapped phone
+  // strip (44-px buttons) grows the margin so no module hides under it.
+  // getBoundingClientRect forces the reflow first — the wrap answers for
+  // THIS width before the view reads it.
+  const hudHeight = Math.round(
+    (hud.root as HTMLElement).getBoundingClientRect().height,
+  );
+  const margin = Math.max(FLOOR_MARGIN_PX, hudHeight);
+  view = createView(window.innerWidth, window.innerHeight, margin);
   renderer.setView(view, window.devicePixelRatio || 1);
 };
 fit();
 window.addEventListener('resize', fit);
+// 2D-8 — rotation re-fits the contain law (portrait ↔ landscape); the resize
+// event usually accompanies it, this is the belt for the ones that do not.
+window.addEventListener('orientationchange', fit);
+// 2D-8 — iOS Safari fires visualViewport resize (URL-bar collapse, keyboard)
+// ahead of window resize; the same pure re-fit answers it, no-op when the
+// window numbers have not moved.
+window.visualViewport?.addEventListener('resize', fit);
 
 const reducedMotionQuery = window.matchMedia('(prefers-reduced-motion: reduce)');
 const reducedMotion = (): boolean => reducedMotionQuery.matches;
+// 2D-8 — the pointer class: touch halos + the last-touched handle law ride
+// on matchMedia('(pointer: coarse)'); read live per event (never cached) so
+// a hybrid device flipping input modes re-answers honestly.
+const coarsePointerQuery = window.matchMedia('(pointer: coarse)');
+const coarsePointer = (): boolean => coarsePointerQuery.matches;
 
 // --- a session: one world + driver + controller, rebuilt by RESET --------------
 interface Session {
@@ -198,6 +235,7 @@ const createSession = (withOpening: boolean): Session => {
     view: () => view,
     stage,
     reducedMotion,
+    coarsePointer, // 2D-8 — touch halos + the last-touched handle law
   });
   if (withOpening) {
     stageOpening(next);
@@ -225,12 +263,6 @@ function stageOpening(next: Session): void {
 
 session = createSession(true);
 
-// --- the HUD (v1's DOM faceplate, rewired to this world) ----------------------
-const hud = createHudPanel(mainLandmark, document, {
-  onNewCord: () => spawnNewCord(),
-  onNewModule: () => spawnNewModule(),
-  onReset: () => resetScene(),
-});
 const hudCounts: HudCounts = { cords: 0, awaitingPlug: 0, linked: 0, popped: 0, vanishing: 0 };
 /** N / HUD NEW CORD — a coil springs into hand at the cursor. */
 function spawnNewCord(): void {
@@ -311,9 +343,26 @@ document.addEventListener('visibilitychange', () => {
 // window-edge excursions, fast flings — every move/up lands here, never on
 // the faceplate). pointerup and pointercancel are the ONLY release signals;
 // pointerleave is passive (the controller's latch law ignores it mid-drag).
+//
+// 2D-8 — THE MULTI-TOUCH LAW: the FIRST pointer owns the interaction. While
+// an owning pointer is down (mouse button held, or a finger on the glass),
+// every event from every OTHER pointer is dropped at this door — a second
+// finger resting on the canvas can neither start a second drag, hijack the
+// live one's moves, nor "release" it with its own pointerup. When the owner
+// lifts, a finger that came down meanwhile is still refused: its down was
+// never routed, so its moves must not speak either (a stranger's finger
+// does not inherit the page). Two honest exceptions keep the law total: an
+// up/cancel with NO live owner routes (2D-5's spawn-is-the-grab corpus —
+// N holds a jack, moves steer it, the release seats it without a canvas
+// press; a real mouse cannot make an up without a down, but totality is
+// the discipline), and the next FRESH press — whatever pointer makes it —
+// starts the next interaction. One sandbox, one hand's story at a time.
 const lastPointerScratch: Vec2 = { x: 0, y: 0 };
 const pointerOut: Vec2 = { x: 0, y: 0 };
 let pointerOnStage = false;
+let ownerPointerId: number | null = null;
+/** Pointers currently down whose down-event was NOT routed (non-owners). */
+const bystanderPointers = new Set<number>();
 
 function lastPointerWorld(): Vec2 | null {
   if (!pointerOnStage) return null;
@@ -321,6 +370,11 @@ function lastPointerWorld(): Vec2 | null {
 }
 
 canvas.addEventListener('pointerdown', (e) => {
+  if (ownerPointerId !== null) {
+    bystanderPointers.add(e.pointerId);
+    return; // the owner's drag is sacred
+  }
+  ownerPointerId = e.pointerId;
   try {
     canvas.setPointerCapture(e.pointerId);
   } catch {
@@ -334,6 +388,8 @@ canvas.addEventListener('pointerdown', (e) => {
   canvas.style.cursor = session.controller.hoverCursor();
 });
 canvas.addEventListener('pointermove', (e) => {
+  if (ownerPointerId !== null && e.pointerId !== ownerPointerId) return;
+  if (ownerPointerId === null && bystanderPointers.has(e.pointerId)) return;
   pointerOnStage = true;
   lastPointerScratch.x = e.clientX;
   lastPointerScratch.y = e.clientY;
@@ -341,6 +397,16 @@ canvas.addEventListener('pointermove', (e) => {
   canvas.style.cursor = session.controller.hoverCursor();
 });
 canvas.addEventListener('pointerup', (e) => {
+  // Only a BYSTANDER's up is refused — and only while its owner still owns
+  // the gesture. An up with no live owner ROUTES (the 2D-5 corpus's
+  // spawn-is-the-grab pattern: N holds a jack, moves steer it, the release
+  // seats it with no canvas press in between; a real mouse cannot produce
+  // an up without a down, but the law stays total anyway).
+  if (ownerPointerId !== null && e.pointerId !== ownerPointerId) {
+    bystanderPointers.delete(e.pointerId);
+    return;
+  }
+  ownerPointerId = null;
   lastPointerScratch.x = e.clientX;
   lastPointerScratch.y = e.clientY;
   session.controller.pointerUp(e.clientX, e.clientY);
@@ -349,7 +415,13 @@ canvas.addEventListener('pointerup', (e) => {
 canvas.addEventListener('pointercancel', (e) => {
   // 2D-5 — the pointer system ended the gesture: release honestly, at the
   // last known position, exactly like a pointerup (a wedged latch would
-  // turn the next click into an accidental off-module shatter).
+  // turn the next click into an accidental off-module shatter). Same
+  // ownership read as up: bystanders only, and only while an owner lives.
+  if (ownerPointerId !== null && e.pointerId !== ownerPointerId) {
+    bystanderPointers.delete(e.pointerId);
+    return;
+  }
+  ownerPointerId = null;
   lastPointerScratch.x = e.clientX;
   lastPointerScratch.y = e.clientY;
   session.controller.pointerCancel(e.clientX, e.clientY);

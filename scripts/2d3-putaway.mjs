@@ -73,13 +73,17 @@ run('2D3_PUTAWAY', async () => {
   }
 
   // --- the self-clean: put away through the SAME sequence ----------------------------------
+  // 2D-8 (environmental): the idle window is 10 s of SIM time and a quiet
+  // headless page under this machine's documented load (avg 13–30) draws at
+  // a crawl — the clock needs up to ~3 wall minutes. The wait follows the
+  // drive's own "expect 1–2 minutes" header, with margin.
   const sawBurst = await waitFor(
     async () => {
       const sp = await evalJs(cdp, 'window.cords.statePaint()');
       return sp.shards > 0;
     },
     'the put-away debris burst',
-    75000,
+    200000,
   );
   void sawBurst;
   console.log('the put-away reuse: the red jack\'s debris burst fired ✓');

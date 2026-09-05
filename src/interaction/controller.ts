@@ -54,6 +54,18 @@
  * Latch discipline on events: pop → drop that seat the same frame; →
  * vanishing → clear held/staged and any not-yet-landed seat; vanish pull →
  * drop the pulled seat; complete → drop everything the cord owned.
+ *
+ * 2D-8 — THE TOUCH LAWS (town-hall Revision 4), all keyed on the caller's
+ * `coarsePointer` read: (1) finger-sized hit halos — the jack capsule's
+ * halo and the corner-handle disc widen to a 44-px-class TARGET at the
+ * live view scale (the pure laws `coarseJackPickRadius` /
+ * `coarseHandlePickRadius`, clamped and documented above); (2) the
+ * hover-free handle law — corner handles follow the LAST-TOUCHED module,
+ * not a hover; (3) the brush already IS touch-honest: it fires on every
+ * pointermove, and touch only moves while dragging — so a finger drag
+ * (including a jack carry sweeping across other cords) perturbs exactly
+ * like the desktop cursor. Multi-touch ownership lives one layer up (the
+ * composition routes only the FIRST pointer's events here — see main.ts).
  */
 import type {
   BrushInput,
@@ -107,6 +119,48 @@ export const JACK_PICK_RADIUS = 0.19;
 export const JACK_PICK_BODY = 0.42;
 /** Cord-body hover distance (world units) — cursor feedback only. */
 export const CORD_HOVER_RADIUS = 0.06;
+
+// --- 2D-8 — the coarse-pointer (touch) target laws --------------------------------
+/**
+ * 2D-8 — the touch comfort target (Daredevil's lane): a fingertip lands
+ * within ~22 px of what it aims at, so the coarse-pointer hit halos aim for
+ * a 44-px-class TARGET (22 px of halo radius) at the CURRENT view scale —
+ * world-space law, honest at every window (a phone portrait's 42 px/u and a
+ * tablet's 128 px/u get the same finger-sized target in px, not in world).
+ */
+export const TOUCH_TARGET_PX = 44;
+/**
+ * 2D-8 — the coarse jack halo in world units: 22 px (TOUCH_TARGET_PX / 2)
+ * converted at the live scale, never below the fine halo (0.19) and never
+ * above 0.55 world. The CAP is the honest small-screen trade-off: at a
+ * 390-px portrait (scale ≈ 42.4 px/u) the raw 22 px ≈ 0.52 world — already
+ * approaching a full module width — so anything past 0.55 would swallow
+ * neighboring furniture (nearest-end-wins keeps wrong-grabs local, and the
+ * seat law's edge band still hands deep-face presses to the rect drag).
+ */
+export const COARSE_JACK_PICK_MAX = 0.55;
+/**
+ * 2D-8 — the coarse corner-handle halo in world units: 22 px at the live
+ * scale, clamped to [HANDLE_RADIUS, 0.17]. The cap keeps the four corner
+ * discs from MERGING on a smallest (0.35-edge) module — adjacent discs
+ * (centers 0.35 apart) stay separate, so the corner picked is the corner
+ * aimed at, deterministically.
+ */
+export const COARSE_HANDLE_PICK_MAX = 0.17;
+
+/** 2D-8 — the coarse jack halo at `scale` px/world: 22 px of radius, clamped. */
+export function coarseJackPickRadius(scale: number): number {
+  if (!Number.isFinite(scale) || scale <= 0) return JACK_PICK_RADIUS;
+  const raw = TOUCH_TARGET_PX / 2 / scale;
+  return raw < JACK_PICK_RADIUS ? JACK_PICK_RADIUS : raw > COARSE_JACK_PICK_MAX ? COARSE_JACK_PICK_MAX : raw;
+}
+
+/** 2D-8 — the coarse corner-handle halo at `scale` px/world, clamped. */
+export function coarseHandlePickRadius(scale: number): number {
+  if (!Number.isFinite(scale) || scale <= 0) return HANDLE_RADIUS;
+  const raw = TOUCH_TARGET_PX / 2 / scale;
+  return raw < HANDLE_RADIUS ? HANDLE_RADIUS : raw > COARSE_HANDLE_PICK_MAX ? COARSE_HANDLE_PICK_MAX : raw;
+}
 /**
  * The soft plug cap per rectangle — a perf guard, not a rule (deny ring).
  * 2D-7 raised v1's 12 → 32 (town-hall Revision 3's dense-network ceiling);
@@ -164,6 +218,12 @@ export interface InteractionDeps {
   readonly stage: StageRect[];
   /** prefers-reduced-motion (A11Y-1's brush seam — input, never config). */
   readonly reducedMotion: () => boolean;
+  /**
+   * 2D-8 — a coarse pointer (touch): finger-sized hit halos and the
+   * last-touched handle law. Optional (default fine) so pure-callers and
+   * the pre-2D-8 tests keep the exact desktop behavior.
+   */
+  readonly coarsePointer?: () => boolean;
 }
 
 export interface HeldEnd {
@@ -277,9 +337,20 @@ export function createInteractionController(deps: InteractionDeps): InteractionC
   let hoverCorner = -1;
   let pointerWorld: Vec2 | null = null;
   let hover: HoverKind = 'none';
+  /**
+   * 2D-8 — THE LAST-TOUCHED MODULE (the hover-free handle law): on a coarse
+   * pointer there is no hover, so the module whose corner handles are shown
+   * is the last one TOUCHED — pressed on the body, grabbed by a seated plug,
+   * or resized by a handle. A press elsewhere (floor, void) dismisses (−1).
+   * Fine pointers never read this: their handles stay hover-driven.
+   */
+  let lastTouchedRect = -1;
   const pointerWorldScratch: Vec2 = { x: 0, y: 0 };
   const cornerScratch: Vec2 = { x: 0, y: 0 };
   const input: SimInput = { pointerPoint: null };
+
+  /** 2D-8 — the live pointer class (fine callers keep the desktop law). */
+  const isCoarse = (): boolean => deps.coarsePointer?.() === true;
 
   const seatKey = (cordId: number, index: number): string => `${cordId}:${index}`;
 
@@ -323,10 +394,13 @@ export function createInteractionController(deps: InteractionDeps): InteractionC
    *   (EDGE_REGION_MARGIN) inboard of the perimeter counts: deeper inside
    *   the face the RECT drag owns the press (the seat law's own band, so
    *   "grab the plug" and "drop onto the plug zone" read the same strip).
-   * Nearest end wins (world order breaks ties).
+   * Nearest end wins (world order breaks ties). 2D-8: a COARSE pointer
+   * widens the halo to a 44-px-class finger target at the live scale
+   * (`coarseJackPickRadius` — the documented law above).
    */
   const pickJack = (wx: number, wy: number): { cordId: number; index: number } | null => {
-    const r2limit = JACK_PICK_RADIUS * JACK_PICK_RADIUS;
+    const radius = isCoarse() ? coarseJackPickRadius(deps.view().scale) : JACK_PICK_RADIUS;
+    const r2limit = radius * radius;
     let best: { cordId: number; index: number } | null = null;
     let bestD2 = Number.POSITIVE_INFINITY;
     const cords = deps.state().cords;
@@ -407,13 +481,17 @@ export function createInteractionController(deps: InteractionDeps): InteractionC
 
   /**
    * 2D-6 — THE CORNER-HANDLE PICK: the topmost rect with a corner within
-   * HANDLE_RADIUS of the point (reverse scan, first hit wins — the rectAt
-   * discipline). Checked BEFORE the jack in every pick order: the priority
-   * law is HANDLE > JACK > RECT BODY > CORD.
+   * the handle radius of the point (reverse scan, first hit wins — the
+   * rectAt discipline). Checked BEFORE the jack in every pick order: the
+   * priority law is HANDLE > JACK > RECT BODY > CORD. 2D-8: a COARSE
+   * pointer widens the disc to a 44-px-class finger target at the live
+   * scale (`coarseHandlePickRadius` — capped so the four discs never merge
+   * on a smallest module).
    */
   const pickHandle = (wx: number, wy: number): { rectId: number; corner: number } | null => {
     if (!Number.isFinite(wx) || !Number.isFinite(wy)) return null;
-    const r2limit = HANDLE_RADIUS * HANDLE_RADIUS;
+    const radius = isCoarse() ? coarseHandlePickRadius(deps.view().scale) : HANDLE_RADIUS;
+    const r2limit = radius * radius;
     for (let i = stage.length - 1; i >= 0; i -= 1) {
       const rect = stage[i];
       for (let corner = 0; corner < 4; corner += 1) {
@@ -565,6 +643,11 @@ export function createInteractionController(deps: InteractionDeps): InteractionC
       pointerWorld = pointerWorldScratch;
       const wx = pointerWorld.x;
       const wy = pointerWorld.y;
+      // 2D-8 — THE LAST-TOUCHED LAW: every press names the module it lands
+      // on (generous to the seat law's own edge band) or dismisses (−1).
+      // Coarse pointers read this for the handle furniture; fine pointers
+      // keep the hover law and never look at it.
+      lastTouchedRect = rectAt(wx, wy, stage, EDGE_REGION_MARGIN);
       // PRIORITY 0 — a corner handle (2D-6): the resize grip wins over the
       // jack, the body, and the cord (the panel's own furniture).
       const handle = pickHandle(wx, wy);
@@ -910,6 +993,11 @@ export function createInteractionController(deps: InteractionDeps): InteractionC
 
     handlesFor() {
       if (resizeDrag !== null) return resizeDrag.rectId;
+      // 2D-8 — COARSE pointers have no hover: the handles belong to the
+      // LAST-TOUCHED module (press on/over a module shows its furniture; a
+      // press elsewhere dismisses). The furniture STAYS until the next
+      // touch — sight-aiming a persistent notch beats chasing a hover.
+      if (isCoarse()) return lastTouchedRect;
       if (pointerWorld === null) return -1;
       // The hover generosity a release gets (EDGE_REGION_MARGIN): hovering
       // the module — or its immediate halo — shows the furniture; an exact

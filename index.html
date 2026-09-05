@@ -2,7 +2,11 @@
 <html lang="en">
   <head>
     <meta charset="UTF-8" />
-    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <!-- 2D-8 — the honest mobile viewport: device width at 1:1, no
+         maximum-scale games (pinch belongs to the OS, and the canvas takes
+         its gestures with touch-action), cover so the stage runs under the
+         notch with the faceplate's safe-area padding. -->
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover" />
     <!-- A11Y-1: the title names the product AND its verb (screen-reader
          first utterance / tab / history), not a bare codeword. -->
     <title>Cords — cable patch sandbox</title>
@@ -16,6 +20,15 @@
         padding: 0;
         overflow: hidden;
         background: #111114;
+      }
+
+      /* 2D-8 — the canvas owns its gestures: one finger drags a jack, never
+         the page (no scroll, no pinch-zoom, no double-tap). main.ts sets
+         the same rule inline on the element it creates; this is the
+         static belt. */
+      #stage,
+      canvas {
+        touch-action: none;
       }
 
       /* ---------------------------------------------------------------------
@@ -184,6 +197,9 @@
         letter-spacing: 0.14em;
         cursor: pointer;
         box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.07); /* the cap's bevel */
+        /* 2D-8 — taps fire at once (kills the double-tap-zoom wait) without
+           handing scroll/pinch territory to the buttons. */
+        touch-action: manipulation;
       }
       .hud-btn:hover {
         background: #2b313a;
@@ -224,6 +240,89 @@
         overflow: hidden;
         clip-path: inset(50%);
         white-space: nowrap;
+      }
+
+      /* ---------------------------------------------------------------------
+       * 2D-8 — THE NARROW-BENCH FACEPLATE (phones + small tablets, portrait
+       * and landscape). BREAKPOINT CHOICE, logged: the one-row strip needs
+       * ~1200 px of bench; below 1020 px it wraps instead of overflowing,
+       * keeping every silkscreen grammar intact (fasteners, seams, meters,
+       * keycaps — only smaller segments and tracked-out buttons) while the
+       * three controls grow 44-px touch targets (Daredevil's floor). The
+       * composition reads the strip's live height as the view's floor
+       * margin, so the world re-fits above whatever the wrap does. At
+       * 390-px class widths the rows run name+CORDS / LINKED / buttons /
+       * hint; at 760–1020 px it settles to two rows. Desktop (>= 1021 px)
+       * is byte-identical.
+       * ------------------------------------------------------------------- */
+      @media (max-width: 1020px) {
+        .hud {
+          flex-wrap: wrap;
+          gap: 10px 14px;
+          padding: 10px 16px;
+          padding-bottom: calc(10px + env(safe-area-inset-bottom, 0px));
+        }
+        .hud-name {
+          gap: 2px;
+        }
+        .hud-name-word {
+          font-size: 13px;
+          letter-spacing: 0.28em;
+        }
+        /* The nameplate's sub-line is the one casualty of 390 px: the
+           tracked-out "CABLE PATCH SANDBOX" alone is ~144 px. The word
+           carries the brand; the aria summary carries the semantics. */
+        .hud-name-sub {
+          display: none;
+        }
+        .hud-readout {
+          gap: 8px;
+          padding-left: 14px;
+        }
+        .hud-label {
+          font-size: 9px;
+          letter-spacing: 0.12em;
+        }
+        .hud-meter {
+          gap: 2px;
+        }
+        .hud-seg {
+          width: 6px;
+          height: 13px;
+        }
+        .hud-count {
+          font-size: 12px;
+        }
+        .hud-hint {
+          flex-basis: 100%;
+          order: 99;
+          font-size: 10px;
+          letter-spacing: 0.14em;
+          visibility: hidden; /* keeps its row reserved — a stable strip height */
+        }
+        .hud.is-empty .hud-hint {
+          visibility: visible;
+        }
+        .hud-actions {
+          flex: 1 1 100%;
+          order: 50;
+          justify-content: space-between;
+          gap: 8px;
+          padding-left: 0;
+          border-left: 0; /* the wrap's row break IS the seam */
+        }
+        .hud-btn {
+          min-height: 44px; /* the touch floor */
+          padding: 10px 14px;
+          font-size: 11px;
+        }
+        .hud-btn .hud-btn-label {
+          flex: 1 1 auto;
+          text-align: center;
+        }
+        .hud-key {
+          padding: 3px 7px;
+        }
       }
     </style>
   </head>

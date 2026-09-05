@@ -89,7 +89,7 @@ To deploy from your machine instead: `npm run build && npx wrangler deploy`.
 - **Blank page** — Cords draws with Canvas 2D, which every modern browser ships enabled. Try another desktop browser or check that JavaScript is allowed on the page.
 - **<kbd>N</kbd> did nothing** — the bench holds at most 48 cords; spawning at the cap is a deliberate no-op. Press <kbd>R</kbd> and try again.
 - **My cord vanished** — that was one of the three exits: an over-stretched pop whose grace expired, a half-plugged cord's jack released off-module, or an abandoned coil (10 s untouched) putting itself away. Spawn another.
-- **Touch devices** — not supported; this is a desktop, mouse-driven sandbox.
+- **Touch devices** — supported: the sandbox takes touch and mouse alike (pointer events throughout). On phones the stage scales to fit the screen in portrait and landscape, jacks and corner handles carry finger-sized hit targets, the faceplate wraps with 44-px buttons, and a finger drag brushes cords exactly like the desktop cursor; resize handles appear on the module you last touched. Verified under emulated phone metrics (touch input, DPR, rotation, CPU throttling) — real-hardware feel is yours to judge. One deliberate rule: a second finger is ignored while a drag is live.
 
 ## Further reading
 
