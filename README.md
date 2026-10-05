@@ -1,59 +1,90 @@
 # Cords
 
-A browser sandbox of steel modules and vintage 1/4″ patch cords — spawn a cord, grab its jacks, plug them onto any module edge, and let the rope physics do the rest. No goals, no score: just the feel of cables that dangle, wave, leash, pop, and tidy themselves away.
+A visual browser sandbox of steel modules and vintage 1/4″ patch cords: spawn a cord, grab its jacks, plug them onto any module edge, and let the rope physics do the rest. No goals, no score: just the feel of cables that dangle, wave, leash, pop, and tidy themselves away.
 
-The bench is drawn flat in Canvas 2D, staged as an early-80s drum-machine panel: a machined charcoal stage of panel tiles and bolts, eight steel modules in candy-color zones, and a faceplate whose segmented LED meters speak live state only — lit segments are real cord and link counts, nothing decorative.
+The bench is drawn flat in Canvas 2D, staged as an early-80s drum-machine panel: a machined charcoal stage of panel tiles and bolts, eight steel modules in candy-color zones, and a faceplate whose segmented LED meters speak live state only: lit segments are real cord and link counts, nothing decorative.
+
+Cords began as a site-design experiment for Voxchain. The prompting led to a playful interface that was too heavily styled for that original use case, but worth keeping as its own experiment.
+
+This is a visual cable-physics toy. It does not process audio, capture a microphone, record sound, or provide save/load and export controls. The moving signal pulse is a visual cue.
+
+![Existing Cords development capture showing a populated module bench, hanging patch cords, live count meters, and NEW MODULE](.impeccable/review/2d7-dense.png)
+
+*Existing development capture: a populated bench with multiple modules, hanging patch cords, cord/link meters, and the NEW MODULE control.*
 
 ## Quickstart
 
-Requires [Node.js](https://nodejs.org) 20.19+ (or 22.12+) and a desktop browser.
+Requires [Node.js](https://nodejs.org) 22.12+ on the 22.x line, or Node.js 24+ and a browser with JavaScript and Canvas 2D enabled. Mouse and touch interactions are implemented; physical-device feel should still be checked on your device.
 
 ```bash
-npm install
+git clone https://github.com/Arrangedgodly/cords.git
+cd cords
+npm ci
 npm run dev
 ```
 
-Open the printed URL (default `http://localhost:5173`). The scene loads with one cord already half-patched — grab the blue jack to finish the link.
+Open the printed URL (default `http://localhost:5173`). The scene loads with one cord already half-patched: grab the blue jack to finish the link.
 
 ## How to play
 
-- **Spawn** — press <kbd>N</kbd> (or the NEW CORD keycap on the faceplate). A coiled cord appears at your cursor with the red input jack in hand; the uncoil is physics, not an animation. One press, one cord.
-- **Carry** — drag either jack. Both ends are grabbable, seated ends included — grabbing a seated plug simply pulls it out. The cord stretches, dangles, and leashes behind you; a violent cursor teleport drags it rather than ripping it.
-- **Plug** — release a held jack over any module and it seats perpendicular to the nearest edge. Plug both ends (two modules, two edges of one module — even the same module twice) and the cord is **linked**: an amber signal pulse chases down it, red end to blue end. Each module takes up to 32 plugs; the 33rd attempt draws a red deny ring.
-- **Drag modules** — grab a module anywhere and move it (translate only). Seated plugs ride along and their cords go taut.
-- **Brush** — sweep the cursor across a hanging cord, no button held, and it sways away from you.
+- **Spawn**: press <kbd>N</kbd> (or the NEW CORD keycap on the faceplate). A coiled cord appears at your cursor with the red input jack in hand; the uncoil is physics, not an animation. One press, one cord.
+- **Carry**: drag either jack. Both ends are grabbable, seated ends included: grabbing a seated plug simply pulls it out. The cord stretches, dangles, and leashes behind you; a violent cursor teleport drags it rather than ripping it.
+- **Plug**: release a held jack over any module and it seats perpendicular to the nearest edge. Plug both ends (two modules, two edges of one module: even the same module twice) and the cord is **linked**: an amber signal pulse chases down it, red end to blue end. Each module takes up to 32 plugs; the 33rd attempt draws a red deny ring.
+- **Drag modules**: grab a module anywhere and move it. Seated plugs ride along and their cords go taut.
+- **Add a module**: press <kbd>B</kbd> or NEW MODULE to place a new one near the pointer, up to 32 modules.
+- **Resize a module**: drag a corner handle. Desktop hover reveals the handles; touch exposes them on the last-touched module. Resizing stays within the stage’s size and position bounds, and seated plugs move with the resized edges.
+- **Brush**: sweep the cursor across a hanging cord, no button held, and it sways away from you.
 
 Failure and cleanup are part of the toy:
 
-- **Over-stretch pops** — drag linked modules past the cord's length and the far jack pops out with a ~3-second grace: re-plug it in time and the link is restored; let the grace expire and the jack shatters, the cord pulls itself out, and the whole thing fades away.
-- **Dropped half-plugged cords fail** — release the held jack of a cord with one end still seated anywhere but a module, and it shatters the same way.
-- **Abandoned coils put themselves away** — leave a never-seated cord lying untouched for ~10 seconds and it powers down and vanishes. Grab it before then and it is instantly rescued, no worse for wear.
-- **Reset** — press <kbd>R</kbd> to clear every cord. Modules keep their positions.
+- **Over-stretch pops**: drag linked modules past the cord's length and the far jack pops out with a ~3-second grace: re-plug it in time and the link is restored; let the grace expire and the jack shatters, the cord pulls itself out, and the whole thing fades away.
+- **Dropped half-plugged cords fail**: release the held jack of a cord with one end still seated anywhere but a module, and it shatters the same way.
+- **Abandoned coils put themselves away**: leave a never-seated cord lying untouched for ~10 seconds and it powers down and vanishes. Grab it before then and it is instantly rescued, no worse for wear.
+- **Reset**: press <kbd>R</kbd> to clear every cord. Modules keep their positions, sizes, and any added modules. Reloading starts a new in-memory session.
 
 ## Controls
+
+![Existing Cords development close-up showing module corner handles, seated jacks, cables, and faceplate controls](.impeccable/review/2d6-resize.png)
+
+*Existing development close-up of the module corner handles and the NEW CORD, NEW MODULE, and RESET controls.*
 
 | Action | Input |
 | --- | --- |
 | Spawn a new cord | <kbd>N</kbd> or the faceplate's NEW CORD button |
+| Add a module | <kbd>B</kbd> or NEW MODULE |
+| Resize a module | Drag a corner handle |
 | Reset the bench (cords only) | <kbd>R</kbd> or the faceplate's RESET button |
 | Grab a jack / module | Press and hold on it |
 | Plug a jack in | Release over a module |
 | Pull a plug out | Grab a seated jack |
 | Perturb hanging cords | Sweep the cursor over them (hover only) |
 
-Modifier chords stay with the browser — <kbd>Cmd</kbd>+<kbd>R</kbd> still reloads, only bare N and R reach the page.
+The N, R, and B shortcuts ignore Ctrl, Cmd, and Alt combinations, and key repeats are ignored. <kbd>Cmd</kbd>+<kbd>R</kbd> still belongs to the browser.
 
 ## Features worth knowing
 
-- **Feel guarantees** — the sim runs a fixed 120 Hz timestep inside every frame, so behavior is frame-rate independent and deterministic: cords settle in about a second and a half without jitter, and every interaction answers within a frame.
-- **A liftable, headless core** — `src/sim/` is pure TypeScript with zero renderer imports (no Three.js, no canvas, no DOM), so the whole physics core can be lifted into another product untouched. A gate enforces it (see [Development](#development)).
-- **Accessibility floor** — spawn and reset are fully keyboard-reachable (Tab, Enter, Space on the faceplate buttons), an `aria-live` summary speaks every lifecycle change ("2 cords, 1 awaiting plug, 1 linked…"), and `prefers-reduced-motion` dampens page-induced motion: the pulse slows, the shatter burst disappears, the brush softens.
+- **Fixed-step simulation**: the physics advances at a 120 Hz fixed timestep, with at most five substeps per rendered frame. This keeps its update rules independent of ordinary render timing; observed responsiveness still depends on device load and browser scheduling.
+- **A liftable, headless core**: `src/sim/` is pure TypeScript with zero renderer imports (no Three.js, no canvas, no DOM), so the whole physics core can be lifted into another product untouched. A gate enforces it (see [Development](#development)).
+- **Accessibility floor**: spawn, NEW MODULE, and reset are fully keyboard-reachable (Tab, Enter, Space on the faceplate buttons), an `aria-live` summary announces scene counts and cleanup notices ("2 cords, 1 awaiting plug, 1 linked…"), and `prefers-reduced-motion` dampens page-induced motion: the pulse slows, the shatter burst disappears, the brush softens.
 
   > [!NOTE]
-  > Plugging a jack requires pointer aiming — the keyboard floor covers spawning, resetting, and the spoken summary.
+  > Plugging a jack requires pointer aiming: the keyboard floor covers spawning cords/modules, resetting, and the spoken summary.
 
-- **Resilience** — a hidden tab pauses the simulation exactly and resumes with no backlog; the sim is pure state, so nothing is lost mid-flight.
-- **Zero network at runtime** — static single page, no backend, no telemetry, no CDN. The build output can be hosted from any static folder.
+- **Resilience**: a hidden tab pauses the simulation exactly and resumes with no backlog; the sim is pure state, so nothing is lost mid-flight.
+- **Zero network at runtime**: static single page, no backend, no telemetry, no CDN. The build output can be hosted from any static folder.
+
+## How the bench is built
+
+| Layer | Implementation | Responsibility |
+| --- | --- | --- |
+| Simulation | Pure TypeScript, Verlet integration and distance constraints | Cord motion, lifecycle state, and cleanup. |
+| World | Modules, edges, and jacks | Placement, resizing, and attachment geometry. |
+| Interaction | Pointer events and keyboard actions | Mouse/touch aiming, dragging, brushing, spawning, and reset. |
+| Rendering | Canvas 2D + DOM faceplate | Flat bench, cords, state meters, chase pulse, and effects. |
+| Build | Vite + TypeScript | Development server and production bundle. |
+| Checks | Vitest and seeded fuzz tooling | Unit behavior, invariants, and repeatable adversarial inputs. |
+
+The live bench holds at most 48 cords and 32 modules; each module accepts up to 32 plugs. State is in memory. Keeping positions through Reset is not persistence across a page refresh.
 
 ## Development
 
@@ -66,10 +97,10 @@ Modifier chords stay with the browser — <kbd>Cmd</kbd>+<kbd>R</kbd> still relo
 | `npm run fuzz` | The full seeded fuzz corpus (adversarial input storms; every run reproducible) |
 | `npm run check:sim` | The sim-purity gate alone |
 
-- **Sim-purity gate** (`scripts/check-sim-purity.mjs`) — scans every file under `src/sim/` for renderer imports and DOM/canvas API usage (three.js, `document`, `window`, canvas contexts, `requestAnimationFrame`) and fails the build on any hit, keeping the physics core renderer-agnostic and headless. It runs as part of `build` and `test`.
-- **Tests** — Vitest unit suites cover the sim, world, interaction, render, and HUD layers; the fuzz harness replays adversarial patterns (drag storms, delta spikes, spawn/despawn churn, over-stretch pulls) with per-frame invariants and bitwise determinism. Set `CORDS_FUZZ_SEED=<n>` to explore a single seed.
-- **Frame-time probe** — load the page with `?probe=1` to stage a dense bench (16 modules, 48 live cords, 12 of them linked and pulsing) and log measured frame timings (avg/p95/max against the 16.7 ms budget); `window.cords.probe()` reads the same counters on demand.
-- **Debug seams** — in the running page, `window.cords` exposes read-only probes (`lifecycle()`, `pulse()`, `statePaint()`, `motion()`, `gate()`, plus geometry readers `ends()`, `points()`, `rects()`, `view()`) and `spawn()`/`reset()` mirroring the HUD buttons.
+- **Sim-purity gate** (`scripts/check-sim-purity.mjs`): scans every file under `src/sim/` for renderer imports and DOM/canvas API usage (three.js, `document`, `window`, canvas contexts, `requestAnimationFrame`) and fails the build on any hit, keeping the physics core renderer-agnostic and headless. It runs as part of `build` and `test`.
+- **Tests**: Vitest unit suites cover the sim, world, interaction, render, and HUD layers; the fuzz harness replays adversarial patterns (drag storms, delta spikes, spawn/despawn churn, over-stretch pulls) with per-frame invariants and bitwise determinism. Set `CORDS_FUZZ_SEED=<n>` to explore a single seed.
+- **Frame-time probe**: load the page with `?probe=1` to stage a dense bench (16 modules, 48 live cords, 12 of them linked and pulsing) and log measured frame timings (avg/p95/max against the 16.7 ms budget); `window.cords.probe()` reads the same counters on demand.
+- **Debug seams**: in the running page, `window.cords` exposes read-only probes (`lifecycle()`, `pulse()`, `statePaint()`, `motion()`, `gate()`, plus geometry readers `ends()`, `points()`, `rects()`, `view()`) and `spawn()`/`reset()` mirroring the HUD buttons.
 
 ## Deploy (Cloudflare)
 
@@ -86,12 +117,13 @@ To deploy from your machine instead: `npm run build && npx wrangler deploy`.
 
 ## Troubleshooting
 
-- **Blank page** — Cords draws with Canvas 2D, which every modern browser ships enabled. Try another desktop browser or check that JavaScript is allowed on the page.
-- **<kbd>N</kbd> did nothing** — the bench holds at most 48 cords; spawning at the cap is a deliberate no-op. Press <kbd>R</kbd> and try again.
-- **My cord vanished** — that was one of the three exits: an over-stretched pop whose grace expired, a half-plugged cord's jack released off-module, or an abandoned coil (10 s untouched) putting itself away. Spawn another.
-- **Touch devices** — supported: the sandbox takes touch and mouse alike (pointer events throughout). On phones the stage scales to fit the screen in portrait and landscape, jacks and corner handles carry finger-sized hit targets, the faceplate wraps with 44-px buttons, and a finger drag brushes cords exactly like the desktop cursor; resize handles appear on the module you last touched. Verified under emulated phone metrics (touch input, DPR, rotation, CPU throttling) — real-hardware feel is yours to judge. One deliberate rule: a second finger is ignored while a drag is live.
+- **Blank page**: Cords draws with Canvas 2D, which every modern browser ships enabled. Try another desktop browser or check that JavaScript is allowed on the page.
+- **<kbd>N</kbd> did nothing**: the bench holds at most 48 cords; spawning at the cap is a deliberate no-op. Press <kbd>R</kbd> and try again.
+- **My cord vanished**: that was one of the three exits: an over-stretched pop whose grace expired, a half-plugged cord's jack released off-module, or an abandoned coil (10 s untouched) putting itself away. Spawn another.
+- **Touch devices**: supported: the sandbox takes touch and mouse alike (pointer events throughout). On phones the stage scales to fit the screen in portrait and landscape, jacks and corner handles carry finger-sized hit targets, the faceplate wraps with 44-px buttons, and a finger drag brushes cords exactly like the desktop cursor; resize handles appear on the module you last touched. Verified under emulated phone metrics (touch input, DPR, rotation, CPU throttling): real-hardware feel is yours to judge. One deliberate rule: a second finger is ignored while a drag is live.
 
 ## Further reading
 
-- [`PRODUCT.md`](PRODUCT.md) — what the sandbox is for and its approved scope
-- [`DESIGN.md`](DESIGN.md) — the Drum Machine Panel design system
+- [`PRODUCT.md`](PRODUCT.md): original scope record; some renderer, mobile, and module-limit details predate the current implementation
+- [`DESIGN.md`](DESIGN.md): the Drum Machine Panel design system
+
